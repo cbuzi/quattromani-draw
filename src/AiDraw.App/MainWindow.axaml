@@ -22,6 +22,26 @@
                         <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
                         <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
                     </StackPanel>
+                    <StackPanel x:Name="TextBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                        <ComboBox x:Name="FontCombo" Width="180" VerticalAlignment="Center" ToolTip.Tip="Font" />
+                        <NumericUpDown x:Name="FontSizeBox" Width="96" Minimum="1" Maximum="1000" Increment="1" FormatString="0.##" Value="24" VerticalAlignment="Center" ToolTip.Tip="Font size" />
+                        <ToggleButton x:Name="BoldButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Bold">
+                            <TextBlock Text="B" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="ItalicButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Italic">
+                            <TextBlock Text="I" FontStyle="Italic" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignLeftButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Align left">
+                            <Path Data="M4,6 H20 M4,10 H14 M4,14 H20 M4,18 H12" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignCenterButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Center">
+                            <Path Data="M4,6 H20 M7,10 H17 M4,14 H20 M8,18 H16" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignRightButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Align right">
+                            <Path Data="M4,6 H20 M10,10 H20 M4,14 H20 M12,18 H20" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <Button x:Name="TextToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert the text to editable curves (Ctrl/Cmd+Q)" />
+                    </StackPanel>
                     <StackPanel x:Name="NodeBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                         <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />
                         <Button x:Name="NodeLineButton" Classes="bar" Content="Line" ToolTip.Tip="Make the segments of the selected nodes straight" />
@@ -70,6 +90,9 @@
                     <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
+                <ToggleButton x:Name="TextTool" Classes="tool" ToolTip.Tip="Text (T): click to type, drag to set a wrapping width. Double-click a text to edit it; Ctrl/Cmd+Enter or click outside to finish, Esc cancels">
+                    <TextBlock Text="T" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </ToggleButton>
                 <ToggleButton x:Name="PenTool" Classes="tool" ToolTip.Tip="Pen (P): click = corner node, click and drag = smooth curve. Click the first node to close, double-click or Enter to finish, Backspace removes the last node, Esc cancels">
                     <Path Data="M12,21 L6,11 L8,3 L16,3 L18,11 Z M12,21 L12,13 M13.6,10 A1.6,1.6 0 1 0 10.4,10 A1.6,1.6 0 1 0 13.6,10 Z"
                           StrokeThickness="1.8" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
@@ -102,6 +125,8 @@
 
         <Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
             <local:CanvasView x:Name="Canvas" />
+            <TextBox x:Name="TextEditor" IsVisible="False" AcceptsReturn="True" HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Padding="0" MinWidth="30" MinHeight="0" BorderThickness="1" BorderBrush="#3B82F6" Background="Transparent" />
             <ScrollBar x:Name="VScroll" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" />
             <ScrollBar x:Name="HScroll" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" />
         </Grid>

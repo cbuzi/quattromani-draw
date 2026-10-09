@@ -5,12 +5,14 @@ using SkiaSharp;
 
 namespace AiDraw.App;
 
-enum Kind { Rectangle, Ellipse, Path, Group }
+enum Kind { Rectangle, Ellipse, Path, Group, Text }
+
+sealed record TextInfo(List<TextLine> Lines, TextStyle Style);
 
 // Copia immutabile degli oggetti: il rendering gira su un altro thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
     string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
-    string? NodeKinds = null)
+    string? NodeKinds = null, TextInfo? Text = null)
 {
     public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
     public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
@@ -19,6 +21,8 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
     {
         PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             p.Source, p.Segments, null, p.NodeKinds),
+        TextObject t => new(o.Id, Kind.Text, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
+            t.Source, null, null, Text: new TextInfo(t.Lines, t.Style)),
         GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             g.Source, null, g.Children.Select(From).ToList()),
         _ => new(o.Id, o is EllipseObject ? Kind.Ellipse : Kind.Rectangle, o.X, o.Y, o.Width, o.Height, o.Transform,
@@ -81,6 +85,18 @@ static class SceneRenderer
 
     static void DrawShape(SKCanvas canvas, SKPaint paint, Item it)
     {
+        if (it.Kind == Kind.Text)
+        {
+            // Righe impaginate nello spazio di Source, stirate sul riquadro attuale.
+            var fit = ToSk(it.Fit);
+            canvas.Save();
+            canvas.Concat(in fit);
+            using var font = SkiaTextEngine.CreateFont(it.Text!.Style);
+            foreach (var line in it.Text.Lines)
+                canvas.DrawText(line.Text, (float)(it.Source.X + line.X), (float)(it.Source.Y + line.Y), font, paint);
+            canvas.Restore();
+            return;
+        }
         if (it.Kind == Kind.Path)
         {
             using var path = BuildPath(it.Segments!, it.Fit);

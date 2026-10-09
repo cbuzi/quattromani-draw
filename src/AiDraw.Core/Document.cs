@@ -120,6 +120,9 @@ public sealed partial class Document
 {
     int _nextId;
 
+    /// <summary>Misura e contorni del testo, forniti dall'app; senza, i comandi sul testo danno un errore esplicito.</summary>
+    public ITextEngine? TextEngine { get; set; }
+
     /// <summary>Incrementata dal CommandBus per ogni comando applicato.</summary>
     public long Version { get; internal set; }
     public List<Page> Pages { get; } = [new()];

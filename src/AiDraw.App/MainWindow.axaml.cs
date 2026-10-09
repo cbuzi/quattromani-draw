@@ -12,7 +12,10 @@ public partial class MainWindow : Window
 {
     readonly CommandBus _bus = App.Bus;
     List<string> _ids = [];
-    bool _syncing, _syncingScroll;
+    bool _syncing, _syncingScroll, _syncingText;
+    TextEditRequest? _edit;
+    string _editOriginal = "";
+    TextStyle _textDefaults = new("", 24, false, false, "left", 1); // stile dei testi nuovi; la famiglia si imposta all'avvio
     long _seenVersion;
     readonly HashSet<string> _aiTouched = []; // oggetti la cui ultima modifica è dell'agente
     readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
@@ -58,6 +61,32 @@ public partial class MainWindow : Window
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
         PenTool.Click += (_, _) => { Canvas.Tool = Tool.Pen; SyncToolButtons(); };
         NodeTool.Click += (_, _) => { Canvas.Tool = Tool.Node; SyncToolButtons(); };
+        TextTool.Click += (_, _) => { Canvas.Tool = Tool.Text; SyncToolButtons(); };
+
+        // Testo: stile dei nuovi testi, barra del testo ed editor sul posto.
+        var engine = _bus.Document.TextEngine;
+        _textDefaults = _textDefaults with { Family = engine?.DefaultFamily ?? "Sans" };
+        FontCombo.ItemsSource = engine?.Families.ToList() ?? [];
+        FontCombo.SelectionChanged += (_, _) => { if (!_syncingText && FontCombo.SelectedItem is string f) ApplyTextStyle(family: f); };
+        FontSizeBox.ValueChanged += (_, e) => { if (!_syncingText && e.NewValue is { } v) ApplyTextStyle(size: (double)v); };
+        BoldButton.Click += (_, _) => ApplyTextStyle(bold: BoldButton.IsChecked == true);
+        ItalicButton.Click += (_, _) => ApplyTextStyle(italic: ItalicButton.IsChecked == true);
+        AlignLeftButton.Click += (_, _) => ApplyTextStyle(align: "left");
+        AlignCenterButton.Click += (_, _) => ApplyTextStyle(align: "center");
+        AlignRightButton.Click += (_, _) => ApplyTextStyle(align: "right");
+        TextToCurvesButton.Click += (_, _) => ToCurves();
+        Canvas.TextEditRequested += BeginTextEdit;
+        TextEditor.LostFocus += (_, _) => CommitTextEdit();
+        TextEditor.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { CancelTextEdit(); e.Handled = true; }
+            else if (e.Key == Key.Enter && (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)))
+            {
+                CommitTextEdit();
+                Canvas.Focus();
+                e.Handled = true;
+            }
+        };
         NodeLineButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToLine);
         NodeCurveButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToCurve);
         NodeCuspButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Cusp);
@@ -128,10 +157,10 @@ public partial class MainWindow : Window
         RectTool.IsChecked = Canvas.Tool == Tool.Rectangle;
         EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
         PenTool.IsChecked = Canvas.Tool == Tool.Pen;
+        TextTool.IsChecked = Canvas.Tool == Tool.Text;
         NodeTool.IsChecked = Canvas.Tool == Tool.Node;
         // Con lo strumento Nodi la barra mostra le operazioni sui nodi al posto di quelle booleane.
-        NodeBar.IsVisible = Canvas.Tool == Tool.Node;
-        BoolBar.IsVisible = Canvas.Tool != Tool.Node;
+        UpdateBars();
     }
 
     /// <summary>Aggiorna lo stile corrente (nuove forme) e lo applica alla selezione tramite il bus.</summary>
@@ -176,17 +205,22 @@ public partial class MainWindow : Window
             ToCurves();
             e.Handled = true;
         }
-        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10)
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10 or Key.T)
         {
             Canvas.Tool = e.Key switch
             {
-                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, _ => Tool.Select,
+                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, Key.T => Tool.Text, _ => Tool.Select,
             };
             e.Handled = true;
         }
         else if (e.Key == Key.Enter && Canvas.PenActive)
         {
             Canvas.FinishPen(false); // termina il path aperto
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Enter or Key.F2 && Canvas.SelectedId != null)
+        {
+            Canvas.EditSelectedText(); // Invio o F2 su un testo selezionato: lo si modifica
             e.Handled = true;
         }
         else if (e.Key == Key.Escape && Canvas.PenActive)
@@ -222,6 +256,133 @@ public partial class MainWindow : Window
         VScroll.ViewportSize = s.ViewH;
         VScroll.Value = Math.Clamp(s.OffY, 0, VScroll.Maximum);
         _syncingScroll = false;
+    }
+
+    // ---- Testo ----------------------------------------------------------------------------------
+
+    /// <summary>Barra in alto: nodi con lo strumento Nodi, stile con lo strumento Testo o un testo selezionato, altrimenti booleane.</summary>
+    void UpdateBars()
+    {
+        var node = Canvas.Tool == Tool.Node;
+        var text = !node && (Canvas.Tool == Tool.Text || SelectedTextStyle() != null);
+        NodeBar.IsVisible = node;
+        TextBar.IsVisible = text;
+        BoolBar.IsVisible = !node && !text;
+    }
+
+    /// <summary>Stile del testo selezionato (se è un solo testo).</summary>
+    TextStyle? SelectedTextStyle() =>
+        Canvas.SelectedId is { } id ? _bus.Read(d => (d.Objects.FirstOrDefault(o => o.Id == id) as TextObject)?.Style) : null;
+
+    void SyncTextBar()
+    {
+        var st = SelectedTextStyle() ?? _textDefaults;
+        _syncingText = true;
+        FontCombo.SelectedItem = (FontCombo.ItemsSource as List<string>)?.FirstOrDefault(f => f.Equals(st.Family, StringComparison.OrdinalIgnoreCase));
+        FontSizeBox.Value = (decimal)st.Size;
+        BoldButton.IsChecked = st.Bold;
+        ItalicButton.IsChecked = st.Italic;
+        AlignLeftButton.IsChecked = st.Align == "left";
+        AlignCenterButton.IsChecked = st.Align == "center";
+        AlignRightButton.IsChecked = st.Align == "right";
+        _syncingText = false;
+    }
+
+    // Cambia lo stile dei testi nuovi e applica la modifica ai testi selezionati (un solo undo).
+    void ApplyTextStyle(string? family = null, double? size = null, bool? bold = null, bool? italic = null, string? align = null)
+    {
+        _textDefaults = _textDefaults with
+        {
+            Family = family ?? _textDefaults.Family, Size = size ?? _textDefaults.Size, Bold = bold ?? _textDefaults.Bold,
+            Italic = italic ?? _textDefaults.Italic, Align = align ?? _textDefaults.Align,
+        };
+        var ids = _bus.Read(d => Canvas.SelectedIds.Where(id => d.Objects.FirstOrDefault(o => o.Id == id) is TextObject).ToList());
+        if (ids.Count > 0)
+        {
+            try { _bus.Execute([new SetText { Targets = ids, FontFamily = family, FontSize = size, Bold = bold, Italic = italic, Align = align }]); }
+            catch (CommandException ex) { ShowNotice(ex.Message); }
+        }
+        SyncTextBar();
+    }
+
+    // Editor sul posto: una TextBox sopra il canvas, con lo stesso font; l'oggetto originale resta nascosto.
+    void BeginTextEdit(TextEditRequest r)
+    {
+        CommitTextEdit();
+        var style = _textDefaults;
+        string text = "", fill = Canvas.Fill ?? "#000000";
+        double? wrap = r.WrapWidth;
+        Point at;
+        double rotation = 0;
+
+        if (r.Id is { } id)
+        {
+            var info = _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is TextObject t ? (t.Text, t.Style, t.Fill, t.WrapWidth) : ((string, TextStyle, string?, double?)?)null);
+            if (info is not { } i || Canvas.EditorPlacement(id) is not { } place) return;
+            (text, style, wrap) = (i.Item1, i.Item2, i.Item4);
+            fill = i.Item3 ?? "#000000";
+            (at, rotation) = (place.TopLeft, place.Rotation);
+            Canvas.HiddenId = id;
+        }
+        else at = Canvas.DocToScreen(r.At);
+
+        _edit = r;
+        _editOriginal = text;
+        var zoom = Canvas.Zoom;
+        TextEditor.Text = text;
+        TextEditor.FontFamily = new FontFamily(style.Family);
+        TextEditor.FontSize = style.Size * zoom;
+        TextEditor.FontWeight = style.Bold ? FontWeight.Bold : FontWeight.Normal;
+        TextEditor.FontStyle = style.Italic ? FontStyle.Italic : FontStyle.Normal;
+        TextEditor.TextAlignment = style.Align switch { "center" => TextAlignment.Center, "right" => TextAlignment.Right, _ => TextAlignment.Left };
+        TextEditor.Foreground = Color.TryParse(fill.Length == 7 ? fill : "#000000", out var c) ? new SolidColorBrush(c) : Brushes.Black;
+        TextEditor.TextWrapping = wrap != null ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        TextEditor.Width = wrap != null ? wrap.Value * zoom + 2 : double.NaN;
+        TextEditor.Margin = new Thickness(at.X - 1, at.Y - 1, 0, 0);
+        TextEditor.RenderTransformOrigin = RelativePoint.TopLeft;
+        TextEditor.RenderTransform = Math.Abs(rotation) > 0.01 ? new RotateTransform(rotation) : null;
+        TextEditor.IsVisible = true;
+        TextEditor.Focus();
+        if (r.Id != null) TextEditor.SelectAll(); else TextEditor.CaretIndex = text.Length;
+    }
+
+    void CancelTextEdit()
+    {
+        _edit = null;
+        TextEditor.IsVisible = false;
+        Canvas.HiddenId = null;
+        Canvas.Focus();
+    }
+
+    void CommitTextEdit()
+    {
+        if (_edit is not { } e) return;
+        _edit = null; // prima di nascondere l'editor: nascondendolo scatta LostFocus
+        var text = TextEditor.Text ?? "";
+        TextEditor.IsVisible = false;
+        Canvas.HiddenId = null;
+        try
+        {
+            if (e.Id is { } id)
+            {
+                if (text.Length == 0) _bus.Execute([new DeleteObjects { Targets = [id] }]); // un testo svuotato sparisce
+                else if (text != _editOriginal) _bus.Execute([new SetText { Targets = [id], Text = text }]);
+            }
+            else if (text.Trim().Length > 0)
+            {
+                var s = _textDefaults;
+                var r = _bus.Execute([new CreateShape
+                {
+                    Type = "text", Text = text, X = e.At.X, Y = e.At.Y, Width = e.WrapWidth ?? 0,
+                    FontFamily = s.Family, FontSize = s.Size, Bold = s.Bold, Italic = s.Italic, Align = s.Align,
+                    Fill = Canvas.Fill ?? "#000000",
+                }]);
+                Canvas.Select(r.CreatedIds[0]);
+                Canvas.Tool = Tool.Select; // dopo aver scritto si torna alla selezione
+                SyncToolButtons();
+            }
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
     void ToCurves()
@@ -302,7 +463,7 @@ public partial class MainWindow : Window
     /// <summary>Riallinea elenco oggetti e canvas al documento (thread UI).</summary>
     void Refresh()
     {
-        var items = _bus.Read(d => d.Objects.Reverse().Select(o => (o.Id, Label: $"{o.Name ?? o.Type}   ·   {o.Id}{(Document.SelfAndDescendants(o).Any(x => _aiTouched.Contains(x.Id)) ? "   ·   AI" : "")}")).ToList());
+        var items = _bus.Read(d => d.Objects.Reverse().Select(o => (o.Id, Label: $"{o.Name ?? (o is TextObject tx ? "“" + (tx.Text.Length > 24 ? tx.Text[..24].Replace('\n', ' ') + "…" : tx.Text.Replace('\n', ' ')) + "”" : o.Type)}   ·   {o.Id}{(Document.SelfAndDescendants(o).Any(x => _aiTouched.Contains(x.Id)) ? "   ·   AI" : "")}")).ToList());
         _ids = items.Select(i => i.Id).ToList();
 
         Canvas.PruneSelection(_ids);
@@ -327,5 +488,7 @@ public partial class MainWindow : Window
 
         Canvas.InvalidateVisual();
         UpdateScrollBars(); // il contenuto può essere cambiato
+        UpdateBars();
+        SyncTextBar();
     }
 }

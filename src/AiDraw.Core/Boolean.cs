@@ -35,6 +35,8 @@ internal static class PolyBoolean
             case PathObject p:
                 segs = PathData.Transform(p.Segments, p.Fit);
                 break;
+            case TextObject:
+                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un testo: convertilo prima in curve con shape.toPath.");
             default:
                 throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un {o.Type}: le operazioni booleane funzionano su rettangoli, ellissi e path (separa prima i gruppi con object.ungroup).");
         }

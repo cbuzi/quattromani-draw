@@ -14,7 +14,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
         Returns the current document as compact JSON: {"version":N,"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
-        type is "rectangle", "ellipse", "path" or "group". Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z);
+        type is "rectangle", "ellipse", "path", "text" or "group". Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z);
         groups include `children` (same structure, listed bottom to top).
         `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
         Objects are listed bottom to top (the last one is drawn on top). Bounds are in document pixels, y grows downward.
@@ -27,7 +27,8 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
     }, Json.Options));
 
     sealed record ObjInfo(string Id, string? Name, string Type, double[] Bounds, double? Rotation, double[]? Size,
-        string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children);
+        string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children,
+        string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null);
 
     // `parent` porta dallo spazio del contenitore (gruppo) allo spazio pagina.
     static ObjInfo Describe(SceneObject o, Matrix3x2 parent)
@@ -41,7 +42,9 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
             rotated ? R(rotation) : null, rotated ? [R(o.Width), R(o.Height)] : null,
             o.Fill, o.Stroke, o.StrokeWidth == 0 ? null : o.StrokeWidth,
             o is PathObject p ? PathData.ToString(PathData.Transform(p.Segments, p.Fit * world)) : null,
-            o is GroupObject g ? g.Children.Select(c => Describe(c, g.Fit * world)).ToList() : null);
+            o is GroupObject g ? g.Children.Select(c => Describe(c, g.Fit * world)).ToList() : null,
+            (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
+            o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align);
     }
 
     [McpServerTool(Name = "execute")]
@@ -61,7 +64,10 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
           {"cmd":"shape.boolean","op":"weld","targets":["a","b"],"name":"merged"}   (op: weld = union; intersect; subtract = the lowest object minus all the others; trim = like subtract but the cutting objects stay)
           {"cmd":"path.set","target":"roof","d":"M 0 60 L 50 -10 L 100 60 Z"}   (replaces the geometry of a top-level path with new SVG data in page coordinates, i.e. what get_document reports in `d`; use it to move/add/remove nodes or reshape curves; accumulated move/rotation is baked into the data)
           {"cmd":"shape.toPath","targets":["sun"]}   (turns rectangles/ellipses into paths, keeping id, name, style and rotation, so they can be reshaped with path.set)
+          {"cmd":"shape.create","type":"text","name":"title","text":"Hello\nworld","fontFamily":"Helvetica Neue","fontSize":32,"bold":true,"align":"center","fill":"#111827","x":20,"y":20}   (text: '\n' = new line; with `width` the text wraps at that width, otherwise it is one line per '\n'; height is computed; accepts rel too)
+          {"cmd":"text.set","targets":["title"],"text":"Goodbye","fontSize":40,"italic":true}   (change content and/or style; omitted fields stay; width 0 removes wrapping)
           {"cmd":"object.delete","targets":["o1"]}
+        Fonts: if you omit fontFamily a default is used; call list_fonts for the families installed on this computer (an unknown font gives an error listing some). Text can be moved, resized (stretches it), rotated, grouped and positioned with rel like any object; shape.toPath turns text into editable curves (needed for shape.boolean).
         shape.boolean works on rectangles, ellipses and paths on the same level (ungroup groups first), needs 2+ targets and returns the new path id in `created`.
         The result is a path with the style of the lowest object (in z-order); curves are flattened into short segments. Add "keepOriginals":true to keep the source objects.
         RELATIVE POSITIONING: instead of x/y, shape.create accepts "rel" (and object.place takes it too), so you do not have to compute coordinates:
@@ -93,7 +99,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }
@@ -107,6 +113,18 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         {
             throw new McpException($"{ex.Message} (the whole batch was rolled back; nothing changed)");
         }
+    }
+
+    [McpServerTool(Name = "list_fonts", ReadOnly = true)]
+    [Description("""
+        Lists the font families installed on the computer running AiDraw, to use as `fontFamily` in text commands.
+        Returns {"default":"<family used when fontFamily is omitted>","families":[...]}. Optional `filter` keeps only the names containing that text (case-insensitive).
+        """)]
+    public string ListFonts([Description("Only families whose name contains this text.")] string? filter = null)
+    {
+        var engine = bus.Document.TextEngine ?? throw new McpException("The font engine is not available.");
+        var families = engine.Families.Where(f => string.IsNullOrEmpty(filter) || f.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+        return JsonSerializer.Serialize(new { @default = engine.DefaultFamily, families }, Json.Options);
     }
 
     [McpServerTool(Name = "render", ReadOnly = true)]

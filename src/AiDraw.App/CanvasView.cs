@@ -14,7 +14,10 @@ using SkiaSharp;
 
 namespace AiDraw.App;
 
-public enum Tool { Select, Node, Rectangle, Ellipse, Pen }
+public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text }
+
+/// <summary>Richiesta di modificare un testo: un oggetto esistente (Id) oppure un testo nuovo in un punto, con larghezza d'a capo opzionale.</summary>
+public sealed record TextEditRequest(string? Id, Point At, double? WrapWidth);
 
 public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 
@@ -24,7 +27,7 @@ public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle }
+    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox }
     enum NodePart { Node, In, Out }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
@@ -73,6 +76,31 @@ public sealed class CanvasView : Control
     public double Zoom => _zoom;
     public int NodeSelectionCount => _nodeSel.Count;
 
+    /// <summary>Oggetto da non disegnare (il testo che si sta modificando sul posto).</summary>
+    string? _hiddenId;
+    public string? HiddenId { get => _hiddenId; set { _hiddenId = value; InvalidateVisual(); } }
+
+    public event Action<TextEditRequest>? TextEditRequested;
+
+    public Point DocToScreen(Point p) => new(p.X * _zoom + _pan.X, p.Y * _zoom + _pan.Y);
+
+    /// <summary>Dove mostrare l'editor di un testo: angolo in alto a sinistra sullo schermo e rotazione in gradi.</summary>
+    public (Point TopLeft, double Rotation)? EditorPlacement(string id)
+    {
+        var it = Bus?.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is { } o ? Item.From(o) : null);
+        if (it == null) return null;
+        var p = PointOn(it, 0, 0);
+        return (DocToScreen(new Point(p.X, p.Y)), Math.Atan2(it.M.M12, it.M.M11) * 180 / Math.PI);
+    }
+
+    bool IsText(string id) => Bus?.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is TextObject) ?? false;
+
+    /// <summary>Modifica il testo selezionato (Invio / F2).</summary>
+    public void EditSelectedText()
+    {
+        if (SelectedId is { } id && IsText(id)) TextEditRequested?.Invoke(new TextEditRequest(id, default, null));
+    }
+
     /// <summary>Stile applicato alle nuove forme.</summary>
     public string? Fill { get; set; } = "#3B82F6";
     public string? Stroke { get; set; } = "#1F2937";
@@ -88,7 +116,7 @@ public sealed class CanvasView : Control
             if (value != Tool.Pen) _pen.Clear();
             _nodeSel.Clear();
             _nodeWork = null;
-            Cursor = value is Tool.Select or Tool.Node ? null : new Cursor(StandardCursorType.Cross);
+            Cursor = value is Tool.Select or Tool.Node ? null : new Cursor(value == Tool.Text ? StandardCursorType.Ibeam : StandardCursorType.Cross);
             ToolChanged?.Invoke();
             InvalidateVisual();
         }
@@ -241,6 +269,18 @@ public sealed class CanvasView : Control
             if (_drag != Drag.None) e.Pointer.Capture(this);
             return;
         }
+        else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Text)
+        {
+            if (HitTest(ToDoc(pt.Position)) is { } textHit && IsText(textHit))
+            {
+                Select(textHit); // click su un testo esistente: lo si modifica
+                TextEditRequested?.Invoke(new TextEditRequest(textHit, default, null));
+                return;
+            }
+            // Click = testo "artistico" in quel punto; trascinando si disegna la larghezza per l'a capo automatico.
+            _createStart = _createEnd = ToDoc(pt.Position);
+            _drag = Drag.TextBox;
+        }
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Node)
         {
             NodePress(pt.Position, e.ClickCount, shift);
@@ -273,6 +313,12 @@ public sealed class CanvasView : Control
             }
             else if (HitTest(ToDoc(pt.Position)) is { } hit)
             {
+                if (e.ClickCount >= 2 && !shift && IsText(hit)) // doppio click su un testo: modifica
+                {
+                    Select(hit);
+                    TextEditRequested?.Invoke(new TextEditRequest(hit, default, null));
+                    return;
+                }
                 if (shift) // Shift+click: aggiunge o toglie dalla selezione
                     SetSelection(_selection.Contains(hit) ? _selection.Where(i => i != hit) : _selection.Append(hit));
                 else
@@ -558,7 +604,7 @@ public sealed class CanvasView : Control
         }
         else if (_drag == Drag.Move)
             _moveOffset = (pos - _start) / _zoom;
-        else if (_drag == Drag.Create)
+        else if (_drag is Drag.Create or Drag.TextBox)
             _createEnd = ToDoc(pos);
         else if (_drag == Drag.Marquee)
             _marqueeEnd = ToDoc(pos);
@@ -622,6 +668,14 @@ public sealed class CanvasView : Control
                 Select(r.CreatedIds[0]);
                 Tool = Tool.Select; // dopo aver disegnato si torna alla selezione
             }
+        }
+        else if (_drag == Drag.TextBox)
+        {
+            var b = CreateBox();
+            _drag = Drag.None;
+            TextEditRequested?.Invoke(b.Width * _zoom >= 12
+                ? new TextEditRequest(null, new Point(b.X, b.Y), b.Width)
+                : new TextEditRequest(null, _createStart, null));
         }
         else if (_drag == Drag.Marquee && Tool == Tool.Node)
         {
@@ -718,6 +772,7 @@ public sealed class CanvasView : Control
         // Senza uno sfondo (anche trasparente) il controllo non riceve gli eventi del mouse.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var items = Bus.Read(d => d.Objects.Select(Item.From).ToList());
+        if (_hiddenId != null) items.RemoveAll(i => i.Id == _hiddenId);
         for (var i = 0; i < items.Count; i++)
             if (_selection.Contains(items[i].Id)) items[i] = Preview(items[i]);
 
@@ -748,7 +803,7 @@ public sealed class CanvasView : Control
         }
 
         var gesture = new Gesture(
-            _drag == Drag.Create ? CreateBox() : null, Tool == Tool.Ellipse,
+            _drag is Drag.Create or Drag.TextBox ? CreateBox() : null, Tool == Tool.Ellipse,
             _drag == Drag.Marquee ? MarqueeBox() : null,
             Tool == Tool.Pen && _pen.Count > 0
                 ? _pen.Select(n => new PenNodeView(V(n.P), n.In is { } i ? V(i) : null, n.Out is { } o ? V(o) : null)).ToList()

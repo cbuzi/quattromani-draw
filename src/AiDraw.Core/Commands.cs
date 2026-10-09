@@ -30,6 +30,7 @@ public static class Json
 [JsonDerivedType(typeof(BooleanOp), "shape.boolean")]
 [JsonDerivedType(typeof(SetPath), "path.set")]
 [JsonDerivedType(typeof(PlaceObjects), "object.place")]
+[JsonDerivedType(typeof(SetText), "text.set")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
 {
@@ -60,6 +61,14 @@ public sealed class CreateShape : Command
     public string? D { get; set; }
     /// <summary>Posizionamento relativo ad altri oggetti, al posto di x e y.</summary>
     public Placement? Rel { get; set; }
+    /// <summary>Solo per type "text": il contenuto ('\n' = a capo) e lo stile. Per il testo, width è la larghezza per l'a capo automatico.</summary>
+    public string? Text { get; set; }
+    public string? FontFamily { get; set; }
+    public double? FontSize { get; set; }
+    public bool? Bold { get; set; }
+    public bool? Italic { get; set; }
+    public string? Align { get; set; }
+    public double? LineHeight { get; set; }
 
     SceneObject? _obj;
 
@@ -90,8 +99,25 @@ public sealed class CreateShape : Command
                     var box = PathData.Bounds(segs)!.Value;
                     obj = new PathObject { Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
                     break;
+                case "text":
+                    if (string.IsNullOrEmpty(Text))
+                        throw new CommandException("shape.create: type 'text' richiede 'text', es. {\"cmd\":\"shape.create\",\"type\":\"text\",\"text\":\"Ciao\",\"fontSize\":32,\"x\":10,\"y\":10}.");
+                    if (Height != 0)
+                        throw new CommandException("shape.create: per il testo 'height' viene calcolata; 'width', se c'e', e' la larghezza per l'a capo automatico.");
+                    TextObject.Validate(doc, FontFamily, FontSize, Align, LineHeight, Width);
+                    var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile: il testo non si puo' creare.");
+                    var text = new TextObject
+                    {
+                        Text = Text, X = X, Y = Y,
+                        FontFamily = FontFamily is null ? engine.DefaultFamily : engine.Families.First(f => f.Equals(FontFamily, StringComparison.OrdinalIgnoreCase)),
+                        FontSize = FontSize ?? 24, Bold = Bold ?? false, Italic = Italic ?? false, Align = Align ?? "left",
+                        LineHeight = LineHeight ?? 1, WrapWidth = Width > 0 ? Width : null,
+                    };
+                    text.Relayout(doc);
+                    obj = text;
+                    break;
                 default:
-                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\".");
+                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\", \"text\".");
             }
             if (Rel != null)
             {
@@ -105,6 +131,8 @@ public sealed class CreateShape : Command
             obj.Name = Name;
             obj.Fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
             obj.Stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
+            // Un testo senza colore sarebbe invisibile: nero.
+            if (obj is TextObject && Fill is null && Stroke is null) obj.Fill = "#000000";
             // Un path senza fill né stroke sarebbe invisibile: gli do un tratto nero.
             if (obj is PathObject && obj.Fill is null && obj.Stroke is null && Fill is null && Stroke is null) obj.Stroke = "#000000";
             obj.StrokeWidth = StrokeWidth ?? (obj.Stroke is null ? 0 : 1);
@@ -410,7 +438,7 @@ public sealed class SetPath : Command
     }
 }
 
-/// <summary>Converte rettangoli ed ellissi in path (stesso id, nome, stile e trasformazione), per poterne modificare i nodi.</summary>
+/// <summary>Converte rettangoli, ellissi e testi in path (stesso id, nome, stile e trasformazione), per poterne modificare i nodi.</summary>
 public sealed class ConvertToPath : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -425,16 +453,24 @@ public sealed class ConvertToPath : Command
         var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is GroupObject) is { } g)
             throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' e' un gruppo: separalo prima con object.ungroup.");
-        var convertible = objs.Where(o => o is RectangleObject or EllipseObject).ToList();
+        var convertible = objs.Where(o => o is RectangleObject or EllipseObject or TextObject).ToList();
         if (convertible.Count == 0) throw new CommandException("shape.toPath: gli oggetti indicati sono gia' path.");
 
         if (_done.Count == 0)
             foreach (var o in convertible)
             {
-                var segs = o is EllipseObject
-                    ? PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height)
-                    : PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
-                var box = new Box(o.X, o.Y, o.Width, o.Height);
+                List<PathSeg> segs;
+                if (o is TextObject t)
+                {
+                    // I glifi diventano curve: posizionati e stirati come il testo, poi la trasformazione resta quella dell'oggetto.
+                    var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile.");
+                    var outline = engine.Outline(t.Style, t.Lines);
+                    segs = PathData.Transform(outline, Matrix3x2.CreateTranslation((float)t.Source.X, (float)t.Source.Y) * t.Fit);
+                    if (!segs.Any(s => s.Op is 'L' or 'C')) throw new CommandException("shape.toPath: il testo non contiene caratteri visibili.");
+                }
+                else if (o is EllipseObject) segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);
+                else segs = PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
+                var box = o is TextObject ? PathData.Bounds(segs)!.Value : new Box(o.X, o.Y, o.Width, o.Height);
                 var container = doc.ContainerOf(o)!;
                 _done.Add((container, container.IndexOf(o), o, new PathObject
                 {
