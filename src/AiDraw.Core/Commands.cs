@@ -30,6 +30,9 @@ public abstract class Command
 
     [JsonIgnore] public virtual IEnumerable<string> CreatedIds => [];
 
+    /// <summary>Id degli oggetti toccati dal comando (validi dopo Apply).</summary>
+    [JsonIgnore] public virtual IEnumerable<string> AffectedIds => CreatedIds;
+
     public abstract void Apply(Document doc);
     public abstract void Undo(Document doc);
 }
@@ -88,6 +91,8 @@ public sealed class MoveObjects : Command
 
     List<(SceneObject Obj, Matrix3x2 Old)> _old = [];
 
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
+
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.move: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
@@ -111,6 +116,8 @@ public sealed class SetStyle : Command
     public double? StrokeWidth { get; set; }
 
     List<(SceneObject Obj, string? Fill, string? Stroke, double Width)> _old = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
 
     public override void Apply(Document doc)
     {
@@ -140,6 +147,8 @@ public sealed class DeleteObjects : Command
     public List<string> Targets { get; set; } = [];
 
     List<(Layer Layer, int Index, SceneObject Obj)> _removed = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _removed.Select(e => e.Obj.Id);
 
     public override void Apply(Document doc)
     {

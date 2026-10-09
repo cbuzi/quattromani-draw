@@ -16,7 +16,15 @@
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
                 </StackPanel>
-                <TextBlock x:Name="ZoomText" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.6" />
+                    <Border x:Name="AgentChip" IsVisible="False" CornerRadius="12" Padding="10,4" Background="#26A855F7">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Ellipse Width="8" Height="8" Fill="#A855F7" VerticalAlignment="Center" />
+                            <TextBlock x:Name="AgentText" FontSize="12" FontWeight="SemiBold" Foreground="#A855F7" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
                 <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Content="Light / Dark" VerticalAlignment="Center" />
             </Grid>
         </Border>

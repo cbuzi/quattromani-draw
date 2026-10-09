@@ -7,6 +7,7 @@ using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using SkiaSharp;
 
 namespace AiDraw.App;
@@ -22,6 +23,10 @@ public sealed class CanvasView : Control
     Point _last, _start;
     Vector _moveOffset; // spostamento in corso, in coordinate documento (anteprima)
 
+    const long HighlightMs = 3000;
+    readonly Dictionary<string, long> _highlights = []; // id oggetto -> TickCount64 della modifica dell'agente
+    readonly DispatcherTimer _fade;
+
     public CommandBus? Bus { get; set; }
     public string? SelectedId { get; private set; }
     public double Zoom => _zoom;
@@ -34,6 +39,25 @@ public sealed class CanvasView : Control
         ClipToBounds = true;
         Focusable = true;
         ActualThemeVariantChanged += (_, _) => InvalidateVisual();
+        _fade = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Render, (_, _) => FadeTick());
+    }
+
+    /// <summary>Evidenzia per qualche secondo gli oggetti creati o modificati dall'agente.</summary>
+    public void Highlight(IEnumerable<string> ids)
+    {
+        var now = Environment.TickCount64;
+        foreach (var id in ids) _highlights[id] = now;
+        if (_highlights.Count > 0) _fade.Start();
+        InvalidateVisual();
+    }
+
+    void FadeTick()
+    {
+        var now = Environment.TickCount64;
+        foreach (var id in _highlights.Where(h => now - h.Value > HighlightMs).Select(h => h.Key).ToList())
+            _highlights.Remove(id);
+        if (_highlights.Count == 0) _fade.Stop();
+        InvalidateVisual();
     }
 
     public void Select(string? id)
@@ -125,14 +149,17 @@ public sealed class CanvasView : Control
         var items = Bus.Read(d => d.Objects.Select(o => new Item(o.Id, o is EllipseObject, o.Bounds, o.X, o.Y, o.Width, o.Height,
             o.Transform, o.Fill, o.Stroke, o.StrokeWidth)).ToList());
         var dark = ActualThemeVariant == ThemeVariant.Dark;
-        context.Custom(new SceneOp(new Rect(Bounds.Size), items, SelectedId, _moveOffset, _pan, _zoom, dark));
+        var now = Environment.TickCount64;
+        var glow = _highlights.ToDictionary(h => h.Key, h => (float)Math.Max(0, 1 - (now - h.Value) / (double)HighlightMs));
+        context.Custom(new SceneOp(new Rect(Bounds.Size), items, SelectedId, _moveOffset, _pan, _zoom, dark, glow));
     }
 
     // Copia immutabile degli oggetti: il rendering gira su un altro thread.
     sealed record Item(string Id, bool IsEllipse, Box Bounds, double X, double Y, double W, double H,
         System.Numerics.Matrix3x2 M, string? Fill, string? Stroke, double StrokeWidth);
 
-    sealed class SceneOp(Rect bounds, List<Item> items, string? selected, Vector offset, Point pan, double zoom, bool dark)
+    sealed class SceneOp(Rect bounds, List<Item> items, string? selected, Vector offset, Point pan, double zoom, bool dark,
+        Dictionary<string, float> glow)
         : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
@@ -172,6 +199,22 @@ public sealed class CanvasView : Control
                     if (it.IsEllipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint);
                 }
                 canvas.Restore();
+            }
+
+            // Oggetti toccati dall'agente: alone viola che sfuma.
+            foreach (var it in items)
+            {
+                if (!glow.TryGetValue(it.Id, out var a)) continue;
+                var pad = 4 / zoom;
+                var r = SKRect.Create((float)(it.Bounds.X - pad), (float)(it.Bounds.Y - pad),
+                    (float)(it.Bounds.Width + 2 * pad), (float)(it.Bounds.Height + 2 * pad));
+                paint.Style = SKPaintStyle.Fill;
+                paint.Color = new SKColor(0xA8, 0x55, 0xF7, (byte)(50 * a));
+                canvas.DrawRect(r, paint);
+                paint.Style = SKPaintStyle.Stroke;
+                paint.StrokeWidth = (float)(2.5 / zoom);
+                paint.Color = new SKColor(0xA8, 0x55, 0xF7, (byte)(255 * a));
+                canvas.DrawRect(r, paint);
             }
 
             // Selezione: contorno sul bounding box (+ anteprima dello spostamento).
