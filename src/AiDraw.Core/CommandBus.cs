@@ -63,6 +63,22 @@ public sealed class CommandBus(Document document)
         return result;
     }
 
+    /// <summary>
+    /// Sostituisce l'intero documento (apri o nuovo). Non è annullabile: l'undo ricomincia da zero; la versione però
+    /// continua a crescere e nel registro resta una voce "reset", così chi legge get_changes sa che deve ricaricare.
+    /// </summary>
+    public void Replace(Document loaded, string reason, string? file, string author = "human")
+    {
+        lock (_gate)
+        {
+            document.ReplaceWith(loaded);
+            _undo.Clear();
+            _redo.Clear();
+            _log.Add(new(++document.Version, author, "reset", new DocumentReset { Reason = reason, File = file, Author = author }));
+        }
+        Changed?.Invoke();
+    }
+
     public bool Undo(string author = "human")
     {
         lock (_gate)

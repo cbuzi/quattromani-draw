@@ -33,6 +33,7 @@ public static class Json
 [JsonDerivedType(typeof(SetText), "text.set")]
 [JsonDerivedType(typeof(SetPage), "page.set")]
 [JsonDerivedType(typeof(RenameObject), "object.rename")]
+[JsonDerivedType(typeof(DocumentReset), "document.reset")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
 {

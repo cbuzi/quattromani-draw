@@ -56,7 +56,8 @@ static class SceneRenderer
         return path;
     }
 
-    public static void DrawItem(SKCanvas canvas, SKPaint paint, Item it)
+    /// <param name="vectorPatterns">Per il PDF: i motivi si disegnano come geometria vettoriale (lo shader a immagine verrebbe rasterizzato a bassa risoluzione).</param>
+    public static void DrawItem(SKCanvas canvas, SKPaint paint, Item it, bool vectorPatterns = false)
     {
         canvas.Save();
         var m = ToSk(it.M);
@@ -65,13 +66,17 @@ static class SceneRenderer
         {
             var fit = ToSk(it.Fit);
             canvas.Concat(in fit);
-            foreach (var child in it.Children!) DrawItem(canvas, paint, child);
+            foreach (var child in it.Children!) DrawItem(canvas, paint, child, vectorPatterns);
         }
         else
         {
             // Il gradiente si riferisce al riquadro dell'oggetto (per il testo, quello del testo impaginato).
             var box = it.Kind == Kind.Text ? it.Source : new Box(it.X, it.Y, it.W, it.H);
-            if (Prepare(paint, it.Fill, box))
+            if (vectorPatterns && it.Kind != Kind.Text && it.Fill != null && Pattern.TryParse(it.Fill, out var pat) && DrawVectorPattern(canvas, paint, it, pat, box))
+            {
+                // disegnato come geometria
+            }
+            else if (Prepare(paint, it.Fill, box))
             {
                 paint.Style = SKPaintStyle.Fill;
                 DrawShape(canvas, paint, it);
@@ -157,6 +162,68 @@ static class SceneRenderer
         return picture.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, SKFilterMode.Linear, local, new SKRect(0, 0, tile, tile));
     }
 
+    // Motivo come geometria: sfondo, poi gli elementi del motivo ritagliati sulla forma. False se sarebbero troppi.
+    static bool DrawVectorPattern(SKCanvas canvas, SKPaint paint, Item it, PatternSpec p, Box b)
+    {
+        // Area da coprire nello spazio del motivo (origine nell'angolo in alto a sinistra del riquadro, ruotato dell'angolo).
+        var rad = -p.Angle * Math.PI / 180;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+        var us = new List<double>(); var vs = new List<double>();
+        foreach (var (cx, cy) in new[] { (0.0, 0.0), (b.Width, 0), (0, b.Height), (b.Width, b.Height) })
+        {
+            us.Add(cx * cos - cy * sin);
+            vs.Add(cx * sin + cy * cos);
+        }
+        double minU = us.Min(), maxU = us.Max(), minV = vs.Min(), maxV = vs.Max(), s = p.Size;
+        var cells = Math.Ceiling((maxU - minU) / s) * Math.Ceiling((maxV - minV) / s);
+        if (cells > 40000) return false;
+
+        using var clip = new SKPath();
+        var r = SKRect.Create((float)it.X, (float)it.Y, (float)it.W, (float)it.H);
+        switch (it.Kind)
+        {
+            case Kind.Ellipse: clip.AddOval(r); break;
+            case Kind.Path: clip.AddPath(BuildPath(it.Segments!, it.Fit)); break;
+            default: clip.AddRect(r); break;
+        }
+
+        paint.Shader?.Dispose();
+        paint.Shader = null;
+        paint.Style = SKPaintStyle.Fill;
+        paint.Color = ParseColor(p.Bg) ?? SKColors.Transparent;
+        canvas.DrawPath(clip, paint);
+
+        canvas.Save();
+        canvas.ClipPath(clip, antialias: true);
+        canvas.Translate((float)b.X, (float)b.Y);
+        canvas.RotateDegrees((float)p.Angle);
+        paint.Color = ParseColor(p.Fg) ?? SKColors.Black;
+        int i0 = (int)Math.Floor(minU / s), i1 = (int)Math.Ceiling(maxU / s), j0 = (int)Math.Floor(minV / s), j1 = (int)Math.Ceiling(maxV / s);
+        var size = (float)s;
+        switch (p.Kind)
+        {
+            case "stripes":
+                for (var i = i0; i < i1; i++) canvas.DrawRect(i * size, (float)minV, size / 2, (float)(maxV - minV), paint);
+                break;
+            case "dots":
+                for (var i = i0; i < i1; i++)
+                    for (var j = j0; j < j1; j++) canvas.DrawCircle((i + 0.5f) * size, (j + 0.5f) * size, size * 0.3f, paint);
+                break;
+            case "checker":
+                for (var i = i0; i < i1; i++)
+                    for (var j = j0; j < j1; j++)
+                        if (((i + j) & 1) == 0) canvas.DrawRect(i * size, j * size, size, size, paint);
+                break;
+            case "grid":
+                var t = Math.Max(size * 0.12f, 0.5f);
+                for (var i = i0; i < i1; i++) canvas.DrawRect(i * size, (float)minV, t, (float)(maxV - minV), paint);
+                for (var j = j0; j < j1; j++) canvas.DrawRect((float)minU, j * size, (float)(maxU - minU), t, paint);
+                break;
+        }
+        canvas.Restore();
+        return true;
+    }
+
     static void DrawShape(SKCanvas canvas, SKPaint paint, Item it)
     {
         if (it.Kind == Kind.Text)
@@ -165,9 +232,9 @@ static class SceneRenderer
             var fit = ToSk(it.Fit);
             canvas.Save();
             canvas.Concat(in fit);
-            using var font = SkiaTextEngine.CreateFont(it.Text!.Style);
+            using var fonts = new GlyphFonts(it.Text!.Style);
             foreach (var line in it.Text.Lines)
-                canvas.DrawText(line.Text, (float)(it.Source.X + line.X), (float)(it.Source.Y + line.Y), font, paint);
+                fonts.Draw(canvas, line.Text, (float)(it.Source.X + line.X), (float)(it.Source.Y + line.Y), paint);
             canvas.Restore();
             return;
         }

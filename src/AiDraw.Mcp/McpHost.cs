@@ -12,13 +12,14 @@ public static class McpHost
     /// <summary>Porta del server; AIDRAW_PORT la cambia (utile per avere più istanze o fare prove senza toccare quella in uso).</summary>
     public static int Port { get; } = int.TryParse(Environment.GetEnvironmentVariable("AIDRAW_PORT"), out var p) ? p : 5577;
 
-    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer)
+    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer, IFileService files)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://localhost:{Port}");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Services.AddSingleton(bus);
         builder.Services.AddSingleton(renderer);
+        builder.Services.AddSingleton(files);
         builder.Services.AddMcpServer().WithHttpTransport().WithTools<AiDrawTools>();
 
         var app = builder.Build();

@@ -123,6 +123,9 @@ public sealed partial class Document
 {
     int _nextId;
 
+    /// <summary>Contatore degli id (per salvare e riaprire senza collisioni).</summary>
+    public int NextIdValue { get => _nextId; internal set => _nextId = value; }
+
     /// <summary>Misura e contorni del testo, forniti dall'app; senza, i comandi sul testo danno un errore esplicito.</summary>
     public ITextEngine? TextEngine { get; set; }
 
@@ -175,6 +178,14 @@ public sealed partial class Document
     /// <summary>Riquadro dell'oggetto nello spazio pagina (anche se sta dentro dei gruppi trasformati).</summary>
     public Box PageBounds(SceneObject o) =>
         SceneObject.BoundsOf(o.X, o.Y, o.Width, o.Height, o.Transform * ParentMatrix(o));
+
+    /// <summary>Sostituisce il contenuto con quello di un altro documento (apri, nuovo). La versione e il motore dei font restano.</summary>
+    internal void ReplaceWith(Document other)
+    {
+        Pages.Clear();
+        Pages.AddRange(other.Pages);
+        _nextId = other._nextId;
+    }
 
     internal string NewId() => "o" + ++_nextId;
 

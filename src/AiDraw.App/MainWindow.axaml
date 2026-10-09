@@ -13,6 +13,19 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="AiDraw" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <Button x:Name="FileButton" Classes="bar" Content="File">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                <MenuItem x:Name="MenuNew" Header="New" />
+                                <MenuItem x:Name="MenuOpen" Header="Open…" />
+                                <Separator />
+                                <MenuItem x:Name="MenuSave" Header="Save" />
+                                <MenuItem x:Name="MenuSaveAs" Header="Save as…" />
+                                <Separator />
+                                <MenuItem x:Name="MenuExportPdf" Header="Export PDF…" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
                     <Border Width="1" Height="20" Margin="8,0" Background="{DynamicResource PanelBorder}" />

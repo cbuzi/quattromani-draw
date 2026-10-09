@@ -9,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace AiDraw.Mcp;
 
 [McpServerToolType]
-public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
+public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer, IFileService files)
 {
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
@@ -20,6 +20,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
         Objects are listed bottom to top (the last one is drawn on top). Bounds are in document pixels, y grows downward.
         Call this before editing to learn ids and names, and remember `version` to call get_changes later.
+        If get_changes ever reports a change of kind "reset" (document.reset), the whole document was replaced (file opened or new): call get_document again.
         """)]
     public string GetDocument() => bus.Read(d => JsonSerializer.Serialize(new
     {
@@ -127,6 +128,86 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         {
             throw new McpException($"{ex.Message} (the whole batch was rolled back; nothing changed)");
         }
+    }
+
+    // Percorso assoluto con l'estensione giusta: l'agente non deve poter scrivere file di altro tipo.
+    static string CheckPath(string path, string extension, bool mustExist)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+            throw new McpException($"'path' must be an absolute path ending in {extension}, e.g. \"/Users/me/drawing{extension}\".");
+        if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            throw new McpException($"The file must have the {extension} extension.");
+        if (mustExist && !File.Exists(path)) throw new McpException($"File not found: {path}");
+        if (!mustExist && !Directory.Exists(Path.GetDirectoryName(path))) throw new McpException($"The folder does not exist: {Path.GetDirectoryName(path)}");
+        return path;
+    }
+
+    static T Guard<T>(Func<T> action)
+    {
+        try { return action(); }
+        catch (CommandException ex) { throw new McpException(ex.Message); }
+    }
+
+    [McpServerTool(Name = "save_document")]
+    [Description("""
+        Saves the document as an .aidraw file (JSON). Without `path` it saves over the file currently open; for a document that was never saved `path` is required.
+        `path` must be absolute and end in .aidraw. An existing file other than the current one is not overwritten unless `overwrite` is true (use it only if the user asked for that).
+        Returns {"path":"...","version":N}.
+        """)]
+    public string SaveDocument(
+        [Description("Absolute path ending in .aidraw. Omit to save the current file.")] string? path = null,
+        [Description("Allow replacing an existing file that is not the one currently open.")] bool overwrite = false)
+    {
+        if (path != null)
+        {
+            CheckPath(path, DocumentFile.Extension, mustExist: false);
+            if (File.Exists(path) && !overwrite && !string.Equals(path, files.CurrentPath, StringComparison.Ordinal))
+                throw new McpException($"{path} already exists. Choose another name, or pass overwrite=true only if the user asked to replace it.");
+        }
+        var saved = Guard(() => files.Save(path));
+        return JsonSerializer.Serialize(new { path = saved, version = bus.Version }, Json.Options);
+    }
+
+    [McpServerTool(Name = "open_document")]
+    [Description("""
+        Replaces the current document with the contents of an .aidraw file (absolute path). The previous document is lost: if it has unsaved changes the call fails,
+        unless `discardChanges` is true (ask the user first). Undo history starts over. Returns the same JSON as get_document so you can continue right away.
+        """)]
+    public string OpenDocument(
+        [Description("Absolute path of an existing .aidraw file.")] string path,
+        [Description("Open even if the current document has unsaved changes (they are lost).")] bool discardChanges = false)
+    {
+        CheckPath(path, DocumentFile.Extension, mustExist: true);
+        if (files.IsDirty && !discardChanges)
+            throw new McpException("The current document has unsaved changes. Call save_document first, or ask the user and pass discardChanges=true.");
+        Guard(() => { files.Open(path); return 0; });
+        return GetDocument();
+    }
+
+    [McpServerTool(Name = "new_document")]
+    [Description("Replaces the current document with a new empty one (A4 portrait; use page.set to change the size). Fails if there are unsaved changes unless `discardChanges` is true (ask the user first).")]
+    public string NewDocument([Description("Start over even if the current document has unsaved changes (they are lost).")] bool discardChanges = false)
+    {
+        if (files.IsDirty && !discardChanges)
+            throw new McpException("The current document has unsaved changes. Call save_document first, or ask the user and pass discardChanges=true.");
+        files.New();
+        return GetDocument();
+    }
+
+    [McpServerTool(Name = "export_pdf")]
+    [Description("""
+        Exports the page as a vector PDF (text, curves, gradients and patterns stay vector; the PDF page has the real size of the document page, e.g. A4).
+        `path` must be absolute and end in .pdf; an existing file is replaced only if `overwrite` is true. Returns {"path":"..."}.
+        """)]
+    public string ExportPdf(
+        [Description("Absolute path ending in .pdf.")] string path,
+        [Description("Replace the file if it already exists.")] bool overwrite = false)
+    {
+        CheckPath(path, ".pdf", mustExist: false);
+        if (File.Exists(path) && !overwrite)
+            throw new McpException($"{path} already exists. Choose another name, or pass overwrite=true only if the user asked to replace it.");
+        Guard(() => { files.ExportPdf(path); return 0; });
+        return JsonSerializer.Serialize(new { path }, Json.Options);
     }
 
     [McpServerTool(Name = "list_fonts", ReadOnly = true)]

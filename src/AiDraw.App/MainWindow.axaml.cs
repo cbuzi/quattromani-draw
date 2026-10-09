@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitFiles();
         Canvas.Bus = _bus;
 
         // Il bus può notificare da qualsiasi thread.
@@ -314,6 +315,14 @@ public partial class MainWindow : Window
             _bus.Redo();
             e.Handled = true;
         }
+        else if (cmd && e.Key == Key.S)
+        {
+            _ = SaveAsync(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); // Maiusc = Salva con nome
+            e.Handled = true;
+        }
+        else if (cmd && e.Key == Key.O) { _ = OpenAsync(); e.Handled = true; }
+        else if (cmd && e.Key == Key.N) { _ = NewDocumentAsync(); e.Handled = true; }
+        else if (cmd && e.Key == Key.E) { _ = ExportPdfAsync(); e.Handled = true; }
         else if (cmd && e.Key == Key.D0)
         {
             Canvas.FitPage();
@@ -834,8 +843,9 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    void ShowNotice(string message)
+    void ShowNotice(string message, bool error = true)
     {
+        NoticeText.Foreground = error ? new SolidColorBrush(Color.Parse("#EF4444")) : new SolidColorBrush(Color.Parse("#22C55E"));
         NoticeText.Text = message.Replace("shape.boolean: ", "").Replace("shape.toPath: ", "");
         NoticeText.IsVisible = true;
         _noticeTimer.Stop();
@@ -881,8 +891,15 @@ public partial class MainWindow : Window
         var (version, changes) = _bus.GetChanges(_seenVersion);
         _seenVersion = version;
 
+        var replaced = false;
         foreach (var change in changes)
         {
+            if (change.Kind == "reset") // documento sostituito (apri/nuovo): si riparte da zero
+            {
+                replaced = true;
+                _aiTouched.Clear();
+                continue;
+            }
             var ids = change.Command.AffectedIds.ToList();
             if (!change.Author.StartsWith("llm:"))
             {
@@ -896,6 +913,7 @@ public partial class MainWindow : Window
             _chipTimer.Stop();
             _chipTimer.Start();
         }
+        if (replaced) { Canvas.SetSelection([]); Canvas.FitPage(); }
         Refresh();
     }
 
@@ -933,5 +951,6 @@ public partial class MainWindow : Window
         SyncTextBar();
         SyncPageBar();
         UpdateStatus();
+        UpdateTitle(); // il titolo mostra "*" se ci sono modifiche non salvate
     }
 }
