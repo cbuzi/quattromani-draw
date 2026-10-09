@@ -1,0 +1,48 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:AiDraw.App"
+        x:Class="AiDraw.App.MainWindow"
+        Title="AiDraw" Width="1280" Height="800"
+        Background="{DynamicResource WorkBg}">
+
+    <DockPanel>
+        <!-- Barra superiore -->
+        <Border DockPanel.Dock="Top" Height="48" Padding="12,0"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="AiDraw" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
+                    <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
+                </StackPanel>
+                <TextBlock x:Name="ZoomText" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" />
+                <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Content="Light / Dark" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Toolbox -->
+        <Border DockPanel.Dock="Left" Width="60" Padding="0,10"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
+            <StackPanel Spacing="6" HorizontalAlignment="Center">
+                <ToggleButton Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
+                    <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
+                          Fill="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+            </StackPanel>
+        </Border>
+
+        <!-- Pannello oggetti -->
+        <Border DockPanel.Dock="Right" Width="260"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Classes="caption" Text="OBJECTS" Margin="16,14,16,8" />
+                <ListBox x:Name="ObjectList" Background="Transparent" Margin="6,0" />
+            </DockPanel>
+        </Border>
+
+        <local:CanvasView x:Name="Canvas" />
+    </DockPanel>
+</Window>
