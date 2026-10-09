@@ -12,16 +12,20 @@ using SkiaSharp;
 
 namespace AiDraw.App;
 
+public enum Tool { Select, Rectangle, Ellipse }
+
 /// <summary>Canvas Skia con pan/zoom, selezione e spostamento. Le modifiche passano solo dal CommandBus.</summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move }
+    enum Drag { None, Pan, Move, Create }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
     double _zoom = 1;
     Drag _drag;
     Point _last, _start;
     Vector _moveOffset; // spostamento in corso, in coordinate documento (anteprima)
+    Point _createStart, _createEnd; // rettangolo in creazione, in coordinate documento
+    Tool _tool;
 
     const long HighlightMs = 3000;
     readonly Dictionary<string, long> _highlights = []; // id oggetto -> TickCount64 della modifica dell'agente
@@ -31,8 +35,26 @@ public sealed class CanvasView : Control
     public string? SelectedId { get; private set; }
     public double Zoom => _zoom;
 
+    /// <summary>Stile applicato alle nuove forme.</summary>
+    public string? Fill { get; set; } = "#3B82F6";
+    public string? Stroke { get; set; } = "#1F2937";
+    public double StrokeWidth { get; set; } = 2;
+
+    public Tool Tool
+    {
+        get => _tool;
+        set
+        {
+            if (_tool == value) return;
+            _tool = value;
+            Cursor = value == Tool.Select ? null : new Cursor(StandardCursorType.Cross);
+            ToolChanged?.Invoke();
+        }
+    }
+
     public event Action? SelectionChanged;
     public event Action? ViewChanged;
+    public event Action? ToolChanged;
 
     public CanvasView()
     {
@@ -92,6 +114,11 @@ public sealed class CanvasView : Control
 
         if (pt.Properties.IsMiddleButtonPressed || pt.Properties.IsRightButtonPressed)
             _drag = Drag.Pan;
+        else if (pt.Properties.IsLeftButtonPressed && Tool != Tool.Select)
+        {
+            _createStart = _createEnd = ToDoc(pt.Position);
+            _drag = Drag.Create;
+        }
         else if (pt.Properties.IsLeftButtonPressed)
         {
             Select(HitTest(ToDoc(pt.Position)));
@@ -110,6 +137,8 @@ public sealed class CanvasView : Control
         }
         else if (_drag == Drag.Move)
             _moveOffset = (pos - _start) / _zoom;
+        else if (_drag == Drag.Create)
+            _createEnd = ToDoc(pos);
         else
             return;
         _last = pos;
@@ -118,6 +147,25 @@ public sealed class CanvasView : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (_drag == Drag.Create)
+        {
+            var b = CreateBox();
+            if (b.Width * _zoom >= 3 && b.Height * _zoom >= 3 && Bus != null)
+            {
+                var r = Bus.Execute([new CreateShape
+                {
+                    Type = Tool == Tool.Ellipse ? "ellipse" : "rectangle",
+                    X = b.X, Y = b.Y, Width = b.Width, Height = b.Height,
+                    Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth,
+                }]);
+                Select(r.CreatedIds[0]);
+                Tool = Tool.Select; // dopo aver disegnato si torna alla selezione
+            }
+            _drag = Drag.None;
+            e.Pointer.Capture(null);
+            InvalidateVisual();
+            return;
+        }
         if (_drag == Drag.Move && SelectedId is { } id && (_moveOffset.X != 0 || _moveOffset.Y != 0))
         {
             var (dx, dy) = (_moveOffset.X, _moveOffset.Y);
@@ -141,6 +189,9 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
+    Box CreateBox() => new(Math.Min(_createStart.X, _createEnd.X), Math.Min(_createStart.Y, _createEnd.Y),
+        Math.Abs(_createEnd.X - _createStart.X), Math.Abs(_createEnd.Y - _createStart.Y));
+
     public override void Render(DrawingContext context)
     {
         if (Bus == null) return;
@@ -151,7 +202,8 @@ public sealed class CanvasView : Control
         var dark = ActualThemeVariant == ThemeVariant.Dark;
         var now = Environment.TickCount64;
         var glow = _highlights.ToDictionary(h => h.Key, h => (float)Math.Max(0, 1 - (now - h.Value) / (double)HighlightMs));
-        context.Custom(new SceneOp(new Rect(Bounds.Size), items, SelectedId, _moveOffset, _pan, _zoom, dark, glow));
+        context.Custom(new SceneOp(new Rect(Bounds.Size), items, SelectedId, _moveOffset, _pan, _zoom, dark, glow,
+            _drag == Drag.Create ? CreateBox() : null, Tool == Tool.Ellipse));
     }
 
     // Copia immutabile degli oggetti: il rendering gira su un altro thread.
@@ -159,7 +211,7 @@ public sealed class CanvasView : Control
         System.Numerics.Matrix3x2 M, string? Fill, string? Stroke, double StrokeWidth);
 
     sealed class SceneOp(Rect bounds, List<Item> items, string? selected, Vector offset, Point pan, double zoom, bool dark,
-        Dictionary<string, float> glow)
+        Dictionary<string, float> glow, Box? preview, bool previewEllipse)
         : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
@@ -199,6 +251,15 @@ public sealed class CanvasView : Control
                     if (it.IsEllipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint);
                 }
                 canvas.Restore();
+            }
+
+            if (preview is { } pv)
+            {
+                paint.Style = SKPaintStyle.Stroke;
+                paint.StrokeWidth = (float)(1.5 / zoom);
+                paint.Color = new SKColor(0x3B, 0x82, 0xF6);
+                var pr = SKRect.Create((float)pv.X, (float)pv.Y, (float)pv.Width, (float)pv.Height);
+                if (previewEllipse) canvas.DrawOval(pr, paint); else canvas.DrawRect(pr, paint);
             }
 
             // Oggetti toccati dall'agente: alone viola che sfuma.

@@ -2,6 +2,7 @@ using AiDraw.Core;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
@@ -41,12 +42,95 @@ public partial class MainWindow : Window
             Canvas.Select(i >= 0 ? _ids[i] : null);
         };
 
+        // Strumenti
+        SelectTool.Click += (_, _) => { Canvas.Tool = Tool.Select; SyncToolButtons(); };
+        RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
+        EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
+        Canvas.ToolChanged += SyncToolButtons;
+
+        // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
+        BuildSwatches(PaletteSwatches, (c, stroke) =>
+        {
+            if (stroke) ApplyStyle(stroke: c); else ApplyStyle(fill: c);
+        });
+        FillHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(fill: NormalizeHex(FillHex.Text)); };
+        StrokeHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(stroke: NormalizeHex(StrokeHex.Text)); };
+        WidthBox.ValueChanged += (_, e) =>
+        {
+            if (!_syncing && e.NewValue is { } w) ApplyStyle(width: (double)w);
+        };
+
         KeyDown += OnKeyDown;
         Refresh();
     }
 
+    static readonly string[] Palette =
+    [
+        "#000000", "#FFFFFF", "#6B7280", "#EF4444", "#F97316", "#FFC800",
+        "#22C55E", "#14B8A6", "#3B82F6", "#6366F1", "#A855F7", "#EC4899", "none",
+    ];
+
+    /// <summary>Come negli editor vettoriali classici: click sinistro = fill, click destro = stroke.</summary>
+    static void BuildSwatches(WrapPanel panel, Action<string, bool> pick)
+    {
+        foreach (var c in Palette)
+        {
+            var b = new Button
+            {
+                Width = 24, Height = 24, Margin = new(0, 0, 6, 6), Padding = new(0), CornerRadius = new(12),
+                BorderBrush = new SolidColorBrush(Color.Parse("#80808080")), BorderThickness = new(1),
+                Background = c == "none" ? Brushes.Transparent : new SolidColorBrush(Color.Parse(c)),
+                Content = c == "none"
+                    ? new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse("M5,19 L19,5"), Stroke = Brushes.Red, StrokeThickness = 2, Width = 24, Height = 24, Stretch = Stretch.None }
+                    : null,
+            };
+            ToolTip.SetTip(b, c);
+            // Button gestisce solo il click sinistro: ascolto il rilascio per distinguere i due tasti.
+            b.AddHandler(PointerReleasedEvent, (_, e) =>
+            {
+                if (!new Rect(b.Bounds.Size).Contains(e.GetPosition(b))) return;
+                if (e.InitialPressMouseButton == MouseButton.Left) pick(c, false);
+                else if (e.InitialPressMouseButton == MouseButton.Right) pick(c, true);
+            }, handledEventsToo: true);
+            panel.Children.Add(b);
+        }
+    }
+
+    // Accetta "#RRGGBB", "RRGGBB" e "none"; il resto viene rifiutato dal comando con un errore esplicito.
+    static string NormalizeHex(string? t)
+    {
+        t = (t ?? "").Trim();
+        return t.Length is 6 or 8 && !t.StartsWith('#') && t.All(Uri.IsHexDigit) ? "#" + t : t;
+    }
+
+    void SyncToolButtons()
+    {
+        SelectTool.IsChecked = Canvas.Tool == Tool.Select;
+        RectTool.IsChecked = Canvas.Tool == Tool.Rectangle;
+        EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
+    }
+
+    /// <summary>Aggiorna lo stile corrente (nuove forme) e lo applica alla selezione tramite il bus.</summary>
+    void ApplyStyle(string? fill = null, string? stroke = null, double? width = null)
+    {
+        if (fill != null) Canvas.Fill = fill == "none" ? null : fill;
+        if (stroke != null) Canvas.Stroke = stroke == "none" ? null : stroke;
+        if (width != null) Canvas.StrokeWidth = width.Value;
+
+        if (Canvas.SelectedId is not { } id) return;
+        try
+        {
+            _bus.Execute([new SetStyle { Targets = [id], Fill = fill, Stroke = stroke, StrokeWidth = width }]);
+        }
+        catch (CommandException)
+        {
+            Refresh(); // colore non valido: ripristina i campi dall'oggetto
+        }
+    }
+
     void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Source is TextBox) return; // Backspace/lettere nei campi di testo non sono scorciatoie
         var cmd = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
         if (cmd && e.Key == Key.Z)
         {
@@ -56,6 +140,11 @@ public partial class MainWindow : Window
         else if (cmd && e.Key == Key.Y)
         {
             _bus.Redo();
+            e.Handled = true;
+        }
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E)
+        {
+            Canvas.Tool = e.Key switch { Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, _ => Tool.Select };
             e.Handled = true;
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedId is { } id)
@@ -100,6 +189,16 @@ public partial class MainWindow : Window
         _syncing = true;
         ObjectList.ItemsSource = items.Select(i => i.Label).ToList();
         ObjectList.SelectedIndex = Canvas.SelectedId is { } s ? _ids.IndexOf(s) : -1;
+
+        // Il pannello mostra lo stile dell'oggetto selezionato (e diventa lo stile delle nuove forme).
+        if (Canvas.SelectedId is { } cur &&
+            _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == cur)) is { } obj)
+        {
+            Canvas.Fill = obj.Fill; Canvas.Stroke = obj.Stroke; Canvas.StrokeWidth = obj.StrokeWidth;
+            FillHex.Text = obj.Fill ?? "none";
+            StrokeHex.Text = obj.Stroke ?? "none";
+            WidthBox.Value = (decimal)obj.StrokeWidth;
+        }
         _syncing = false;
 
         Canvas.InvalidateVisual();

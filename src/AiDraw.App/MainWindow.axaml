@@ -34,9 +34,17 @@
                 Background="{DynamicResource PanelBg}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
             <StackPanel Spacing="6" HorizontalAlignment="Center">
-                <ToggleButton Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
+                <ToggleButton x:Name="SelectTool" Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
                     <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
                           Fill="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="RectTool" Classes="tool" ToolTip.Tip="Rectangle (R)">
+                    <Path Data="M4,6 L20,6 L20,18 L4,18 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="EllipseTool" Classes="tool" ToolTip.Tip="Ellipse (E)">
+                    <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
             </StackPanel>
         </Border>
@@ -46,6 +54,18 @@
                 Background="{DynamicResource PanelBg}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
             <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="16,14,16,12" Spacing="8">
+                    <TextBlock Classes="caption" Text="PALETTE" />
+                    <WrapPanel x:Name="PaletteSwatches" />
+                    <TextBlock Text="Left click: fill  ·  Right click: stroke" FontSize="11" Opacity="0.5" />
+                    <TextBlock Classes="caption" Text="FILL" Margin="0,6,0,0" />
+                    <TextBox x:Name="FillHex" Watermark="#RRGGBB" />
+                    <TextBlock Classes="caption" Text="STROKE" Margin="0,6,0,0" />
+                    <TextBox x:Name="StrokeHex" Watermark="#RRGGBB" />
+                    <TextBlock Classes="caption" Text="STROKE WIDTH" Margin="0,6,0,0" />
+                    <NumericUpDown x:Name="WidthBox" Minimum="0" Maximum="200" Increment="1" FormatString="0.##" Value="2" />
+                </StackPanel>
+                <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource PanelBorder}" />
                 <TextBlock DockPanel.Dock="Top" Classes="caption" Text="OBJECTS" Margin="16,14,16,8" />
                 <ListBox x:Name="ObjectList" Background="Transparent" Margin="6,0" />
             </DockPanel>
