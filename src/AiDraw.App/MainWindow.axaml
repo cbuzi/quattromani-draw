@@ -16,6 +16,19 @@
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
                     <Border Width="1" Height="20" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <StackPanel x:Name="PageBar" Orientation="Horizontal" Spacing="6">
+                        <ComboBox x:Name="PagePresetCombo" Width="230" VerticalAlignment="Center" ToolTip.Tip="Page size" />
+                        <NumericUpDown x:Name="PageWBox" Width="116" Minimum="1" Maximum="100000" Increment="1" FormatString="0.##" VerticalAlignment="Center" ToolTip.Tip="Page width" />
+                        <TextBlock Text="×" VerticalAlignment="Center" Opacity="0.6" />
+                        <NumericUpDown x:Name="PageHBox" Width="116" Minimum="1" Maximum="100000" Increment="1" FormatString="0.##" VerticalAlignment="Center" ToolTip.Tip="Page height" />
+                        <TextBlock x:Name="PageUnitText" VerticalAlignment="Center" Opacity="0.6" />
+                        <ToggleButton x:Name="PortraitButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Portrait">
+                            <Path Data="M8,4 H16 V20 H8 Z" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="LandscapeButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Landscape">
+                            <Path Data="M4,8 H20 V16 H4 Z" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                    </StackPanel>
                     <StackPanel x:Name="BoolBar" Orientation="Horizontal" Spacing="4">
                         <Button x:Name="WeldButton" Classes="bar" Content="Weld" ToolTip.Tip="Union of the selected shapes" />
                         <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
@@ -55,7 +68,6 @@
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.6" />
                     <TextBlock x:Name="NoticeText" VerticalAlignment="Center" Foreground="#EF4444" FontSize="12" IsVisible="False" />
                     <Border x:Name="AgentChip" IsVisible="False" CornerRadius="12" Padding="10,4" Background="#26A855F7">
                         <StackPanel Orientation="Horizontal" Spacing="7">
@@ -65,6 +77,20 @@
                     </Border>
                 </StackPanel>
                 <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Content="Light / Dark" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Barra di stato -->
+        <Border DockPanel.Dock="Bottom" Height="34" Padding="14,0"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+                <TextBlock x:Name="StatusInfo" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="CursorText" Grid.Column="1" Margin="14,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="150" />
+                <ComboBox x:Name="UnitCombo" Grid.Column="2" Width="76" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="Units shown for sizes and positions (the document itself works in px at 96 dpi)" />
+                <ComboBox x:Name="PageViewCombo" Grid.Column="3" Margin="8,0,0,0" Width="150" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="How the page is shown on the work area" />
+                <Button x:Name="FitPageButton" Grid.Column="4" Classes="bar" Margin="8,0,0,0" Content="Fit page" FontSize="12" Padding="10,2" ToolTip.Tip="Show the whole page (Ctrl/Cmd+0)" />
+                <TextBlock x:Name="ZoomText" Grid.Column="5" Margin="12,0,0,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="48" TextAlignment="Right" ToolTip.Tip="Zoom (Ctrl/Cmd+1 = 100%)" />
             </Grid>
         </Border>
 
@@ -147,7 +173,11 @@
                 </StackPanel>
                 <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource PanelBorder}" />
                 <TextBlock DockPanel.Dock="Top" Classes="caption" Text="OBJECTS" Margin="16,14,16,8" />
-                <ListBox x:Name="ObjectList" Background="Transparent" Margin="6,0" />
+                <Grid Margin="6,0">
+                    <ListBox x:Name="ObjectList" Background="Transparent" />
+                    <TextBox x:Name="RenameBox" IsVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8,0"
+                             VerticalContentAlignment="Center" MinHeight="0" Watermark="Name" />
+                </Grid>
             </DockPanel>
         </Border>
 

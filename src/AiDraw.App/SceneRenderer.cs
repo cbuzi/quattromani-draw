@@ -195,19 +195,23 @@ static class SceneRenderer
 /// <summary>Il PNG che vede l'LLM: stesso disegno della finestra, su una superficie fuori schermo.</summary>
 sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
 {
-    public RenderedImage Render(Box? area, int maxSize, string? background, bool labels)
+    public RenderedImage Render(Box? area, int maxSize, string? background, bool labels, bool showPage)
     {
-        var (items, names) = bus.Read(d => (d.Objects.Select(Item.From).ToList(), d.Objects.ToDictionary(o => o.Id, o => o.Name)));
+        var (items, names, pageSize) = bus.Read(d => (d.Objects.Select(Item.From).ToList(), d.Objects.ToDictionary(o => o.Id, o => o.Name), (d.Pages[0].Width, d.Pages[0].Height)));
+        var page = new Box(0, 0, pageSize.Width, pageSize.Height);
 
-        // Senza area: tutto il contenuto con un po' di margine (o una pagina vuota se non c'è nulla).
+        // Senza area: la pagina e tutto il contenuto (anche se esce dalla pagina), con un po' di margine.
         Box box;
         if (area is { } a) box = a;
-        else if (items.Count == 0) box = new(0, 0, 800, 600);
         else
         {
-            var x0 = items.Min(i => i.Bounds.X); var y0 = items.Min(i => i.Bounds.Y);
-            var x1 = items.Max(i => i.Bounds.X + i.Bounds.Width); var y1 = items.Max(i => i.Bounds.Y + i.Bounds.Height);
-            var m = Math.Max(10, Math.Max(x1 - x0, y1 - y0) * 0.05);
+            double x0 = page.X, y0 = page.Y, x1 = page.Width, y1 = page.Height;
+            if (items.Count > 0)
+            {
+                x0 = Math.Min(x0, items.Min(i => i.Bounds.X)); y0 = Math.Min(y0, items.Min(i => i.Bounds.Y));
+                x1 = Math.Max(x1, items.Max(i => i.Bounds.X + i.Bounds.Width)); y1 = Math.Max(y1, items.Max(i => i.Bounds.Y + i.Bounds.Height));
+            }
+            var m = Math.Max(10, Math.Max(x1 - x0, y1 - y0) * 0.03);
             box = new(x0 - m, y0 - m, x1 - x0 + 2 * m, y1 - y0 + 2 * m);
         }
 
@@ -220,6 +224,14 @@ sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
         canvas.Translate((float)-box.X, (float)-box.Y);
 
         using var paint = new SKPaint { IsAntialias = true };
+        if (showPage)
+        {
+            // Il contorno della pagina, così chi guarda l'immagine sa dove finisce la pagina.
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = (float)Math.Max(1, 1.2 / scale);
+            paint.Color = new SKColor(0x94, 0xA3, 0xB8);
+            canvas.DrawRect(SKRect.Create(0, 0, (float)page.Width, (float)page.Height), paint);
+        }
         foreach (var it in items) SceneRenderer.DrawItem(canvas, paint, it);
 
         if (labels)

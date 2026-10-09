@@ -17,6 +17,9 @@ namespace AiDraw.App;
 
 public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text, Fill }
 
+/// <summary>Come si vede la pagina nell'area di lavoro.</summary>
+public enum PageView { White, Outline, Hidden }
+
 /// <summary>Richiesta di modificare un testo: un oggetto esistente (Id) oppure un testo nuovo in un punto, con larghezza d'a capo opzionale.</summary>
 public sealed record TextEditRequest(string? Id, Point At, double? WrapWidth);
 
@@ -89,6 +92,49 @@ public sealed class CanvasView : Control
     public string? SelectedId => _selection.Count == 1 ? _selection[0] : null;
     public double Zoom => _zoom;
     public int NodeSelectionCount => _nodeSel.Count;
+
+    PageView _pageView = PageView.Outline;
+    /// <summary>Pagina bianca con ombra, solo il contorno, oppure nascosta.</summary>
+    public PageView PageViewMode { get => _pageView; set { _pageView = value; InvalidateVisual(); } }
+
+    /// <summary>Misure mostrate all'utente: numero nell'unità scelta (le fornisce la finestra) e nome dell'unità.</summary>
+    public Func<double, string> FormatLength { get; set; } = v => v.ToString("0.##");
+    public string UnitLabel { get; set; } = "px";
+
+    /// <summary>Testo informativo durante un gesto (dimensioni, posizione, angolo); null = fine del gesto.</summary>
+    public event Action<string?>? InfoChanged;
+    /// <summary>Posizione del cursore in coordinate documento; null quando esce dal canvas.</summary>
+    public event Action<Point?>? CursorMoved;
+
+    /// <summary>Riquadro della pagina in coordinate documento.</summary>
+    Box PageBox() => Bus?.Read(d => new Box(0, 0, d.Pages[0].Width, d.Pages[0].Height)) ?? new Box(0, 0, 794, 1123);
+
+    /// <summary>Inquadra un riquadro del documento, centrato e con un margine in pixel.</summary>
+    public void ZoomToBox(Box b, double margin = 48)
+    {
+        if (Bounds.Width < 10 || Bounds.Height < 10 || b.Width <= 0 || b.Height <= 0) return;
+        _zoom = Math.Clamp(Math.Min((Bounds.Width - 2 * margin) / b.Width, (Bounds.Height - 2 * margin) / b.Height), 0.02, 64);
+        _pan = new((Bounds.Width - b.Width * _zoom) / 2 - b.X * _zoom, (Bounds.Height - b.Height * _zoom) / 2 - b.Y * _zoom);
+        ViewChanged?.Invoke();
+        InvalidateVisual();
+    }
+
+    public void FitPage() => ZoomToBox(PageBox());
+
+    /// <summary>Zoom al 100%, mantenendo fermo il centro della finestra.</summary>
+    public void ZoomActualSize()
+    {
+        var c = new Point(Bounds.Width / 2, Bounds.Height / 2);
+        var doc = ToDoc(c);
+        _zoom = 1;
+        _pan = new(c.X - doc.X, c.Y - doc.Y);
+        ViewChanged?.Invoke();
+        InvalidateVisual();
+    }
+
+    void RaiseInfo(string? text) => InfoChanged?.Invoke(text);
+
+    string Size(Box b) => $"{FormatLength(b.Width)} × {FormatLength(b.Height)} {UnitLabel}";
 
     /// <summary>Oggetto da non disegnare (il testo che si sta modificando sul posto).</summary>
     string? _hiddenId;
@@ -179,11 +225,12 @@ public sealed class CanvasView : Control
     public (double TotalW, double TotalH, double OffX, double OffY, double ViewW, double ViewH) ScrollInfo()
     {
         var boxes = Bus?.Read(d => d.Objects.Select(o => o.Bounds).ToList()) ?? [];
-        double cx0 = 0, cy0 = 0, cx1 = 800, cy1 = 600; // documento vuoto: una "pagina" di riferimento
+        var page = PageBox(); // l'area scorrevole comprende sempre la pagina
+        double cx0 = page.X, cy0 = page.Y, cx1 = page.X + page.Width, cy1 = page.Y + page.Height;
         if (boxes.Count > 0)
         {
-            cx0 = boxes.Min(b => b.X); cy0 = boxes.Min(b => b.Y);
-            cx1 = boxes.Max(b => b.X + b.Width); cy1 = boxes.Max(b => b.Y + b.Height);
+            cx0 = Math.Min(cx0, boxes.Min(b => b.X)); cy0 = Math.Min(cy0, boxes.Min(b => b.Y));
+            cx1 = Math.Max(cx1, boxes.Max(b => b.X + b.Width)); cy1 = Math.Max(cy1, boxes.Max(b => b.Y + b.Height));
         }
         double vw = Bounds.Width / _zoom, vh = Bounds.Height / _zoom, vx = -_pan.X / _zoom, vy = -_pan.Y / _zoom;
         double x0 = Math.Min(cx0 - vw / 2, vx), y0 = Math.Min(cy0 - vh / 2, vy);
@@ -829,9 +876,27 @@ public sealed class CanvasView : Control
         };
     }
 
+    protected override void OnPointerExited(PointerEventArgs e) => CursorMoved?.Invoke(null);
+
+    // Misure in tempo reale durante un gesto: dimensioni mentre si disegna o ridimensiona, posizione mentre si sposta.
+    void UpdateLiveInfo()
+    {
+        switch (_drag)
+        {
+            case Drag.Create or Drag.TextBox: RaiseInfo(Size(CreateBox())); break;
+            case Drag.Resize when _dragItem is { } it: RaiseInfo(Size(ResizedPreview(it).Bounds)); break;
+            case Drag.Rotate: RaiseInfo($"{_rotDelta:0.#}°"); break;
+            case Drag.Move when SnapshotSelected() is { } mv:
+                var b = mv.Bounds;
+                RaiseInfo($"{Size(b)}   ·   x {FormatLength(b.X + _moveOffset.X)}   y {FormatLength(b.Y + _moveOffset.Y)} {UnitLabel}");
+                break;
+        }
+    }
+
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         var pos = e.GetPosition(this);
+        CursorMoved?.Invoke(ToDoc(pos));
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (_drag == Drag.None && Tool == Tool.Pen)
         {
@@ -916,6 +981,7 @@ public sealed class CanvasView : Control
         else
             return;
         _last = pos;
+        UpdateLiveInfo();
         InvalidateVisual();
     }
 
@@ -1022,6 +1088,7 @@ public sealed class CanvasView : Control
         _dragItem = null;
         _drag = Drag.None;
         e.Pointer.Capture(null);
+        RaiseInfo(null);
         InvalidateVisual();
     }
 
@@ -1116,7 +1183,7 @@ public sealed class CanvasView : Control
                 NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)),
             Tool == Tool.Fill, fillView);
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
-            ActualThemeVariant == ThemeVariant.Dark, glow, gesture));
+            ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView));
     }
 
     // Gesti in corso da disegnare come anteprima.
@@ -1150,7 +1217,7 @@ public sealed class CanvasView : Control
     }
 
     sealed class SceneOp(Rect bounds, List<Item> items, HashSet<string> selection, Point pan, double zoom, bool dark,
-        Dictionary<string, float> glow, Gesture gesture)
+        Dictionary<string, float> glow, Gesture gesture, Box page, PageView pageView)
         : ICustomDrawOperation
     {
         static readonly SKColor Accent = new(0x3B, 0x82, 0xF6);
@@ -1175,6 +1242,7 @@ public sealed class CanvasView : Control
             canvas.Scale((float)zoom);
 
             using var paint = new SKPaint { IsAntialias = true };
+            DrawPage(canvas, paint);
             foreach (var it in items) SceneRenderer.DrawItem(canvas, paint, it);
 
             DrawGesture(canvas, paint);
@@ -1222,6 +1290,28 @@ public sealed class CanvasView : Control
                 paint.PathEffect = null;
             }
             canvas.Restore();
+        }
+
+        // La pagina: bianca con un'ombra leggera, oppure solo il contorno.
+        void DrawPage(SKCanvas canvas, SKPaint paint)
+        {
+            if (pageView == PageView.Hidden) return;
+            var r = SKRect.Create(0, 0, (float)page.Width, (float)page.Height);
+            if (pageView == PageView.White)
+            {
+                paint.Style = SKPaintStyle.Fill;
+                paint.Color = new SKColor(0, 0, 0, dark ? (byte)120 : (byte)55);
+                paint.MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, (float)(5 / zoom));
+                var shadow = r; shadow.Offset(0, (float)(3 / zoom));
+                canvas.DrawRect(shadow, paint);
+                paint.MaskFilter = null;
+                paint.Color = SKColors.White;
+                canvas.DrawRect(r, paint);
+            }
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = (float)(1 / zoom);
+            paint.Color = pageView == PageView.Outline ? (dark ? new SKColor(0x9C, 0xA3, 0xAF) : new SKColor(0x6B, 0x72, 0x80)) : new SKColor(0xCB, 0xD5, 0xE1);
+            canvas.DrawRect(r, paint);
         }
 
         // Ogni elemento d'accento ha un alone bianco sotto: resta visibile su qualsiasi colore, anche azzurro come l'accento.

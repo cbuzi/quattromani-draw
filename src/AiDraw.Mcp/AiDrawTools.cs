@@ -13,7 +13,8 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
 {
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
-        Returns the current document as compact JSON: {"version":N,"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
+        Returns the current document as compact JSON: {"version":N,"page":{"width":W,"height":H},"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
+        All coordinates and sizes are document pixels (96 dpi, like CSS px); the page starts at (0,0) at the top-left and extends to (width,height) (A4 portrait = 793.7 x 1122.52). Objects may lie outside the page.
         type is "rectangle", "ellipse", "path", "text" or "group". Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z);
         groups include `children` (same structure, listed bottom to top).
         `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
@@ -23,6 +24,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
     public string GetDocument() => bus.Read(d => JsonSerializer.Serialize(new
     {
         version = d.Version,
+        page = new { width = Math.Round(d.Pages[0].Width, 2), height = Math.Round(d.Pages[0].Height, 2) },
         objects = d.Objects.Select(o => Describe(o, Matrix3x2.Identity)).ToList(),
     }, Json.Options));
 
@@ -54,6 +56,8 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         Commands:
           {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
+          {"cmd":"page.set","preset":"A4","orientation":"landscape"}   (page size: preset A0-A8, B4-B6, Letter, Legal, Tabloid, Executive, HD, FullHD, Square; or {"cmd":"page.set","width":210,"height":297,"unit":"mm"} with unit px|mm|cm|in|pt (default px); or only "orientation")
+          {"cmd":"object.rename","target":"o3","name":"sun"}   (names like "o12" are reserved for ids; an empty name removes the name)
           {"cmd":"object.move","targets":["o1"],"dx":50,"dy":-20}
           {"cmd":"object.place","targets":["sun"],"rel":{"inside":"sky","anchor":"top-right","margin":20}}   (moves existing objects relative to another one; several targets move together as one block)
           {"cmd":"object.style","targets":["sun"],"fill":"#FF0000","stroke":"none","strokeWidth":1}   (omitted fields stay unchanged)
@@ -109,7 +113,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }
@@ -143,13 +147,15 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         Optional arguments: `area` = [x, y, width, height] in document units to zoom into a region (default: all the content with a small margin);
         `maxSize` = longest side in pixels (default 800, max 2048); `background` = "#RRGGBB", "#RRGGBBAA" or "transparent" (default white);
         `labels` = true writes each top-level object's id and name on the image, handy to match what you see with ids for later commands.
+        `page` = false hides the thin outline of the page that is drawn by default. Without `area` the image shows the whole page plus any content outside it.
         Returns a short text with the area shown and the scale, then the image. Selection and editing handles are not drawn.
         """)]
     public IEnumerable<ContentBlock> Render(
         [Description("[x, y, width, height] in document units. Omit to render all the content.")] double[]? area = null,
         [Description("Longest side in pixels, 64..2048.")] int maxSize = 800,
         [Description("\"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\".")] string? background = null,
-        [Description("Write object ids and names on the image.")] bool labels = false)
+        [Description("Write object ids and names on the image.")] bool labels = false,
+        [Description("Draw the outline of the page (default true).")] bool page = true)
     {
         Box? box = null;
         if (area != null)
@@ -162,7 +168,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         if (background is not (null or "transparent") && !System.Text.RegularExpressions.Regex.IsMatch(background, "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"))
             throw new McpException("'background' must be \"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\".");
 
-        var img = renderer.Render(box, maxSize, background, labels);
+        var img = renderer.Render(box, maxSize, background, labels, page);
         var a = img.Area;
         return
         [

@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using GradientStop = AiDraw.Core.GradientStop;
 
 namespace AiDraw.App;
@@ -13,7 +14,11 @@ public partial class MainWindow : Window
 {
     readonly CommandBus _bus = App.Bus;
     List<string> _ids = [];
-    bool _syncing, _syncingScroll, _syncingText, _syncingGrad;
+    bool _syncing, _syncingScroll, _syncingText, _syncingGrad, _syncingPage, _fitted;
+    string _unit = "px";
+    string? _renamingId;
+    string? _liveInfo; // misure del gesto in corso: hanno la precedenza sulle informazioni della selezione
+    (double W, double H) _lastPage;
     // Pannello "FILL TYPE": 0 = tinta unita, 1 = lineare, 2 = radiale, 3 = motivo. _gradArmed = quale colore sta per essere scelto dalla tavolozza.
     int _fillKind, _gradArmed = -1;
     string _solid = "#3B82F6";
@@ -48,6 +53,67 @@ public partial class MainWindow : Window
         IntersectButton.Click += (_, _) => RunBoolean("intersect");
         SubtractButton.Click += (_, _) => RunBoolean("subtract");
         _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); NoticeText.IsVisible = false; };
+
+        // Pagina, unità di misura e barra di stato.
+        Canvas.FormatLength = Fmt;
+        Canvas.UnitLabel = _unit;
+        Canvas.InfoChanged += text => { _liveInfo = text; UpdateStatus(); };
+        Canvas.CursorMoved += p => CursorText.Text = p is { } q ? $"x {Fmt(q.X)}   y {Fmt(q.Y)}" : "";
+        UnitCombo.ItemsSource = Units.All.ToList();
+        UnitCombo.SelectedItem = _unit;
+        UnitCombo.SelectionChanged += (_, _) =>
+        {
+            if (UnitCombo.SelectedItem is not string u || u == _unit) return;
+            _unit = u;
+            Canvas.UnitLabel = u;
+            SyncPageBar();
+            UpdateStatus();
+        };
+        PageViewCombo.ItemsSource = new[] { "Page: white", "Page: outline", "Page: hidden" };
+        PageViewCombo.SelectedIndex = 1; // di default solo il contorno della pagina
+        PageViewCombo.SelectionChanged += (_, _) => Canvas.PageViewMode = (PageView)Math.Max(0, PageViewCombo.SelectedIndex);
+        FitPageButton.Click += (_, _) => Canvas.FitPage();
+        Canvas.SizeChanged += (_, _) =>
+        {
+            if (!_fitted && Canvas.Bounds.Width > 200) { _fitted = true; Canvas.FitPage(); } // alla prima apertura si vede tutta la pagina
+        };
+
+        PagePresetCombo.ItemsSource = PageSizes.All.Select(p => p.Label).Append("Custom").ToList();
+        PagePresetCombo.SelectionChanged += (_, _) =>
+        {
+            var i = PagePresetCombo.SelectedIndex;
+            if (_syncingPage || i < 0 || i >= PageSizes.All.Length) return;
+            var landscape = _lastPage.W > _lastPage.H; // il formato scelto mantiene l'orientamento attuale
+            ExecutePage(new SetPage { Preset = PageSizes.All[i].Name, Orientation = landscape ? "landscape" : "portrait" });
+        };
+        PageWBox.ValueChanged += (_, e) =>
+        {
+            if (!_syncingPage && e.NewValue is { } v) ExecutePage(new SetPage { Width = (double)v, Unit = _unit });
+        };
+        PageHBox.ValueChanged += (_, e) =>
+        {
+            if (!_syncingPage && e.NewValue is { } v) ExecutePage(new SetPage { Height = (double)v, Unit = _unit });
+        };
+        PortraitButton.Click += (_, _) => ExecutePage(new SetPage { Orientation = "portrait" });
+        LandscapeButton.Click += (_, _) => ExecutePage(new SetPage { Orientation = "landscape" });
+
+        // Nome degli oggetti: click su una voce già selezionata (o doppio click) per rinominarla.
+        ObjectList.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (!e.GetCurrentPoint(ObjectList).Properties.IsLeftButtonPressed) return;
+            var item = (e.Source as Visual)?.GetSelfAndVisualAncestors().OfType<ListBoxItem>().FirstOrDefault();
+            if (item == null) return;
+            var index = ObjectList.IndexFromContainer(item);
+            // Tunnel: qui la selezione è ancora quella precedente al click.
+            if (index >= 0 && (e.ClickCount >= 2 || ObjectList.SelectedIndex == index && Canvas.SelectedId == _ids.ElementAtOrDefault(index)))
+                Dispatcher.UIThread.Post(() => BeginRename(index), DispatcherPriority.Background);
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        RenameBox.LostFocus += (_, _) => CommitRename();
+        RenameBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { CommitRename(); Canvas.Focus(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { _renamingId = null; RenameBox.IsVisible = false; Canvas.Focus(); e.Handled = true; }
+        };
 
         UndoButton.Click += (_, _) => _bus.Undo();
         RedoButton.Click += (_, _) => _bus.Redo();
@@ -248,6 +314,16 @@ public partial class MainWindow : Window
             _bus.Redo();
             e.Handled = true;
         }
+        else if (cmd && e.Key == Key.D0)
+        {
+            Canvas.FitPage();
+            e.Handled = true;
+        }
+        else if (cmd && e.Key == Key.D1)
+        {
+            Canvas.ZoomActualSize();
+            e.Handled = true;
+        }
         else if (cmd && e.Key == Key.G)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Ungroup(); else Group();
@@ -315,6 +391,102 @@ public partial class MainWindow : Window
         _syncingScroll = false;
     }
 
+    // ---- Rinomina nel pannello Objects ---------------------------------------------------------
+
+    void BeginRename(int index)
+    {
+        if (index < 0 || index >= _ids.Count || ObjectList.ContainerFromIndex(index) is not { } item) return;
+        CommitRename();
+        var id = _ids[index];
+        var name = _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == id)?.Name);
+        var at = item.TranslatePoint(new Point(0, 0), (Visual)ObjectList.Parent!);
+        if (at == null) return;
+        _renamingId = id;
+        RenameBox.Text = name ?? "";
+        RenameBox.Margin = new Thickness(at.Value.X, at.Value.Y, 0, 0);
+        RenameBox.Width = item.Bounds.Width;
+        RenameBox.Height = Math.Max(item.Bounds.Height, 28);
+        RenameBox.IsVisible = true;
+        RenameBox.Focus();
+        RenameBox.SelectAll();
+    }
+
+    void CommitRename()
+    {
+        if (_renamingId is not { } id) return;
+        _renamingId = null; // prima di nascondere la casella: nascondendola scatta LostFocus
+        var text = RenameBox.Text ?? "";
+        RenameBox.IsVisible = false;
+        var current = _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == id)?.Name) ?? "";
+        if (text.Trim() == current) return;
+        try { _bus.Execute([new RenameObject { Target = id, Name = text }]); }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    // ---- Pagina, misure e barra di stato -------------------------------------------------------
+
+    // Numero nell'unità scelta: il documento è in px (96 dpi).
+    string Fmt(double px)
+    {
+        var v = Units.FromPx(px, _unit);
+        return Math.Round(v, _unit switch { "px" => 1, "mm" => 2, "cm" => 3, "pt" => 2, _ => 3 }).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    void ExecutePage(SetPage cmd)
+    {
+        try { _bus.Execute([cmd]); }
+        catch (CommandException ex) { ShowNotice(ex.Message); SyncPageBar(); }
+    }
+
+    // Allinea formato, misure e orientamento al documento (e re-inquadra la pagina se è cambiata).
+    void SyncPageBar()
+    {
+        var (w, h) = _bus.Read(d => (d.Pages[0].Width, d.Pages[0].Height));
+        var changed = Math.Abs(w - _lastPage.W) > 0.01 || Math.Abs(h - _lastPage.H) > 0.01;
+        var first = _lastPage == default;
+        _lastPage = (w, h);
+
+        _syncingPage = true;
+        var match = PageSizes.Match(w, h);
+        PagePresetCombo.SelectedIndex = match != null ? Array.IndexOf(PageSizes.All, match) : PageSizes.All.Length;
+        PageWBox.Value = (decimal)Math.Round(Units.FromPx(w, _unit), 3);
+        PageHBox.Value = (decimal)Math.Round(Units.FromPx(h, _unit), 3);
+        PageUnitText.Text = _unit;
+        PortraitButton.IsChecked = h >= w;
+        LandscapeButton.IsChecked = w > h;
+        _syncingPage = false;
+
+        if (changed && !first) Canvas.FitPage(); // pagina nuova: la si vede tutta
+    }
+
+    // Barra di stato: misure del gesto in corso oppure della selezione.
+    void UpdateStatus()
+    {
+        if (_liveInfo != null) { StatusInfo.Text = _liveInfo; return; }
+        var info = _bus.Read(d =>
+        {
+            var objs = Canvas.SelectedIds.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().ToList();
+            if (objs.Count == 0) return null;
+            var boxes = objs.Select(d.PageBounds).ToList();
+            var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);
+            var union = new Box(x0, y0, boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0);
+            var o = objs[0];
+            var title = objs.Count > 1 ? $"{objs.Count} objects"
+                : o is TextObject t ? $"Text “{(t.Text.Length > 20 ? t.Text[..20] + "…" : t.Text).Replace('\n', ' ')}”"
+                : o is GroupObject g ? $"{o.Name ?? "Group"} ({g.Children.Count} objects)"
+                : o.Name is { } n ? $"{n} ({o.Type})" : o.Type;
+            return ((string, Box, double)?)(title, union, objs.Count == 1 ? Math.Atan2(o.Transform.M12, o.Transform.M11) * 180 / Math.PI : 0);
+        });
+        if (info is not { } i)
+        {
+            StatusInfo.Text = $"No selection   ·   page {Fmt(_lastPage.W)} × {Fmt(_lastPage.H)} {_unit}";
+            return;
+        }
+        var (title, b, rot) = i;
+        StatusInfo.Text = $"{title}   ·   {Fmt(b.Width)} × {Fmt(b.Height)} {_unit}   ·   x {Fmt(b.X)}   y {Fmt(b.Y)}"
+                          + (Math.Abs(rot) > 0.05 ? $"   ·   {rot:0.#}°" : "");
+    }
+
     // ---- Testo ----------------------------------------------------------------------------------
 
     /// <summary>Barra in alto: nodi con lo strumento Nodi, stile con lo strumento Testo o un testo selezionato, altrimenti booleane.</summary>
@@ -322,9 +494,11 @@ public partial class MainWindow : Window
     {
         var node = Canvas.Tool == Tool.Node;
         var text = !node && (Canvas.Tool == Tool.Text || SelectedTextStyle() != null);
+        var page = !node && !text && Canvas.SelectedIds.Count == 0; // senza selezione la barra mostra la pagina
         NodeBar.IsVisible = node;
         TextBar.IsVisible = text;
-        BoolBar.IsVisible = !node && !text;
+        PageBar.IsVisible = page;
+        BoolBar.IsVisible = !node && !text && !page;
     }
 
     /// <summary>Stile del testo selezionato (se è un solo testo).</summary>
@@ -757,5 +931,7 @@ public partial class MainWindow : Window
         UpdateScrollBars(); // il contenuto può essere cambiato
         UpdateBars();
         SyncTextBar();
+        SyncPageBar();
+        UpdateStatus();
     }
 }

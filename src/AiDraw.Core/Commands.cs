@@ -31,6 +31,8 @@ public static class Json
 [JsonDerivedType(typeof(SetPath), "path.set")]
 [JsonDerivedType(typeof(PlaceObjects), "object.place")]
 [JsonDerivedType(typeof(SetText), "text.set")]
+[JsonDerivedType(typeof(SetPage), "page.set")]
+[JsonDerivedType(typeof(RenameObject), "object.rename")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
 {
@@ -485,4 +487,37 @@ public sealed class ConvertToPath : Command
     {
         foreach (var (container, _, old, @new) in _done) container[container.IndexOf(@new)] = old;
     }
+}
+
+/// <summary>Cambia il nome di un oggetto (nome vuoto = nessun nome). I nomi come "o12" sono riservati agli id.</summary>
+public sealed partial class RenameObject : Command
+{
+    public string Target { get; set; } = "";
+    public string? Name { get; set; }
+
+    SceneObject? _obj;
+    string? _old;
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _obj is null ? [] : [_obj.Id];
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^o\d+$")]
+    private static partial System.Text.RegularExpressions.Regex IdLike();
+
+    public override void Apply(Document doc)
+    {
+        var o = doc.Find(Target);
+        var name = Name?.Trim();
+        if (string.IsNullOrEmpty(name)) name = null;
+        if (name != null)
+        {
+            if (name.Length > 80) throw new CommandException("object.rename: il nome puo' avere al massimo 80 caratteri.");
+            if (IdLike().IsMatch(name))
+                throw new CommandException($"object.rename: '{name}' assomiglia a un id (o1, o2...), che e' riservato: scegli un altro nome.");
+        }
+        _obj = o;
+        _old = o.Name;
+        o.Name = name;
+    }
+
+    public override void Undo(Document doc) => _obj!.Name = _old;
 }

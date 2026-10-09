@@ -113,6 +113,9 @@ public sealed class Layer(string name)
 public sealed class Page
 {
     public string Name { get; set; } = "Page 1";
+    /// <summary>Dimensioni in px (96 dpi); di default un A4 verticale. L'origine è l'angolo in alto a sinistra.</summary>
+    public double Width { get; set; } = Units.ToPx(210, "mm");
+    public double Height { get; set; } = Units.ToPx(297, "mm");
     public List<Layer> Layers { get; } = [new("Layer 1")];
 }
 
