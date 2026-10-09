@@ -9,7 +9,8 @@ enum Kind { Rectangle, Ellipse, Path, Group }
 
 // Copia immutabile degli oggetti: il rendering gira su un altro thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
-    string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children)
+    string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
+    string? NodeKinds = null)
 {
     public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
     public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
@@ -17,7 +18,7 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
     public static Item From(SceneObject o) => o switch
     {
         PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
-            p.Source, p.Segments, null),
+            p.Source, p.Segments, null, p.NodeKinds),
         GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             g.Source, null, g.Children.Select(From).ToList()),
         _ => new(o.Id, o is EllipseObject ? Kind.Ellipse : Kind.Rectangle, o.X, o.Y, o.Width, o.Height, o.Transform,

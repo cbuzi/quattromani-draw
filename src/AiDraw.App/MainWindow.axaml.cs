@@ -60,7 +60,9 @@ public partial class MainWindow : Window
         NodeTool.Click += (_, _) => { Canvas.Tool = Tool.Node; SyncToolButtons(); };
         NodeLineButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToLine);
         NodeCurveButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToCurve);
+        NodeCuspButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Cusp);
         NodeSmoothButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Smooth);
+        NodeSymmetricButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Symmetric);
         NodeDeleteButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Delete);
         ToCurvesButton.Click += (_, _) => ToCurves();
         Canvas.ToolChanged += SyncToolButtons;

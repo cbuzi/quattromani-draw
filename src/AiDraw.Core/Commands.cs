@@ -354,8 +354,11 @@ public sealed class SetPath : Command
     public string Target { get; set; } = "";
     /// <summary>Nuovi dati SVG, nello spazio della pagina (come in get_document).</summary>
     public string D { get; set; } = "";
+    /// <summary>Opzionale (lo scrive lo strumento Nodi): un carattere per nodo, 'c' cuspide, 's' liscio, 'y' simmetrico. Ignorato se non corrisponde ai nodi di <c>d</c>.</summary>
+    public string? Kinds { get; set; }
 
     PathObject? _obj;
+    string? _oldKinds;
     List<PathSeg> _oldSegs = [];
     Box _oldSource, _oldRect;
     Matrix3x2 _oldTransform;
@@ -371,9 +374,14 @@ public sealed class SetPath : Command
             throw new CommandException($"path.set: '{Target}' e' dentro un gruppo: separalo prima con object.ungroup.");
         var segs = PathData.Parse(D);
         var box = PathData.Bounds(segs)!.Value;
+        if (Kinds != null && Kinds.Any(c => c is not ('c' or 's' or 'y')))
+            throw new CommandException("path.set: 'kinds' puo' contenere solo 'c' (cuspide), 's' (liscio) e 'y' (simmetrico).");
+        var kinds = Kinds != null && Kinds.Length == PathNodes.FromSegments(segs).Sum(sp => sp.Nodes.Count) ? Kinds : null;
 
         _obj = p;
+        _oldKinds = p.NodeKinds;
         (_oldSegs, _oldSource, _oldRect, _oldTransform) = (p.Segments, p.Source, new Box(p.X, p.Y, p.Width, p.Height), p.Transform);
+        p.NodeKinds = kinds;
         p.Segments = segs;
         p.Source = box;
         (p.X, p.Y, p.Width, p.Height) = (box.X, box.Y, box.Width, box.Height);
@@ -383,6 +391,7 @@ public sealed class SetPath : Command
     public override void Undo(Document doc)
     {
         var p = _obj!;
+        p.NodeKinds = _oldKinds;
         p.Segments = _oldSegs;
         p.Source = _oldSource;
         (p.X, p.Y, p.Width, p.Height) = (_oldRect.X, _oldRect.Y, _oldRect.Width, _oldRect.Height);

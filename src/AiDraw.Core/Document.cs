@@ -89,6 +89,8 @@ public sealed class PathObject : SceneObject
 {
     public override string Type => "path";
     public List<PathSeg> Segments { get; internal set; } = [];
+    /// <summary>Tipo di ogni nodo (vedi PathNodes.KindsOf), per lo strumento Nodi; null = dedotto dalla geometria.</summary>
+    public string? NodeKinds { get; internal set; }
     public Box Source { get; internal set; }
     public Matrix3x2 Fit => FitMatrix(Source, new(X, Y, Width, Height));
 }

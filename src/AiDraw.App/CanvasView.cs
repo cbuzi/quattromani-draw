@@ -16,7 +16,7 @@ namespace AiDraw.App;
 
 public enum Tool { Select, Node, Rectangle, Ellipse, Pen }
 
-public enum NodeOp { ToLine, ToCurve, Smooth, Delete }
+public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 
 /// <summary>
 /// Canvas Skia con pan/zoom, selezione (anche multipla), spostamento, ridimensionamento, rotazione e penna.
@@ -360,7 +360,7 @@ public sealed class CanvasView : Control
     // ---- Strumento Nodi ------------------------------------------------------------------------
 
     // Modello a nodi del path in coordinate pagina (la trasformazione è già applicata).
-    static List<SubPath> ModelOf(Item it) => PathNodes.FromSegments(PathData.Transform(it.Segments!, it.Fit * it.M));
+    static List<SubPath> ModelOf(Item it) => PathNodes.FromSegments(PathData.Transform(it.Segments!, it.Fit * it.M), it.NodeKinds);
 
     List<SubPath>? CurrentModel() =>
         Tool == Tool.Node && SnapshotSelected() is { Kind: Kind.Path } it ? ModelOf(it) : null;
@@ -465,7 +465,7 @@ public sealed class CanvasView : Control
         if (SelectedId is not { } id || Bus == null) return;
         try
         {
-            Bus.Execute([new SetPath { Target = id, D = PathData.ToString(PathNodes.ToSegments(subs), 4) }]);
+            Bus.Execute([new SetPath { Target = id, D = PathData.ToString(PathNodes.ToSegments(subs), 4), Kinds = PathNodes.KindsOf(subs) }]);
         }
         catch (CommandException) { }
     }
@@ -479,7 +479,9 @@ public sealed class CanvasView : Control
         {
             case NodeOp.ToLine: PathNodes.SegmentsToLine(m, _nodeSel); break;
             case NodeOp.ToCurve: PathNodes.SegmentsToCurve(m, _nodeSel); break;
-            case NodeOp.Smooth: PathNodes.MakeSmooth(m, _nodeSel); break;
+            case NodeOp.Cusp: PathNodes.SetKind(m, _nodeSel, NodeKind.Cusp); break;
+            case NodeOp.Smooth: PathNodes.SetKind(m, _nodeSel, NodeKind.Smooth); break;
+            case NodeOp.Symmetric: PathNodes.SetKind(m, _nodeSel, NodeKind.Symmetric); break;
             case NodeOp.Delete:
                 foreach (var g in _nodeSel.GroupBy(n => n.Sub))
                     foreach (var idx in g.Select(n => n.Idx).OrderDescending())
@@ -753,7 +755,7 @@ public sealed class CanvasView : Control
                 : null,
             V(_penHover),
             Tool == Tool.Node,
-            nodeModel?.SelectMany((sp, si) => sp.Nodes.Select((n, ni) => new NodeV(n.P, n.In, n.Out, _nodeSel.Contains((si, ni))))).ToList(),
+            nodeModel?.SelectMany((sp, si) => sp.Nodes.Select((n, ni) => new NodeV(n.P, n.In, n.Out, _nodeSel.Contains((si, ni)), n.Kind))).ToList(),
             Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
                 NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)));
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
@@ -765,7 +767,7 @@ public sealed class CanvasView : Control
 
     sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
 
-    sealed record NodeV(Vector2 P, Vector2? In, Vector2? Out, bool Selected);
+    sealed record NodeV(Vector2 P, Vector2? In, Vector2? Out, bool Selected, NodeKind Kind);
 
     sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover,
         bool NodeMode, List<NodeV>? Nodes, bool PenClosing);
@@ -860,25 +862,33 @@ public sealed class CanvasView : Control
             canvas.Restore();
         }
 
-        void DrawGesture(SKCanvas canvas, SKPaint paint)
+        // Ogni elemento d'accento ha un alone bianco sotto: resta visibile su qualsiasi colore, anche azzurro come l'accento.
+        void Haloed(SKPaint paint, float width, Action draw)
         {
             paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = (float)(1.5 / zoom);
+            paint.StrokeWidth = width + (float)(1.8 / zoom);
+            paint.Color = new SKColor(255, 255, 255, 235);
+            draw();
+            paint.StrokeWidth = width;
             paint.Color = Accent;
+            draw();
+        }
+
+        void DrawGesture(SKCanvas canvas, SKPaint paint)
+        {
+            var w = (float)(1.5 / zoom);
 
             if (gesture.Create is { } c)
             {
                 var r = SKRect.Create((float)c.X, (float)c.Y, (float)c.Width, (float)c.Height);
-                if (gesture.CreateEllipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint);
+                Haloed(paint, w, () => { if (gesture.CreateEllipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint); });
             }
             if (gesture.Marquee is { } mq)
             {
                 var r = SKRect.Create((float)mq.X, (float)mq.Y, (float)mq.Width, (float)mq.Height);
                 paint.Style = SKPaintStyle.Fill; paint.Color = Accent.WithAlpha(30);
                 canvas.DrawRect(r, paint);
-                paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                paint.StrokeWidth = (float)(1 / zoom);
-                canvas.DrawRect(r, paint);
+                Haloed(paint, (float)(1 / zoom), () => canvas.DrawRect(r, paint));
             }
             if (gesture.Pen is { } pen)
             {
@@ -889,7 +899,7 @@ public sealed class CanvasView : Control
                 var target = gesture.PenClosing ? pen[0].P : gesture.PenHover;
                 if (pen[^1].Out is { } lastOut) line.CubicTo(ToSk(lastOut), ToSk(target), ToSk(target));
                 else line.LineTo(ToSk(target));
-                canvas.DrawPath(line, paint);
+                Haloed(paint, w, () => canvas.DrawPath(line, paint));
 
                 // Maniglie dell'ultimo nodo, come negli editor vettoriali classici.
                 var size = (float)(8 / zoom);
@@ -897,8 +907,11 @@ public sealed class CanvasView : Control
                 foreach (var h in new[] { last.In, last.Out })
                 {
                     if (h is not { } hp) continue;
-                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                    canvas.DrawLine(ToSk(last.P), ToSk(hp), paint);
+                    Haloed(paint, (float)(1.25 / zoom), () =>
+                    {
+                        canvas.DrawLine(ToSk(last.P), ToSk(hp), paint);
+                        canvas.DrawCircle(ToSk(hp), size * 0.4f, paint);
+                    });
                     paint.Style = SKPaintStyle.Fill; paint.Color = Accent;
                     canvas.DrawCircle(ToSk(hp), size * 0.4f, paint);
                 }
@@ -907,9 +920,11 @@ public sealed class CanvasView : Control
                 {
                     var p = ToSk(pen[i].P);
                     var first = i == 0 && pen.Count >= 2;
+                    Haloed(paint, (float)(1.25 / zoom), () =>
+                    {
+                        if (first) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
+                    });
                     paint.Style = SKPaintStyle.Fill; paint.Color = first && gesture.PenClosing ? Accent : SKColors.White;
-                    if (first) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
-                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
                     if (first) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
                 }
             }
@@ -921,29 +936,45 @@ public sealed class CanvasView : Control
             else path.CubicTo(ToSk(a.Out ?? a.P), ToSk(b.In ?? b.P), ToSk(b.P));
         }
 
-        // Nodi del path: quadrati (pieni se selezionati); i nodi selezionati mostrano le loro maniglie.
+        // Nodi del path: la forma indica il tipo (quadrato = cuspide, cerchio = liscio, rombo = simmetrico);
+        // i nodi selezionati sono pieni e mostrano le loro maniglie.
         void DrawNodes(SKCanvas canvas, SKPaint paint, List<NodeV> nodes)
         {
             var size = (float)(8 / zoom);
-            paint.StrokeWidth = (float)(1.25 / zoom);
+            var w = (float)(1.25 / zoom);
             foreach (var n in nodes.Where(n => n.Selected))
                 foreach (var h in new[] { n.In, n.Out })
                 {
                     if (h is not { } hp) continue;
-                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                    canvas.DrawLine(ToSk(n.P), ToSk(hp), paint);
+                    Haloed(paint, w, () =>
+                    {
+                        canvas.DrawLine(ToSk(n.P), ToSk(hp), paint);
+                        canvas.DrawCircle(ToSk(hp), size * 0.55f, paint);
+                    });
                     paint.Style = SKPaintStyle.Fill; paint.Color = SKColors.White;
                     canvas.DrawCircle(ToSk(hp), size * 0.55f, paint);
-                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                    paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = w; paint.Color = Accent;
                     canvas.DrawCircle(ToSk(hp), size * 0.55f, paint);
                 }
             foreach (var n in nodes)
             {
                 var r = SKRect.Create(n.P.X - size / 2, n.P.Y - size / 2, size, size);
+                using var shape = new SKPath();
+                switch (n.Kind)
+                {
+                    case NodeKind.Smooth: shape.AddOval(r); break;
+                    case NodeKind.Symmetric:
+                        var hh = size * 0.72f;
+                        shape.MoveTo(n.P.X, n.P.Y - hh); shape.LineTo(n.P.X + hh, n.P.Y); shape.LineTo(n.P.X, n.P.Y + hh); shape.LineTo(n.P.X - hh, n.P.Y);
+                        shape.Close();
+                        break;
+                    default: shape.AddRect(r); break;
+                }
+                Haloed(paint, w, () => canvas.DrawPath(shape, paint));
                 paint.Style = SKPaintStyle.Fill; paint.Color = n.Selected ? Accent : SKColors.White;
-                canvas.DrawRect(r, paint);
-                paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                canvas.DrawRect(r, paint);
+                canvas.DrawPath(shape, paint);
+                paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = w; paint.Color = Accent;
+                canvas.DrawPath(shape, paint);
             }
         }
 
@@ -956,10 +987,7 @@ public sealed class CanvasView : Control
             outline.LineTo(ToSk(PointOn(it, 1, 1)));
             outline.LineTo(ToSk(PointOn(it, 0, 1)));
             outline.Close();
-            paint.Style = SKPaintStyle.Stroke;
-            paint.StrokeWidth = (float)(1.5 / zoom);
-            paint.Color = Accent;
-            canvas.DrawPath(outline, paint);
+            Haloed(paint, (float)(1.5 / zoom), () => canvas.DrawPath(outline, paint));
         }
 
         void DrawSelection(SKCanvas canvas, SKPaint paint, Item sel)
@@ -967,22 +995,23 @@ public sealed class CanvasView : Control
             DrawOutline(canvas, paint, sel);
 
             var size = (float)(8 / zoom);
+            var w = (float)(1.5 / zoom);
             foreach (var h in HandlesOf(sel, zoom))
             {
                 var c = ToSk(h.Pos);
-                if (h.Rotate)
+                if (h.Rotate) Haloed(paint, w, () => canvas.DrawLine(ToSk(PointOn(sel, .5, 0)), c, paint));
+                Haloed(paint, w, () =>
                 {
-                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                    canvas.DrawLine(ToSk(PointOn(sel, .5, 0)), c, paint);
-                }
+                    if (h.Rotate) canvas.DrawCircle(c, size * 0.65f, paint);
+                    else canvas.DrawRect(SKRect.Create(c.X - size / 2, c.Y - size / 2, size, size), paint);
+                });
                 paint.Style = SKPaintStyle.Fill; paint.Color = SKColors.White;
                 if (h.Rotate) canvas.DrawCircle(c, size * 0.65f, paint);
                 else canvas.DrawRect(SKRect.Create(c.X - size / 2, c.Y - size / 2, size, size), paint);
-                paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = w; paint.Color = Accent;
                 if (h.Rotate) canvas.DrawCircle(c, size * 0.65f, paint);
                 else canvas.DrawRect(SKRect.Create(c.X - size / 2, c.Y - size / 2, size, size), paint);
             }
         }
-
     }
 }

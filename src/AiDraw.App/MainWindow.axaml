@@ -26,7 +26,11 @@
                         <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />
                         <Button x:Name="NodeLineButton" Classes="bar" Content="Line" ToolTip.Tip="Make the segments of the selected nodes straight" />
                         <Button x:Name="NodeCurveButton" Classes="bar" Content="Curve" ToolTip.Tip="Make the segments of the selected nodes curved" />
-                        <Button x:Name="NodeSmoothButton" Classes="bar" Content="Smooth" ToolTip.Tip="Align the handles of the selected nodes" />
+                        <Border Width="1" Height="20" Margin="4,0" Background="{DynamicResource PanelBorder}" />
+                        <Button x:Name="NodeCuspButton" Classes="bar" Content="Cusp" ToolTip.Tip="Cusp node (square): the two handles are independent" />
+                        <Button x:Name="NodeSmoothButton" Classes="bar" Content="Smooth" ToolTip.Tip="Smooth node (circle): the handles stay aligned, each keeps its length" />
+                        <Button x:Name="NodeSymmetricButton" Classes="bar" Content="Symmetric" ToolTip.Tip="Symmetric node (diamond): the handles stay aligned and equal in length" />
+                        <Border Width="1" Height="20" Margin="4,0" Background="{DynamicResource PanelBorder}" />
                         <Button x:Name="NodeDeleteButton" Classes="bar" Content="Delete node" ToolTip.Tip="Delete the selected nodes (Delete)" />
                     </StackPanel>
                 </StackPanel>
@@ -53,7 +57,7 @@
                     <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
                           Fill="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
-                <ToggleButton x:Name="NodeTool" Classes="tool" ToolTip.Tip="Node edit (N): move nodes and handles; double-click the path to add a node, double-click a node to delete it. Alt = independent handles">
+                <ToggleButton x:Name="NodeTool" Classes="tool" ToolTip.Tip="Node edit (N): move nodes and handles; double-click the path to add a node, double-click a node to delete it. Alt while dragging a handle = turns the node into a cusp">
                     <Path Data="M5,19 C7,7 17,7 19,19 M3,17 L7,17 L7,21 L3,21 Z M17,17 L21,17 L21,21 L17,21 Z"
                           StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />

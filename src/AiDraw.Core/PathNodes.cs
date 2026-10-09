@@ -2,25 +2,27 @@ using System.Numerics;
 
 namespace AiDraw.Core;
 
+/// <summary>Tipo di nodo, come negli editor vettoriali classici: cuspide = maniglie indipendenti; liscio = maniglie allineate (lunghezze libere); simmetrico = allineate e di uguale lunghezza.</summary>
+public enum NodeKind { Cusp, Smooth, Symmetric }
+
 /// <summary>Nodo di un path: In/Out sono le maniglie della curva in ingresso e in uscita (assenti = segmento dritto).</summary>
 public sealed class PathNode(Vector2 p)
 {
     public Vector2 P = p;
     public Vector2? In, Out;
+    public NodeKind Kind;
 
-    public PathNode Clone() => new(P) { In = In, Out = Out };
+    public PathNode Clone() => new(P) { In = In, Out = Out, Kind = Kind };
 
-    /// <summary>Nodo liscio: le due maniglie esistono e sono allineate in direzioni opposte.</summary>
-    public bool IsSmooth
+    /// <summary>Tipo ricavato dalla geometria: serve per i path che non ne memorizzano uno (creati con la penna, importati, scritti dall'LLM).</summary>
+    public NodeKind Deduce()
     {
-        get
-        {
-            if (In is not { } i || Out is not { } o) return false;
-            Vector2 a = i - P, b = o - P;
-            var la = a.Length(); var lb = b.Length();
-            if (la < 1e-6f || lb < 1e-6f) return false;
-            return Math.Abs(a.X * b.Y - a.Y * b.X) <= 1e-3f * la * lb && Vector2.Dot(a, b) < 0;
-        }
+        if (In is not { } i || Out is not { } o) return NodeKind.Cusp;
+        Vector2 a = i - P, b = o - P;
+        float la = a.Length(), lb = b.Length();
+        if (la < 1e-6f || lb < 1e-6f) return NodeKind.Cusp;
+        if (Math.Abs(a.X * b.Y - a.Y * b.X) > 1e-3f * la * lb || Vector2.Dot(a, b) >= 0) return NodeKind.Cusp;
+        return Math.Abs(la - lb) <= 1e-3f * Math.Max(la, lb) ? NodeKind.Symmetric : NodeKind.Smooth;
     }
 }
 
@@ -40,7 +42,8 @@ public static class PathNodes
 {
     static Vector2 V(double x, double y) => new((float)x, (float)y);
 
-    public static List<SubPath> FromSegments(IEnumerable<PathSeg> segs)
+    /// <param name="kinds">Un carattere per nodo ('c' cuspide, 's' liscio, 'y' simmetrico), nell'ordine dei nodi; se manca il tipo si deduce dalla geometria.</param>
+    public static List<SubPath> FromSegments(IEnumerable<PathSeg> segs, string? kinds = null)
     {
         var result = new List<SubPath>();
         SubPath? cur = null;
@@ -72,8 +75,20 @@ public static class PathNodes
                     break;
             }
         result.RemoveAll(sp => sp.Nodes.Count < 2);
+
+        var k = 0;
+        foreach (var n in result.SelectMany(sp => sp.Nodes))
+        {
+            var c = kinds != null && k < kinds.Length ? kinds[k] : '?';
+            n.Kind = c switch { 'c' => NodeKind.Cusp, 's' => NodeKind.Smooth, 'y' => NodeKind.Symmetric, _ => n.Deduce() };
+            k++;
+        }
         return result;
     }
+
+    /// <summary>I tipi dei nodi, un carattere per nodo, nel formato accettato da FromSegments.</summary>
+    public static string KindsOf(IEnumerable<SubPath> subs) =>
+        new(subs.SelectMany(sp => sp.Nodes).Select(n => n.Kind switch { NodeKind.Smooth => 's', NodeKind.Symmetric => 'y', _ => 'c' }).ToArray());
 
     public static List<PathSeg> ToSegments(IEnumerable<SubPath> subs)
     {
@@ -148,6 +163,7 @@ public static class PathNodes
             a.Out = q0 == a.P ? null : q0;
             b.In = q2 == b.P ? null : q2;
         }
+        n.Kind = n.In != null ? NodeKind.Smooth : NodeKind.Cusp; // sulla curva i due semi-segmenti sono allineati
         var index = seg + 1;
         sp.Nodes.Insert(index, n);
         return index;
@@ -227,23 +243,42 @@ public static class PathNodes
         }
     }
 
+    /// <summary>Imposta il tipo dei nodi selezionati, adattando le maniglie (le crea dai nodi vicini se mancano).</summary>
+    public static void SetKind(List<SubPath> subs, ISet<(int Sub, int Idx)> sel, NodeKind kind)
+    {
+        if (kind != NodeKind.Cusp) MakeSmooth(subs, sel); // maniglie allineate, lunghezze conservate
+        foreach (var (si, ni) in sel)
+        {
+            if (si >= subs.Count || ni >= subs[si].Nodes.Count) continue;
+            var n = subs[si].Nodes[ni];
+            n.Kind = kind;
+            if (kind == NodeKind.Symmetric && n.In is { } i && n.Out is { } o)
+            {
+                var dir = Vector2.Normalize(o - i);
+                var len = (Vector2.Distance(i, n.P) + Vector2.Distance(o, n.P)) / 2;
+                n.In = n.P - dir * len;
+                n.Out = n.P + dir * len;
+            }
+        }
+    }
+
     /// <summary>
-    /// Sposta una maniglia. Se il nodo era liscio (e non si chiede l'indipendenza) l'altra maniglia resta allineata,
-    /// conservando la sua lunghezza.
+    /// Sposta una maniglia. Cuspide: l'altra non si muove. Liscio: l'altra resta allineata conservando la lunghezza.
+    /// Simmetrico: l'altra è lo specchio. Con <paramref name="independent"/> (Alt) il nodo diventa una cuspide.
     /// </summary>
     public static void MoveHandle(PathNode n, bool isOut, Vector2 pos, bool independent)
     {
-        var wasSmooth = n.IsSmooth;
         var other = isOut ? n.In : n.Out;
         if (isOut) n.Out = pos; else n.In = pos;
-        if (wasSmooth && !independent && other is { } o)
+        if (n.Kind == NodeKind.Cusp) return;
+        if (independent) { n.Kind = NodeKind.Cusp; return; }
+        if (other is { } o)
         {
             var d = pos - n.P;
-            if (d.LengthSquared() > 1e-12f)
-            {
-                var opposite = n.P - Vector2.Normalize(d) * Vector2.Distance(o, n.P);
-                if (isOut) n.In = opposite; else n.Out = opposite;
-            }
+            if (d.LengthSquared() < 1e-12f) return;
+            var len = n.Kind == NodeKind.Symmetric ? d.Length() : Vector2.Distance(o, n.P);
+            var opposite = n.P - Vector2.Normalize(d) * len;
+            if (isOut) n.In = opposite; else n.Out = opposite;
         }
     }
 }
