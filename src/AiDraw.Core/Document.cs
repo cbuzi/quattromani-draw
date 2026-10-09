@@ -195,11 +195,13 @@ public sealed partial class Document
     [GeneratedRegex("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")]
     private static partial Regex ColorRegex();
 
-    /// <summary>Valida un colore; "none" diventa null (nessun colore).</summary>
+    /// <summary>Valida un colore o un gradiente (stile CSS); "none" diventa null (nessun colore). I gradienti vengono riscritti in forma canonica.</summary>
     internal static string? ParseColor(string value, string field)
     {
         if (value == "none") return null;
+        if (Gradient.IsGradient(value)) return Gradient.Format(Gradient.Parse(value, field));
         if (ColorRegex().IsMatch(value)) return value;
-        throw new CommandException($"'{field}': colore '{value}' non valido. Usa \"#RRGGBB\", \"#RRGGBBAA\" oppure \"none\".");
+        throw new CommandException(
+            $"'{field}': colore '{value}' non valido. Usa \"#RRGGBB\", \"#RRGGBBAA\", \"none\" oppure un gradiente come \"linear-gradient(90deg, #FF0000, #0000FF)\" o \"radial-gradient(#FFFFFF, #000000)\".");
     }
 }

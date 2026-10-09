@@ -81,6 +81,12 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
         Path data `d` is SVG syntax: M L H V C S Q T A Z, absolute (uppercase) or relative (lowercase), e.g. "M 10 10 h 80 v 50 h -80 z" or a circle "M 0 50 A 50 50 0 1 1 100 50 A 50 50 0 1 1 0 50 Z".
         Styling a group (object.style) applies to every shape inside it; moving, resizing and rotating a group transforms it as a whole.
         `targets` are object ids ("o1") or names ("sun"). Colors are "#RRGGBB", "#RRGGBBAA" or "none".
+        GRADIENTS: `fill` and `stroke` (in shape.create and object.style) also accept CSS-style gradients over the object's own box, e.g.
+          "linear-gradient(90deg, #FF0000, #0000FF)"   angle in degrees: 0 = bottom-to-top, 90 = left-to-right, 180 = top-to-bottom (the default); also "to right", "to bottom right"...
+          "linear-gradient(180deg, #87CEEB 0%, #FFFFFF 70%, #4ADE80 100%)"   any number of colors, optional % positions (missing ones are spread evenly)
+          "radial-gradient(#FFFFFF, #000000)"   from the center out to the farthest corner; optional shape/center: "radial-gradient(circle at 30% 40%, #FFF3B0, #F59E0B)"
+          "linear-gradient(90deg, #FF000080, #FF000000)"   colors may carry alpha (#RRGGBBAA) for fades
+        The gradient is stored (and returned by get_document) in canonical form with explicit % positions.
         `name` is optional but recommended on creation: it lets you address the object later without looking up its id.
         Example: [{"cmd":"shape.create","type":"rectangle","name":"sky","x":0,"y":0,"width":400,"height":200,"fill":"#87CEEB"},
                   {"cmd":"shape.create","type":"ellipse","name":"sun","x":300,"y":20,"width":60,"height":60,"fill":"#FFC800"}]

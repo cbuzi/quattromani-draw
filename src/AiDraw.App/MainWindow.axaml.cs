@@ -12,7 +12,11 @@ public partial class MainWindow : Window
 {
     readonly CommandBus _bus = App.Bus;
     List<string> _ids = [];
-    bool _syncing, _syncingScroll, _syncingText;
+    bool _syncing, _syncingScroll, _syncingText, _syncingGrad;
+    // Pannello gradiente: 0 = tinta unita, 1 = lineare, 2 = radiale; _gradArmed = quale colore sta per essere scelto dalla tavolozza (-1 nessuno).
+    int _gradKind, _gradArmed = -1;
+    string _gradFrom = "#3B82F6", _gradTo = "#FFFFFF";
+    double _gradAngle = 90;
     TextEditRequest? _edit;
     string _editOriginal = "";
     TextStyle _textDefaults = new("", 24, false, false, "left", 1); // stile dei testi nuovi; la famiglia si imposta all'avvio
@@ -99,8 +103,28 @@ public partial class MainWindow : Window
         // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
         BuildSwatches(PaletteSwatches, (c, stroke) =>
         {
-            if (stroke) ApplyStyle(stroke: c); else ApplyStyle(fill: c);
+            if (stroke) ApplyStyle(stroke: c);
+            else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // un colore del gradiente è "in attesa"
+            else ApplyStyle(fill: c);
         });
+
+        // Gradiente: due colori e un angolo; per altri gradienti si può scrivere il testo CSS nel campo Fill (o li scrive l'LLM).
+        GradSolidButton.Click += (_, _) => { _gradKind = 0; ApplyStyle(fill: _gradFrom); };
+        GradLinearButton.Click += (_, _) => ApplyGradient(1);
+        GradRadialButton.Click += (_, _) => ApplyGradient(2);
+        GradFromChip.Click += (_, _) => { _gradArmed = 0; UpdateGradientUi(); };
+        GradToChip.Click += (_, _) => { _gradArmed = 1; UpdateGradientUi(); };
+        GradSwapButton.Click += (_, _) =>
+        {
+            (_gradFrom, _gradTo) = (_gradTo, _gradFrom);
+            if (_gradKind != 0) ApplyGradient(_gradKind); else UpdateGradientUi();
+        };
+        GradAngleBox.ValueChanged += (_, e) =>
+        {
+            if (_syncingGrad || e.NewValue is not { } v) return;
+            _gradAngle = (double)v;
+            if (_gradKind == 1) ApplyGradient(1);
+        };
         FillHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(fill: NormalizeHex(FillHex.Text)); };
         StrokeHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(stroke: NormalizeHex(StrokeHex.Text)); };
         WidthBox.ValueChanged += (_, e) =>
@@ -385,6 +409,91 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
+    // ---- Gradienti ----------------------------------------------------------------------------
+
+    void ApplyGradient(int kind)
+    {
+        _gradKind = kind;
+        _gradArmed = -1;
+        var spec = new GradientSpec(kind == 2, _gradAngle, false, 0.5, 0.5, [new(_gradFrom, 0), new(_gradTo, 1)]);
+        ApplyStyle(fill: Gradient.Format(spec));
+    }
+
+    void PickGradientColor(string color)
+    {
+        if (_gradArmed == 0) _gradFrom = color; else _gradTo = color;
+        var first = _gradArmed == 0;
+        _gradArmed = -1;
+        if (_gradKind != 0) ApplyGradient(_gradKind);
+        else if (first) ApplyStyle(fill: color); // in tinta unita il primo colore è il riempimento
+        else UpdateGradientUi();
+    }
+
+    // Colore del documento ("#RRGGBB" o "#RRGGBBAA") come colore Avalonia.
+    static Color DocColor(string s)
+    {
+        var v = Convert.ToUInt32(s[1..], 16);
+        return s.Length == 7 ? Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v) : Color.FromArgb((byte)v, (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8));
+    }
+
+    void SyncGradientPanel(string? fill)
+    {
+        _syncingGrad = true;
+        if (fill != null && Gradient.TryParse(fill, out var g))
+        {
+            _gradKind = g.Radial ? 2 : 1;
+            _gradFrom = g.Stops[0].Color;
+            _gradTo = g.Stops[^1].Color;
+            if (!g.Radial) _gradAngle = g.Angle;
+        }
+        else
+        {
+            _gradKind = 0;
+            if (fill is { Length: 7 or 9 } && fill[0] == '#') _gradFrom = fill;
+        }
+        _gradArmed = -1;
+        UpdateGradientUi();
+        _syncingGrad = false;
+    }
+
+    void UpdateGradientUi()
+    {
+        var prev = _syncingGrad;
+        _syncingGrad = true;
+        GradSolidButton.IsChecked = _gradKind == 0;
+        GradLinearButton.IsChecked = _gradKind == 1;
+        GradRadialButton.IsChecked = _gradKind == 2;
+        GradFromChip.Background = new SolidColorBrush(DocColor(_gradFrom));
+        GradToChip.Background = new SolidColorBrush(DocColor(_gradTo));
+        var accent = new SolidColorBrush(Color.Parse("#3B82F6"));
+        GradFromChip.BorderBrush = _gradArmed == 0 ? accent : Brushes.Gray;
+        GradToChip.BorderBrush = _gradArmed == 1 ? accent : Brushes.Gray;
+        GradHint.IsVisible = _gradArmed >= 0;
+        GradAngleBox.IsEnabled = _gradKind == 1;
+        GradAngleBox.Value = (decimal)_gradAngle;
+
+        var stops = new GradientStops { new(DocColor(_gradFrom), 0), new(DocColor(_gradTo), 1) };
+        GradPreview.Background = _gradKind switch
+        {
+            1 => LinearBrush(stops, _gradAngle),
+            2 => new RadialGradientBrush { GradientStops = stops, Center = RelativePoint.Center, GradientOrigin = RelativePoint.Center, RadiusX = RelativeScalar.Parse("70%"), RadiusY = RelativeScalar.Parse("70%") },
+            _ => new SolidColorBrush(DocColor(_gradFrom)),
+        };
+        _syncingGrad = prev;
+    }
+
+    // Anteprima del gradiente lineare con la stessa convenzione dell'angolo del documento (0 = verso l'alto, 90 = destra).
+    static LinearGradientBrush LinearBrush(GradientStops stops, double angle)
+    {
+        double th = angle * Math.PI / 180, ux = Math.Sin(th), uy = -Math.Cos(th);
+        return new LinearGradientBrush
+        {
+            GradientStops = stops,
+            StartPoint = new RelativePoint(0.5 - ux / 2, 0.5 - uy / 2, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5 + ux / 2, 0.5 + uy / 2, RelativeUnit.Relative),
+        };
+    }
+
     void ToCurves()
     {
         if (Canvas.SelectedIds.Count == 0) return;
@@ -480,7 +589,9 @@ public partial class MainWindow : Window
             FillHex.Text = obj.Fill ?? "none";
             StrokeHex.Text = obj.Stroke ?? "none";
             WidthBox.Value = (decimal)obj.StrokeWidth;
+            SyncGradientPanel(obj.Fill);
         }
+        else SyncGradientPanel(Canvas.Fill);
         _syncing = false;
 
         var many = Canvas.SelectedIds.Count >= 2;

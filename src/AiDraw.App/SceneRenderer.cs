@@ -69,18 +69,64 @@ static class SceneRenderer
         }
         else
         {
-            if (ParseColor(it.Fill) is { } fill)
+            // Il gradiente si riferisce al riquadro dell'oggetto (per il testo, quello del testo impaginato).
+            var box = it.Kind == Kind.Text ? it.Source : new Box(it.X, it.Y, it.W, it.H);
+            if (Prepare(paint, it.Fill, box))
             {
-                paint.Style = SKPaintStyle.Fill; paint.Color = fill;
+                paint.Style = SKPaintStyle.Fill;
                 DrawShape(canvas, paint, it);
             }
-            if (ParseColor(it.Stroke) is { } stroke && it.StrokeWidth > 0)
+            if (it.StrokeWidth > 0 && Prepare(paint, it.Stroke, box))
             {
-                paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)it.StrokeWidth; paint.Color = stroke;
+                paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)it.StrokeWidth;
                 DrawShape(canvas, paint, it);
             }
+            paint.Shader?.Dispose();
+            paint.Shader = null;
         }
         canvas.Restore();
+    }
+
+    /// <summary>Imposta colore o gradiente sul paint; false se non c'è nulla da disegnare.</summary>
+    static bool Prepare(SKPaint paint, string? spec, Box box)
+    {
+        paint.Shader?.Dispose();
+        paint.Shader = null;
+        if (spec == null) return false;
+        if (Gradient.IsGradient(spec))
+        {
+            if (!Gradient.TryParse(spec, out var g) || MakeShader(g, box) is not { } shader) return false;
+            paint.Shader = shader;
+            paint.Color = SKColors.White; // il colore del paint modula lo shader: bianco = invariato
+            return true;
+        }
+        if (ParseColor(spec) is not { } c) return false;
+        paint.Color = c;
+        return true;
+    }
+
+    static SKShader? MakeShader(GradientSpec g, Box b)
+    {
+        var colors = g.Stops.Select(s => ParseColor(s.Color) ?? SKColors.Transparent).ToArray();
+        var pos = g.Stops.Select(s => (float)s.Position).ToArray();
+        if (!g.Radial)
+        {
+            // Come in CSS: la linea passa dal centro e la sua lunghezza fa toccare gli angoli a 0% e 100%.
+            double th = g.Angle * Math.PI / 180, ux = Math.Sin(th), uy = -Math.Cos(th);
+            var len = Math.Abs(b.Width * ux) + Math.Abs(b.Height * uy);
+            if (len < 1e-6) return null;
+            double cx = b.X + b.Width / 2, cy = b.Y + b.Height / 2;
+            return SKShader.CreateLinearGradient(
+                new SKPoint((float)(cx - ux * len / 2), (float)(cy - uy * len / 2)),
+                new SKPoint((float)(cx + ux * len / 2), (float)(cy + uy * len / 2)), colors, pos, SKShaderTileMode.Clamp);
+        }
+        double px = b.X + g.CenterX * b.Width, py = b.Y + g.CenterY * b.Height;
+        double fx = Math.Max(g.CenterX * b.Width, b.Width - g.CenterX * b.Width), fy = Math.Max(g.CenterY * b.Height, b.Height - g.CenterY * b.Height);
+        // Raggio fino all'angolo più lontano (come il default CSS); l'ellisse ha le proporzioni del riquadro.
+        double rx = g.Circle ? Math.Sqrt(fx * fx + fy * fy) : fx * Math.Sqrt(2), ry = g.Circle ? rx : fy * Math.Sqrt(2);
+        if (rx < 1e-6 || ry < 1e-6) return null;
+        var m = SKMatrix.CreateScale(1, (float)(ry / rx), (float)px, (float)py);
+        return SKShader.CreateRadialGradient(new SKPoint((float)px, (float)py), (float)rx, colors, pos, SKShaderTileMode.Clamp, m);
     }
 
     static void DrawShape(SKCanvas canvas, SKPaint paint, Item it)
