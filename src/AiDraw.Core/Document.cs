@@ -66,12 +66,41 @@ public abstract class SceneObject
         return new(minX, minY, maxX - minX, maxY - minY);
     }
 
+    /// <summary>Matrice che stira il riquadro <paramref name="src"/> (contenuto) sul riquadro <paramref name="dst"/>.</summary>
+    public static Matrix3x2 FitMatrix(Box src, Box dst)
+    {
+        var sx = src.Width > 1e-9 ? dst.Width / src.Width : 1;
+        var sy = src.Height > 1e-9 ? dst.Height / src.Height : 1;
+        return new Matrix3x2((float)sx, 0, 0, (float)sy, (float)(dst.X - src.X * sx), (float)(dst.Y - src.Y * sy));
+    }
+
     /// <summary>Rotazione in gradi (oraria sullo schermo, dato che y cresce verso il basso).</summary>
     public double Rotation => Math.Atan2(Transform.M12, Transform.M11) * 180 / Math.PI;
 }
 
 public sealed class RectangleObject : SceneObject { public override string Type => "rectangle"; }
 public sealed class EllipseObject : SceneObject { public override string Type => "ellipse"; }
+
+/// <summary>
+/// Path bezier. I segmenti restano come creati (Source = loro riquadro); (X, Y, Width, Height) è il riquadro su cui
+/// vengono stirati, così ridimensionare un path cambia solo quei quattro numeri, come per le altre forme.
+/// </summary>
+public sealed class PathObject : SceneObject
+{
+    public override string Type => "path";
+    public List<PathSeg> Segments { get; internal set; } = [];
+    public Box Source { get; internal set; }
+    public Matrix3x2 Fit => FitMatrix(Source, new(X, Y, Width, Height));
+}
+
+/// <summary>Gruppo: i figli sono nello spazio del gruppo (stirato come per PathObject, poi Transform).</summary>
+public sealed class GroupObject : SceneObject
+{
+    public override string Type => "group";
+    public List<SceneObject> Children { get; } = [];
+    public Box Source { get; internal set; }
+    public Matrix3x2 Fit => FitMatrix(Source, new(X, Y, Width, Height));
+}
 
 public sealed class Layer(string name)
 {
@@ -96,21 +125,43 @@ public sealed partial class Document
     public IEnumerable<SceneObject> Objects =>
         Pages.SelectMany(p => p.Layers).SelectMany(l => l.Objects);
 
+    /// <summary>Tutti gli oggetti, figli dei gruppi compresi.</summary>
+    public IEnumerable<SceneObject> AllObjects => Objects.SelectMany(SelfAndDescendants);
+
+    public static IEnumerable<SceneObject> SelfAndDescendants(SceneObject o) =>
+        o is GroupObject g ? g.Children.SelectMany(SelfAndDescendants).Prepend(o) : [o];
+
+    /// <summary>La lista (layer o figli di un gruppo) che contiene l'oggetto.</summary>
+    public List<SceneObject>? ContainerOf(SceneObject target)
+    {
+        static List<SceneObject>? Search(List<SceneObject> list, SceneObject t)
+        {
+            if (list.Contains(t)) return list;
+            foreach (var g in list.OfType<GroupObject>())
+                if (Search(g.Children, t) is { } found) return found;
+            return null;
+        }
+
+        foreach (var layer in Pages.SelectMany(p => p.Layers))
+            if (Search(layer.Objects, target) is { } found) return found;
+        return null;
+    }
+
     internal string NewId() => "o" + ++_nextId;
 
     /// <summary>Trova un oggetto per id o per name.</summary>
     public SceneObject Find(string idOrName)
     {
-        var obj = Objects.FirstOrDefault(o => o.Id == idOrName);
+        var obj = AllObjects.FirstOrDefault(o => o.Id == idOrName);
         if (obj != null) return obj;
 
-        var byName = Objects.Where(o => o.Name == idOrName).ToList();
+        var byName = AllObjects.Where(o => o.Name == idOrName).ToList();
         if (byName.Count == 1) return byName[0];
         if (byName.Count > 1)
             throw new CommandException(
                 $"Il nome '{idOrName}' e' ambiguo (id: {string.Join(", ", byName.Select(o => o.Id))}). Usa l'id.");
 
-        var known = string.Join(", ", Objects.Take(20).Select(o => o.Name is null ? o.Id : $"{o.Id}/{o.Name}"));
+        var known = string.Join(", ", AllObjects.Take(20).Select(o => o.Name is null ? o.Id : $"{o.Id}/{o.Name}"));
         throw new CommandException(
             $"Oggetto '{idOrName}' non trovato. Oggetti presenti: {(known.Length == 0 ? "nessuno" : known)}. Usa get_document per l'elenco.");
     }

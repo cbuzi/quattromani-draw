@@ -25,6 +25,8 @@ public static class Json
 [JsonDerivedType(typeof(DeleteObjects), "object.delete")]
 [JsonDerivedType(typeof(ResizeObject), "object.resize")]
 [JsonDerivedType(typeof(RotateObjects), "object.rotate")]
+[JsonDerivedType(typeof(GroupObjects), "object.group")]
+[JsonDerivedType(typeof(UngroupObjects), "object.ungroup")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
@@ -50,6 +52,8 @@ public sealed class CreateShape : Command
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double? StrokeWidth { get; set; }
+    /// <summary>Solo per type "path": dati SVG (M L H V C S Q T A Z, assoluti o relativi).</summary>
+    public string? D { get; set; }
 
     SceneObject? _obj;
 
@@ -62,19 +66,33 @@ public sealed class CreateShape : Command
     {
         if (_obj == null)
         {
-            if (Width <= 0 || Height <= 0)
-                throw new CommandException("shape.create: 'width' e 'height' devono essere > 0.");
-            SceneObject obj = Type switch
+            SceneObject obj;
+            switch (Type)
             {
-                "rectangle" => new RectangleObject(),
-                "ellipse" => new EllipseObject(),
-                _ => throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\"."),
-            };
+                case "rectangle" or "ellipse":
+                    if (Width <= 0 || Height <= 0)
+                        throw new CommandException("shape.create: 'width' e 'height' devono essere > 0.");
+                    obj = Type == "ellipse" ? new EllipseObject() : new RectangleObject();
+                    obj.X = X; obj.Y = Y; obj.Width = Width; obj.Height = Height;
+                    break;
+                case "path":
+                    if (string.IsNullOrWhiteSpace(D))
+                        throw new CommandException("shape.create: type 'path' richiede 'd' (dati SVG), es. \"M 0 0 L 100 0 L 50 80 Z\".");
+                    if (X != 0 || Y != 0 || Width != 0 || Height != 0)
+                        throw new CommandException("shape.create: type 'path' prende la posizione da 'd': togli x, y, width e height.");
+                    var segs = PathData.Parse(D);
+                    var box = PathData.Bounds(segs)!.Value;
+                    obj = new PathObject { Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
+                    break;
+                default:
+                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\".");
+            }
             obj.Id = doc.NewId();
             obj.Name = Name;
-            obj.X = X; obj.Y = Y; obj.Width = Width; obj.Height = Height;
             obj.Fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
             obj.Stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
+            // Un path senza fill né stroke sarebbe invisibile: gli do un tratto nero.
+            if (obj is PathObject && obj.Fill is null && obj.Stroke is null && Fill is null && Stroke is null) obj.Stroke = "#000000";
             obj.StrokeWidth = StrokeWidth ?? (obj.Stroke is null ? 0 : 1);
             _obj = obj;
         }
@@ -119,6 +137,8 @@ public sealed class SetStyle : Command
 
     List<(SceneObject Obj, string? Fill, string? Stroke, double Width)> _old = [];
 
+    static IEnumerable<SceneObject> Leaves(SceneObject o) => o is GroupObject g ? g.Children.SelectMany(Leaves) : [o];
+
     [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
 
     public override void Apply(Document doc)
@@ -126,7 +146,9 @@ public sealed class SetStyle : Command
         if (Targets.Count == 0) throw new CommandException("object.style: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
         var fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
         var stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
-        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth)).ToList();
+        // Su un gruppo lo stile si applica a tutte le forme che contiene.
+        _old = Targets.Select(t => doc.Find(t)).SelectMany(Leaves).Distinct()
+            .Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth)).ToList();
         foreach (var (obj, _, _, _) in _old)
         {
             if (Fill != null) obj.Fill = fill;
@@ -148,26 +170,24 @@ public sealed class DeleteObjects : Command
 {
     public List<string> Targets { get; set; } = [];
 
-    List<(Layer Layer, int Index, SceneObject Obj)> _removed = [];
+    List<(List<SceneObject> Container, int Index, SceneObject Obj)> _removed = [];
 
     [JsonIgnore] public override IEnumerable<string> AffectedIds => _removed.Select(e => e.Obj.Id);
 
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.delete: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
-        _removed = doc.Pages.SelectMany(p => p.Layers)
-            .SelectMany(l => l.Objects.Select((o, i) => (Layer: l, Index: i, Obj: o)))
-            .Where(e => objs.Contains(e.Obj))
-            .OrderBy(e => e.Index)
+        _removed = Targets.Select(t => doc.Find(t)).Distinct()
+            .Select(o => { var c = doc.ContainerOf(o)!; return (c, c.IndexOf(o), o); })
+            .OrderBy(e => e.Item2)
             .ToList();
-        foreach (var (layer, _, obj) in _removed) layer.Objects.Remove(obj);
+        foreach (var (container, _, obj) in _removed) container.Remove(obj);
     }
 
     public override void Undo(Document doc)
     {
         // Indici crescenti: ogni reinserimento ripristina la posizione originale.
-        foreach (var (layer, index, obj) in _removed) layer.Objects.Insert(index, obj);
+        foreach (var (container, index, obj) in _removed) container.Insert(index, obj);
     }
 }
 
@@ -233,5 +253,94 @@ public sealed class RotateObjects : Command
     public override void Undo(Document doc)
     {
         foreach (var (obj, old) in _old) obj.Transform = old;
+    }
+}
+
+public sealed class GroupObjects : Command
+{
+    public List<string> Targets { get; set; } = [];
+    public string? Name { get; set; }
+
+    GroupObject? _group;
+    List<SceneObject>? _container;
+    List<(int Index, SceneObject Obj)> _entries = [];
+
+    /// <summary>Solo in uscita: id del gruppo creato.</summary>
+    public string? Id => _group?.Id;
+
+    [JsonIgnore] public override IEnumerable<string> CreatedIds => _group is null ? [] : [_group.Id];
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("object.group: 'targets' e' vuoto. Passa gli id o i nomi da raggruppare, es. [\"o1\",\"o2\"].");
+        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var container = doc.ContainerOf(objs[0])!;
+        if (objs.Any(o => doc.ContainerOf(o) != container))
+            throw new CommandException("object.group: gli oggetti devono stare allo stesso livello (stesso layer o stesso gruppo).");
+
+        _entries = objs.Select(o => (container.IndexOf(o), o)).OrderBy(e => e.Item1).ToList();
+        if (_group == null)
+        {
+            var g = new GroupObject { Id = doc.NewId(), Name = Name };
+            g.Children.AddRange(_entries.Select(e => e.Obj));
+            var bs = g.Children.Select(c => c.Bounds).ToList();
+            var (x0, y0) = (bs.Min(b => b.X), bs.Min(b => b.Y));
+            var box = new Box(x0, y0, bs.Max(b => b.X + b.Width) - x0, bs.Max(b => b.Y + b.Height) - y0);
+            (g.X, g.Y, g.Width, g.Height, g.Source) = (box.X, box.Y, box.Width, box.Height, box);
+            _group = g;
+        }
+
+        foreach (var (_, obj) in _entries) container.Remove(obj);
+        // Il gruppo prende il posto (z-order) dell'oggetto più in alto tra quelli raggruppati.
+        container.Insert(_entries[^1].Index - (_entries.Count - 1), _group);
+        _container = container;
+    }
+
+    public override void Undo(Document doc)
+    {
+        _container!.Remove(_group!);
+        foreach (var (index, obj) in _entries) _container.Insert(index, obj);
+    }
+}
+
+public sealed class UngroupObjects : Command
+{
+    public List<string> Targets { get; set; } = [];
+
+    List<(GroupObject Group, List<SceneObject> Container, int Index, List<Matrix3x2> OldTransforms)> _done = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _done.SelectMany(d => d.Group.Children.Select(c => c.Id));
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("object.ungroup: 'targets' e' vuoto. Passa l'id o il nome di un gruppo.");
+        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        if (objs.FirstOrDefault(o => o is not GroupObject) is { } notGroup)
+            throw new CommandException($"object.ungroup: '{notGroup.Name ?? notGroup.Id}' e' un {notGroup.Type}, non un gruppo.");
+
+        _done = [];
+        foreach (var g in objs.Cast<GroupObject>())
+        {
+            var container = doc.ContainerOf(g)!;
+            var index = container.IndexOf(g);
+            var old = g.Children.Select(c => c.Transform).ToList();
+            // I figli assorbono la trasformazione del gruppo, così restano dove sono.
+            var fit = g.Fit;
+            foreach (var c in g.Children) c.Transform = c.Transform * fit * g.Transform;
+            container.RemoveAt(index);
+            container.InsertRange(index, g.Children);
+            _done.Add((g, container, index, old));
+        }
+    }
+
+    public override void Undo(Document doc)
+    {
+        for (var i = _done.Count - 1; i >= 0; i--)
+        {
+            var (g, container, index, old) = _done[i];
+            container.RemoveRange(index, g.Children.Count);
+            container.Insert(index, g);
+            for (var k = 0; k < old.Count; k++) g.Children[k].Transform = old[k];
+        }
     }
 }

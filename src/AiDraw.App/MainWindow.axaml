@@ -46,6 +46,11 @@
                     <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
+                <ToggleButton x:Name="PenTool" Classes="tool" ToolTip.Tip="Pen (P): click to add points, click the first point to close, double-click or Enter to finish">
+                    <Path Data="M5,19 L10,8 L15,14 L20,5" StrokeThickness="2" Width="24" Height="24" Stretch="None"
+                          StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
             </StackPanel>
         </Border>
 

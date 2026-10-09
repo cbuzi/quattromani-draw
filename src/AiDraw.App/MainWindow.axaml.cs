@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         SelectTool.Click += (_, _) => { Canvas.Tool = Tool.Select; SyncToolButtons(); };
         RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
+        PenTool.Click += (_, _) => { Canvas.Tool = Tool.Pen; SyncToolButtons(); };
         Canvas.ToolChanged += SyncToolButtons;
 
         // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
@@ -108,6 +109,7 @@ public partial class MainWindow : Window
         SelectTool.IsChecked = Canvas.Tool == Tool.Select;
         RectTool.IsChecked = Canvas.Tool == Tool.Rectangle;
         EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
+        PenTool.IsChecked = Canvas.Tool == Tool.Pen;
     }
 
     /// <summary>Aggiorna lo stile corrente (nuove forme) e lo applica alla selezione tramite il bus.</summary>
@@ -117,10 +119,10 @@ public partial class MainWindow : Window
         if (stroke != null) Canvas.Stroke = stroke == "none" ? null : stroke;
         if (width != null) Canvas.StrokeWidth = width.Value;
 
-        if (Canvas.SelectedId is not { } id) return;
+        if (Canvas.SelectedIds.Count == 0) return;
         try
         {
-            _bus.Execute([new SetStyle { Targets = [id], Fill = fill, Stroke = stroke, StrokeWidth = width }]);
+            _bus.Execute([new SetStyle { Targets = Canvas.SelectedIds.ToList(), Fill = fill, Stroke = stroke, StrokeWidth = width }]);
         }
         catch (CommandException)
         {
@@ -142,16 +144,54 @@ public partial class MainWindow : Window
             _bus.Redo();
             e.Handled = true;
         }
-        else if (!cmd && e.Key is Key.V or Key.R or Key.E)
+        else if (cmd && e.Key == Key.G)
         {
-            Canvas.Tool = e.Key switch { Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, _ => Tool.Select };
+            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Ungroup(); else Group();
             e.Handled = true;
         }
-        else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedId is { } id)
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P)
         {
-            _bus.Execute([new DeleteObjects { Targets = [id] }]);
+            Canvas.Tool = e.Key switch { Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, _ => Tool.Select };
             e.Handled = true;
         }
+        else if (e.Key == Key.Enter && Canvas.PenActive)
+        {
+            Canvas.FinishPen(false); // termina il path aperto
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && Canvas.PenActive)
+        {
+            Canvas.CancelPen();
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
+        {
+            _bus.Execute([new DeleteObjects { Targets = Canvas.SelectedIds.ToList() }]);
+            e.Handled = true;
+        }
+    }
+
+    void Group()
+    {
+        var ids = Canvas.SelectedIds.ToList();
+        if (ids.Count < 2) return;
+        try
+        {
+            var r = _bus.Execute([new GroupObjects { Targets = ids }]);
+            Canvas.Select(r.CreatedIds[0]);
+        }
+        catch (CommandException) { }
+    }
+
+    void Ungroup()
+    {
+        // Gli id dei figli vanno letti prima: dopo il comando il gruppo non esiste più.
+        var groups = _bus.Read(d => Canvas.SelectedIds
+            .Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<GroupObject>()
+            .Select(g => (g.Id, Children: g.Children.Select(c => c.Id).ToList())).ToList());
+        if (groups.Count == 0) return;
+        _bus.Execute([new UngroupObjects { Targets = groups.Select(g => g.Id).ToList() }]);
+        Canvas.SetSelection(groups.SelectMany(g => g.Children));
     }
 
     /// <summary>Scopre cosa è cambiato dall'ultima volta e segnala il lavoro dell'agente.</summary>
@@ -181,10 +221,10 @@ public partial class MainWindow : Window
     /// <summary>Riallinea elenco oggetti e canvas al documento (thread UI).</summary>
     void Refresh()
     {
-        var items = _bus.Read(d => d.Objects.Reverse().Select(o => (o.Id, Label: $"{o.Name ?? o.Type}   ·   {o.Id}{(_aiTouched.Contains(o.Id) ? "   ·   AI" : "")}")).ToList());
+        var items = _bus.Read(d => d.Objects.Reverse().Select(o => (o.Id, Label: $"{o.Name ?? o.Type}   ·   {o.Id}{(Document.SelfAndDescendants(o).Any(x => _aiTouched.Contains(x.Id)) ? "   ·   AI" : "")}")).ToList());
         _ids = items.Select(i => i.Id).ToList();
 
-        if (Canvas.SelectedId is { } sel && !_ids.Contains(sel)) Canvas.Select(null);
+        Canvas.PruneSelection(_ids);
 
         _syncing = true;
         ObjectList.ItemsSource = items.Select(i => i.Label).ToList();
