@@ -22,7 +22,7 @@ public enum Tool { Select, Rectangle, Ellipse, Pen }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee }
+    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
     double _zoom = 1;
@@ -35,7 +35,14 @@ public sealed class CanvasView : Control
     Tool _tool;
 
     readonly List<string> _selection = [];
-    readonly List<Point> _pen = []; // punti della penna, in coordinate documento
+    /// <summary>Nodo della penna (coordinate documento); In/Out sono le maniglie della curva, assenti se il nodo è angolare.</summary>
+    sealed class PenNode(Point p)
+    {
+        public Point P = p;
+        public Point? In, Out;
+    }
+
+    readonly List<PenNode> _pen = [];
     Point _penHover;
 
     // Ridimensionamento / rotazione in corso (anteprima: il documento cambia solo al rilascio).
@@ -183,7 +190,8 @@ public sealed class CanvasView : Control
             _drag = Drag.Pan;
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Pen)
         {
-            PenClick(pt.Position, e.ClickCount);
+            PenPress(pt.Position, e.ClickCount);
+            if (_drag != Drag.None) e.Pointer.Capture(this);
             return;
         }
         else if (pt.Properties.IsLeftButtonPressed && Tool != Tool.Select)
@@ -232,17 +240,21 @@ public sealed class CanvasView : Control
         if (_drag != Drag.None) e.Pointer.Capture(this);
     }
 
-    // Penna: click aggiunge un punto; click sul primo punto chiude; doppio click (o Invio) termina il path aperto.
-    void PenClick(Point screen, int clickCount)
+    // Penna (come lo strumento Bézier degli editor vettoriali classici): click = nodo angolare; click e trascina = nodo liscio, con le
+    // maniglie della curva simmetriche; click sul primo nodo chiude; doppio click o Invio termina il path aperto.
+    void PenPress(Point screen, int clickCount)
     {
         if (clickCount >= 2) { FinishPen(false); return; }
-        if (_pen.Count >= 2)
-        {
-            var first = new Point(_pen[0].X * _zoom + _pan.X, _pen[0].Y * _zoom + _pan.Y);
-            if (Math.Abs(first.X - screen.X) <= 8 && Math.Abs(first.Y - screen.Y) <= 8) { FinishPen(true); return; }
-        }
-        _pen.Add(ToDoc(screen));
+        if (_pen.Count >= 2 && NearFirstNode(screen)) { FinishPen(true); return; }
+        _pen.Add(new PenNode(ToDoc(screen)));
+        _drag = Drag.PenNode; // trascinando si tirano fuori le maniglie
         InvalidateVisual();
+    }
+
+    bool NearFirstNode(Point screen)
+    {
+        var f = _pen[0].P;
+        return Math.Abs(f.X * _zoom + _pan.X - screen.X) <= 8 && Math.Abs(f.Y * _zoom + _pan.Y - screen.Y) <= 8;
     }
 
     public bool PenActive => _pen.Count > 0;
@@ -253,18 +265,38 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
+    /// <summary>Toglie l'ultimo nodo.</summary>
+    public void PenBack()
+    {
+        if (_pen.Count > 0) _pen.RemoveAt(_pen.Count - 1);
+        InvalidateVisual();
+    }
+
     public void FinishPen(bool closed)
     {
-        var pts = _pen.ToList();
+        var nodes = _pen.ToList();
         _pen.Clear();
         InvalidateVisual();
-        if (pts.Count < 2 || Bus == null) return;
+        if (nodes.Count < 2 || Bus == null) return;
 
         static string F(double v) => Math.Round(v, 2).ToString("0.##", CultureInfo.InvariantCulture);
-        var d = $"M {F(pts[0].X)} {F(pts[0].Y)} " + string.Join(" ", pts.Skip(1).Select(p => $"L {F(p.X)} {F(p.Y)}")) + (closed ? " Z" : "");
+        static string Pt(Point p) => $"{F(p.X)} {F(p.Y)}";
+        var sb = new System.Text.StringBuilder("M " + Pt(nodes[0].P));
+        void Segment(PenNode a, PenNode b)
+        {
+            if (a.Out is null && b.In is null) sb.Append($" L {Pt(b.P)}");
+            else sb.Append($" C {Pt(a.Out ?? a.P)} {Pt(b.In ?? b.P)} {Pt(b.P)}");
+        }
+        for (var i = 1; i < nodes.Count; i++) Segment(nodes[i - 1], nodes[i]);
+        if (closed)
+        {
+            if (nodes[^1].Out != null || nodes[0].In != null) Segment(nodes[^1], nodes[0]); // chiusura curva
+            sb.Append(" Z");
+        }
+
         var r = Bus.Execute([new CreateShape
         {
-            Type = "path", D = d,
+            Type = "path", D = sb.ToString(),
             Fill = closed ? Fill ?? "none" : "none", // un path aperto non si riempie
             Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
         }]);
@@ -298,6 +330,20 @@ public sealed class CanvasView : Control
         {
             _penHover = ToDoc(pos);
             if (_pen.Count > 0) InvalidateVisual();
+            return;
+        }
+        if (_drag == Drag.PenNode)
+        {
+            var n = _pen[^1];
+            var d = ToDoc(pos);
+            _penHover = d;
+            if (Math.Abs(d.X - n.P.X) * _zoom + Math.Abs(d.Y - n.P.Y) * _zoom > 3)
+            {
+                n.Out = d; // la maniglia segue il mouse, l'altra è il suo specchio rispetto al nodo
+                n.In = new Point(2 * n.P.X - d.X, 2 * n.P.Y - d.Y);
+            }
+            else n.In = n.Out = null;
+            InvalidateVisual();
             return;
         }
         if (_drag == Drag.None && Tool == Tool.Select) // nessun gesto: cursore in base a cosa c'è sotto
@@ -346,6 +392,13 @@ public sealed class CanvasView : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (_drag == Drag.PenNode)
+        {
+            _drag = Drag.None;
+            e.Pointer.Capture(null);
+            InvalidateVisual();
+            return;
+        }
         if (_drag == Drag.Create)
         {
             var b = CreateBox();
@@ -457,14 +510,22 @@ public sealed class CanvasView : Control
         var gesture = new Gesture(
             _drag == Drag.Create ? CreateBox() : null, Tool == Tool.Ellipse,
             _drag == Drag.Marquee ? MarqueeBox() : null,
-            Tool == Tool.Pen && _pen.Count > 0 ? _pen.Select(p => new Vector2((float)p.X, (float)p.Y)).ToList() : null,
-            new Vector2((float)_penHover.X, (float)_penHover.Y));
+            Tool == Tool.Pen && _pen.Count > 0
+                ? _pen.Select(n => new PenNodeView(V(n.P), n.In is { } i ? V(i) : null, n.Out is { } o ? V(o) : null)).ToList()
+                : null,
+            V(_penHover),
+            Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
+                NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)));
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
             ActualThemeVariant == ThemeVariant.Dark, glow, gesture));
     }
 
     // Gesti in corso da disegnare come anteprima.
-    sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<Vector2>? Pen, Vector2 PenHover);
+    static Vector2 V(Point p) => new((float)p.X, (float)p.Y);
+
+    sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
+
+    sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover, bool PenClosing);
 
     /// <summary>Maniglia di selezione; Hx/Hy sono frazioni del rettangolo locale, Pos è in coordinate documento.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
@@ -573,21 +634,42 @@ public sealed class CanvasView : Control
             if (gesture.Pen is { } pen)
             {
                 using var line = new SKPath();
-                line.MoveTo(ToSk(pen[0]));
-                foreach (var p in pen.Skip(1)) line.LineTo(ToSk(p));
-                line.LineTo(ToSk(gesture.PenHover)); // segmento "elastico" verso il cursore
+                line.MoveTo(ToSk(pen[0].P));
+                for (var i = 1; i < pen.Count; i++) PenSegment(line, pen[i - 1], pen[i]);
+                // Segmento "elastico" verso il cursore (o verso il primo nodo, se sta per chiudere): curvo se l'ultimo nodo ha una maniglia.
+                var target = gesture.PenClosing ? pen[0].P : gesture.PenHover;
+                if (pen[^1].Out is { } lastOut) line.CubicTo(ToSk(lastOut), ToSk(target), ToSk(target));
+                else line.LineTo(ToSk(target));
                 canvas.DrawPath(line, paint);
 
+                // Maniglie dell'ultimo nodo, come negli editor vettoriali classici.
                 var size = (float)(8 / zoom);
+                var last = pen[^1];
+                foreach (var h in new[] { last.In, last.Out })
+                {
+                    if (h is not { } hp) continue;
+                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                    canvas.DrawLine(ToSk(last.P), ToSk(hp), paint);
+                    paint.Style = SKPaintStyle.Fill; paint.Color = Accent;
+                    canvas.DrawCircle(ToSk(hp), size * 0.4f, paint);
+                }
+
                 for (var i = 0; i < pen.Count; i++)
                 {
-                    var p = ToSk(pen[i]);
-                    paint.Style = SKPaintStyle.Fill; paint.Color = SKColors.White;
-                    if (i == 0 && pen.Count >= 2) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
+                    var p = ToSk(pen[i].P);
+                    var first = i == 0 && pen.Count >= 2;
+                    paint.Style = SKPaintStyle.Fill; paint.Color = first && gesture.PenClosing ? Accent : SKColors.White;
+                    if (first) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
                     paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
-                    if (i == 0 && pen.Count >= 2) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
+                    if (first) canvas.DrawCircle(p, size * 0.8f, paint); else canvas.DrawRect(SKRect.Create(p.X - size / 2, p.Y - size / 2, size, size), paint);
                 }
             }
+        }
+
+        static void PenSegment(SKPath path, PenNodeView a, PenNodeView b)
+        {
+            if (a.Out is null && b.In is null) path.LineTo(ToSk(b.P));
+            else path.CubicTo(ToSk(a.Out ?? a.P), ToSk(b.In ?? b.P), ToSk(b.P));
         }
 
         // Contorno orientato del rettangolo dell'oggetto.

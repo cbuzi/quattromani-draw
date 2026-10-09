@@ -171,6 +171,11 @@ public partial class MainWindow : Window
             Canvas.CancelPen();
             e.Handled = true;
         }
+        else if (e.Key == Key.Back && Canvas.PenActive)
+        {
+            Canvas.PenBack(); // durante il disegno toglie l'ultimo nodo
+            e.Handled = true;
+        }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
         {
             _bus.Execute([new DeleteObjects { Targets = Canvas.SelectedIds.ToList() }]);
