@@ -23,6 +23,8 @@ public static class Json
 [JsonDerivedType(typeof(MoveObjects), "object.move")]
 [JsonDerivedType(typeof(SetStyle), "object.style")]
 [JsonDerivedType(typeof(DeleteObjects), "object.delete")]
+[JsonDerivedType(typeof(ResizeObject), "object.resize")]
+[JsonDerivedType(typeof(RotateObjects), "object.rotate")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
@@ -166,5 +168,70 @@ public sealed class DeleteObjects : Command
     {
         // Indici crescenti: ogni reinserimento ripristina la posizione originale.
         foreach (var (layer, index, obj) in _removed) layer.Objects.Insert(index, obj);
+    }
+}
+
+public sealed class ResizeObject : Command
+{
+    public List<string> Targets { get; set; } = [];
+    /// <summary>Nuova dimensione propria dell'oggetto (prima della rotazione). Null = invariata.</summary>
+    public double? Width { get; set; }
+    public double? Height { get; set; }
+    /// <summary>Punto che resta fermo durante il ridimensionamento.</summary>
+    public string Anchor { get; set; } = "top-left";
+
+    List<(SceneObject Obj, Box Old)> _old = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
+
+    /// <summary>Nuovo rettangolo locale con il punto (ax, ay) fermo.</summary>
+    public static Box Resized(Box b, double ax, double ay, double newW, double newH) =>
+        new(b.X + ax * (b.Width - newW), b.Y + ay * (b.Height - newH), newW, newH);
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("object.resize: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Width is null && Height is null) throw new CommandException("object.resize: indica almeno 'width' o 'height'.");
+        if (Width <= 0 || Height <= 0) throw new CommandException("object.resize: 'width' e 'height' devono essere > 0.");
+        var (ax, ay) = Core.Anchor.Parse(Anchor);
+
+        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, new Box(o.X, o.Y, o.Width, o.Height))).ToList();
+        foreach (var (obj, old) in _old)
+        {
+            var b = Resized(old, ax, ay, Width ?? old.Width, Height ?? old.Height);
+            (obj.X, obj.Y, obj.Width, obj.Height) = (b.X, b.Y, b.Width, b.Height);
+        }
+    }
+
+    public override void Undo(Document doc)
+    {
+        foreach (var (obj, b) in _old) (obj.X, obj.Y, obj.Width, obj.Height) = (b.X, b.Y, b.Width, b.Height);
+    }
+}
+
+public sealed class RotateObjects : Command
+{
+    public List<string> Targets { get; set; } = [];
+    /// <summary>Angolo da aggiungere, in gradi; positivo = senso orario. Ogni oggetto ruota attorno al proprio centro.</summary>
+    public double Degrees { get; set; }
+
+    List<(SceneObject Obj, Matrix3x2 Old)> _old = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("object.rotate: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, o.Transform)).ToList();
+        foreach (var (obj, old) in _old)
+        {
+            var center = Vector2.Transform(new((float)(obj.X + obj.Width / 2), (float)(obj.Y + obj.Height / 2)), old);
+            obj.Transform = old * Matrix3x2.CreateRotation((float)(Degrees * Math.PI / 180), center);
+        }
+    }
+
+    public override void Undo(Document doc)
+    {
+        foreach (var (obj, old) in _old) obj.Transform = old;
     }
 }

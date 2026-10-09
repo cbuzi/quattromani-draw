@@ -7,6 +7,25 @@ public sealed class CommandException(string message) : Exception(message);
 
 public readonly record struct Box(double X, double Y, double Width, double Height);
 
+/// <summary>Punti di ancoraggio nominati sul rettangolo di un oggetto (frazioni di larghezza e altezza).</summary>
+public static class Anchor
+{
+    public static readonly (string Name, double X, double Y)[] All =
+    [
+        ("top-left", 0, 0), ("top", .5, 0), ("top-right", 1, 0),
+        ("left", 0, .5), ("center", .5, .5), ("right", 1, .5),
+        ("bottom-left", 0, 1), ("bottom", .5, 1), ("bottom-right", 1, 1),
+    ];
+
+    public static (double X, double Y) Parse(string name)
+    {
+        foreach (var a in All) if (a.Name == name) return (a.X, a.Y);
+        throw new CommandException($"anchor '{name}' non valido. Valori: {string.Join(", ", All.Select(a => $"\"{a.Name}\""))}.");
+    }
+
+    public static string NameOf(double x, double y) => All.First(a => a.X == x && a.Y == y).Name;
+}
+
 public abstract class SceneObject
 {
     public string Id { get; internal set; } = "";
@@ -27,26 +46,28 @@ public abstract class SceneObject
     public double StrokeWidth { get; set; }
 
     /// <summary>Bounding box nello spazio del layer, dopo la trasformazione.</summary>
-    public Box Bounds
+    public Box Bounds => BoundsOf(X, Y, Width, Height, Transform);
+
+    public static Box BoundsOf(double x, double y, double w, double h, Matrix3x2 m)
     {
-        get
+        Span<Vector2> p =
+        [
+            Vector2.Transform(new((float)x, (float)y), m),
+            Vector2.Transform(new((float)(x + w), (float)y), m),
+            Vector2.Transform(new((float)x, (float)(y + h)), m),
+            Vector2.Transform(new((float)(x + w), (float)(y + h)), m),
+        ];
+        float minX = p[0].X, maxX = minX, minY = p[0].Y, maxY = minY;
+        foreach (var v in p[1..])
         {
-            Span<Vector2> p =
-            [
-                Vector2.Transform(new((float)X, (float)Y), Transform),
-                Vector2.Transform(new((float)(X + Width), (float)Y), Transform),
-                Vector2.Transform(new((float)X, (float)(Y + Height)), Transform),
-                Vector2.Transform(new((float)(X + Width), (float)(Y + Height)), Transform),
-            ];
-            float minX = p[0].X, maxX = minX, minY = p[0].Y, maxY = minY;
-            foreach (var v in p[1..])
-            {
-                minX = Math.Min(minX, v.X); maxX = Math.Max(maxX, v.X);
-                minY = Math.Min(minY, v.Y); maxY = Math.Max(maxY, v.Y);
-            }
-            return new(minX, minY, maxX - minX, maxY - minY);
+            minX = Math.Min(minX, v.X); maxX = Math.Max(maxX, v.X);
+            minY = Math.Min(minY, v.Y); maxY = Math.Max(maxY, v.Y);
         }
+        return new(minX, minY, maxX - minX, maxY - minY);
     }
+
+    /// <summary>Rotazione in gradi (oraria sullo schermo, dato che y cresce verso il basso).</summary>
+    public double Rotation => Math.Atan2(Transform.M12, Transform.M11) * 180 / Math.PI;
 }
 
 public sealed class RectangleObject : SceneObject { public override string Type => "rectangle"; }

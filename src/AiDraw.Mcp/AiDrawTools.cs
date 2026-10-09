@@ -12,6 +12,7 @@ public sealed class AiDrawTools(CommandBus bus)
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
         Returns the current document as compact JSON: {"version":N,"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
+        `bounds` is the axis-aligned box on the page. Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
         Objects are listed bottom to top (the last one is drawn on top). Bounds are in document pixels, y grows downward.
         Call this before editing to learn ids and names, and remember `version` to call get_changes later.
         """)]
@@ -21,10 +22,13 @@ public sealed class AiDrawTools(CommandBus bus)
         objects = d.Objects.Select(o =>
         {
             var b = o.Bounds;
+            var rotated = Math.Abs(o.Rotation) > 0.005;
             return new
             {
                 id = o.Id, name = o.Name, type = o.Type,
                 bounds = new[] { Math.Round(b.X, 2), Math.Round(b.Y, 2), Math.Round(b.Width, 2), Math.Round(b.Height, 2) },
+                rotation = rotated ? Math.Round(o.Rotation, 2) : (double?)null,
+                size = rotated ? new[] { Math.Round(o.Width, 2), Math.Round(o.Height, 2) } : null,
                 fill = o.Fill, stroke = o.Stroke, strokeWidth = o.StrokeWidth == 0 ? (double?)null : o.StrokeWidth,
             };
         }).ToList(),
@@ -38,6 +42,8 @@ public sealed class AiDrawTools(CommandBus bus)
           {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}
           {"cmd":"object.move","targets":["o1"],"dx":50,"dy":-20}
           {"cmd":"object.style","targets":["sun"],"fill":"#FF0000","stroke":"none","strokeWidth":1}   (omitted fields stay unchanged)
+          {"cmd":"object.resize","targets":["sun"],"width":120,"height":120,"anchor":"center"}   (anchor = the point that stays fixed; default "top-left"; omit width or height to keep it)
+          {"cmd":"object.rotate","targets":["sun"],"degrees":45}   (added to the current rotation, clockwise, around the object's center)
           {"cmd":"object.delete","targets":["o1"]}
         `targets` are object ids ("o1") or names ("sun"). Colors are "#RRGGBB", "#RRGGBBAA" or "none".
         `name` is optional but recommended on creation: it lets you address the object later without looking up its id.
@@ -58,7 +64,7 @@ public sealed class AiDrawTools(CommandBus bus)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }
