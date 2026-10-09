@@ -52,6 +52,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
           {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
           {"cmd":"object.move","targets":["o1"],"dx":50,"dy":-20}
+          {"cmd":"object.place","targets":["sun"],"rel":{"inside":"sky","anchor":"top-right","margin":20}}   (moves existing objects relative to another one; several targets move together as one block)
           {"cmd":"object.style","targets":["sun"],"fill":"#FF0000","stroke":"none","strokeWidth":1}   (omitted fields stay unchanged)
           {"cmd":"object.resize","targets":["sun"],"width":120,"height":120,"anchor":"center"}   (anchor = the point that stays fixed; default "top-left"; omit width or height to keep it)
           {"cmd":"object.rotate","targets":["sun"],"degrees":45}   (added to the current rotation, clockwise, around the object's center)
@@ -63,6 +64,14 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
           {"cmd":"object.delete","targets":["o1"]}
         shape.boolean works on rectangles, ellipses and paths on the same level (ungroup groups first), needs 2+ targets and returns the new path id in `created`.
         The result is a path with the style of the lowest object (in z-order); curves are flattened into short segments. Add "keepOriginals":true to keep the source objects.
+        RELATIVE POSITIONING: instead of x/y, shape.create accepts "rel" (and object.place takes it too), so you do not have to compute coordinates:
+          "rel":{"inside":"sky","anchor":"top-right","margin":20}   inside `sky`, the object's top-right corner 20 units from the sky's top-right corner
+          "rel":{"rightOf":"house","margin":10}   to the right of `house`, 10 units apart, vertically centered (also leftOf, above, below)
+          "rel":{"below":"title","anchor":"top-left","refAnchor":"bottom-left"}   left edges aligned, directly under `title`
+          "rel":{"alignTo":"box","anchor":"center"}   same anchor point on both (default center): centers, or "left" aligns left edges and centers vertically
+        Give exactly ONE of inside/rightOf/leftOf/above/below/alignTo (an id or name that already exists, even created earlier in the same batch).
+        `anchor` is the point of the NEW object, `refAnchor` the point of the reference it attaches to. Anchors: top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right.
+        `margin` is the inset for inside/alignTo and the gap for rightOf/leftOf/above/below. With rel, omit x and y (width/height are still needed for rectangles and ellipses).
         Path data `d` is SVG syntax: M L H V C S Q T A Z, absolute (uppercase) or relative (lowercase), e.g. "M 10 10 h 80 v 50 h -80 z" or a circle "M 0 50 A 50 50 0 1 1 100 50 A 50 50 0 1 1 0 50 Z".
         Styling a group (object.style) applies to every shape inside it; moving, resizing and rotating a group transforms it as a whole.
         `targets` are object ids ("o1") or names ("sun"). Colors are "#RRGGBB", "#RRGGBBAA" or "none".
@@ -84,7 +93,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

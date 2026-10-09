@@ -29,6 +29,7 @@ public static class Json
 [JsonDerivedType(typeof(UngroupObjects), "object.ungroup")]
 [JsonDerivedType(typeof(BooleanOp), "shape.boolean")]
 [JsonDerivedType(typeof(SetPath), "path.set")]
+[JsonDerivedType(typeof(PlaceObjects), "object.place")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
 {
@@ -57,6 +58,8 @@ public sealed class CreateShape : Command
     public double? StrokeWidth { get; set; }
     /// <summary>Solo per type "path": dati SVG (M L H V C S Q T A Z, assoluti o relativi).</summary>
     public string? D { get; set; }
+    /// <summary>Posizionamento relativo ad altri oggetti, al posto di x e y.</summary>
+    public Placement? Rel { get; set; }
 
     SceneObject? _obj;
 
@@ -89,6 +92,14 @@ public sealed class CreateShape : Command
                     break;
                 default:
                     throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\".");
+            }
+            if (Rel != null)
+            {
+                if (Type != "path" && (X != 0 || Y != 0))
+                    throw new CommandException("shape.create: con 'rel' la posizione viene calcolata: togli x e y.");
+                var (dx, dy) = Rel.Resolve(doc, obj.Bounds);
+                if (obj is PathObject) obj.Transform = Matrix3x2.CreateTranslation((float)dx, (float)dy);
+                else { obj.X += dx; obj.Y += dy; }
             }
             obj.Id = doc.NewId();
             obj.Name = Name;

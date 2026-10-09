@@ -9,7 +9,8 @@ namespace AiDraw.Mcp;
 /// <summary>Server MCP (HTTP) ospitato nel processo dell'app. Gli LLM sono client del CommandBus come l'umano.</summary>
 public static class McpHost
 {
-    public const int Port = 5577;
+    /// <summary>Porta del server; AIDRAW_PORT la cambia (utile per avere più istanze o fare prove senza toccare quella in uso).</summary>
+    public static int Port { get; } = int.TryParse(Environment.GetEnvironmentVariable("AIDRAW_PORT"), out var p) ? p : 5577;
 
     public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer)
     {

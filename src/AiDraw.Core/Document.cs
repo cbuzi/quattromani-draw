@@ -149,6 +149,27 @@ public sealed partial class Document
         return null;
     }
 
+    /// <summary>Matrice dallo spazio del contenitore dell'oggetto (layer o gruppo) allo spazio pagina.</summary>
+    public Matrix3x2 ParentMatrix(SceneObject target)
+    {
+        static bool Find(List<SceneObject> list, SceneObject t, Matrix3x2 parent, out Matrix3x2 result)
+        {
+            if (list.Contains(t)) { result = parent; return true; }
+            foreach (var g in list.OfType<GroupObject>())
+                if (Find(g.Children, t, g.Fit * g.Transform * parent, out result)) return true;
+            result = Matrix3x2.Identity;
+            return false;
+        }
+
+        foreach (var layer in Pages.SelectMany(p => p.Layers))
+            if (Find(layer.Objects, target, Matrix3x2.Identity, out var m)) return m;
+        return Matrix3x2.Identity;
+    }
+
+    /// <summary>Riquadro dell'oggetto nello spazio pagina (anche se sta dentro dei gruppi trasformati).</summary>
+    public Box PageBounds(SceneObject o) =>
+        SceneObject.BoundsOf(o.X, o.Y, o.Width, o.Height, o.Transform * ParentMatrix(o));
+
     internal string NewId() => "o" + ++_nextId;
 
     /// <summary>Trova un oggetto per id o per name.</summary>
