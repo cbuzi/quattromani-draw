@@ -90,6 +90,11 @@
                     <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
+                <ToggleButton x:Name="FillTool" Classes="tool" ToolTip.Tip="Fill (G): drag across an object to draw a gradient; drag its handles to change it. Double-click the line to add a color, click a handle then a palette color to recolor it, Delete removes it. Shift = 15° steps">
+                    <Path Data="M4,5 H20 V19 H4 Z M7.5,16.5 L16.5,7.5 M5.5,15 h4 v4 h-4 Z M14.5,5 h4 v4 h-4 Z"
+                          StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
                 <ToggleButton x:Name="TextTool" Classes="tool" ToolTip.Tip="Text (T): click to type, drag to set a wrapping width. Double-click a text to edit it; Ctrl/Cmd+Enter or click outside to finish, Esc cancels">
                     <TextBlock Text="T" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </ToggleButton>
@@ -110,19 +115,27 @@
                     <TextBlock Classes="caption" Text="PALETTE" />
                     <WrapPanel x:Name="PaletteSwatches" />
                     <TextBlock Text="Left click: fill  ·  Right click: stroke" FontSize="11" Opacity="0.5" />
-                    <TextBlock Classes="caption" Text="GRADIENT" Margin="0,6,0,0" />
+                    <TextBlock Classes="caption" Text="FILL TYPE" Margin="0,6,0,0" />
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <ToggleButton x:Name="GradSolidButton" Content="Solid" Padding="10,4" />
-                        <ToggleButton x:Name="GradLinearButton" Content="Linear" Padding="10,4" />
-                        <ToggleButton x:Name="GradRadialButton" Content="Radial" Padding="10,4" />
+                        <ToggleButton x:Name="GradSolidButton" Content="Solid" Padding="9,4" />
+                        <ToggleButton x:Name="GradLinearButton" Content="Linear" Padding="9,4" />
+                        <ToggleButton x:Name="GradRadialButton" Content="Radial" Padding="9,4" />
+                        <ToggleButton x:Name="GradPatternButton" Content="Pattern" Padding="9,4" />
                     </StackPanel>
                     <Border x:Name="GradPreview" Height="22" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource PanelBorder}" />
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Button x:Name="GradFromChip" Width="40" Height="28" Padding="0" BorderThickness="2" ToolTip.Tip="First color: click it, then pick a color from the palette" />
-                        <Button x:Name="GradToChip" Width="40" Height="28" Padding="0" BorderThickness="2" ToolTip.Tip="Last color: click it, then pick a color from the palette" />
-                        <Button x:Name="GradSwapButton" Content="⇄" Width="32" Height="28" Padding="0" ToolTip.Tip="Swap the two colors" />
+                    <StackPanel x:Name="StopsPanel" Spacing="4" />
+                    <StackPanel x:Name="StopsButtons" Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="GradAddButton" Content="+ Color" Height="28" Padding="8,0" ToolTip.Tip="Add a color in the middle of the widest gap (double-click the gradient line with the Fill tool to add one where you want)" />
+                        <Button x:Name="GradSwapButton" Content="⇄" Width="32" Height="28" Padding="0" ToolTip.Tip="Reverse the colors" />
                         <NumericUpDown x:Name="GradAngleBox" Width="96" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="90"
                                        ToolTip.Tip="Angle in degrees: 0 = bottom to top, 90 = left to right, 180 = top to bottom" />
+                    </StackPanel>
+                    <StackPanel x:Name="PatternPanel" Spacing="6" IsVisible="False">
+                        <ComboBox x:Name="PatKindCombo" Width="190" ToolTip.Tip="Pattern type" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <NumericUpDown x:Name="PatSizeBox" Width="96" Height="28" Minimum="1" Maximum="500" Increment="1" FormatString="0.##" Value="10" ToolTip.Tip="Size of the pattern (document units)" />
+                            <NumericUpDown x:Name="PatAngleBox" Width="96" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="0" ToolTip.Tip="Rotation of the pattern (degrees)" />
+                        </StackPanel>
                     </StackPanel>
                     <TextBlock x:Name="GradHint" Text="Now pick a color from the palette" FontSize="11" Opacity="0.6" IsVisible="False" />
                     <TextBlock Classes="caption" Text="FILL" Margin="0,6,0,0" />

@@ -200,8 +200,9 @@ public sealed partial class Document
     {
         if (value == "none") return null;
         if (Gradient.IsGradient(value)) return Gradient.Format(Gradient.Parse(value, field));
+        if (Pattern.IsPattern(value)) return Pattern.Format(Pattern.Parse(value, field));
         if (ColorRegex().IsMatch(value)) return value;
         throw new CommandException(
-            $"'{field}': colore '{value}' non valido. Usa \"#RRGGBB\", \"#RRGGBBAA\", \"none\" oppure un gradiente come \"linear-gradient(90deg, #FF0000, #0000FF)\" o \"radial-gradient(#FFFFFF, #000000)\".");
+            $"'{field}': colore '{value}' non valido. Usa \"#RRGGBB\", \"#RRGGBBAA\", \"none\", un gradiente come \"linear-gradient(90deg, #FF0000, #0000FF)\" o \"radial-gradient(#FFFFFF, #000000)\", oppure un motivo come \"pattern(stripes, #FF0000, #FFFFFF, 8)\".");
     }
 }

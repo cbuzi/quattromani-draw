@@ -93,6 +93,13 @@ static class SceneRenderer
         paint.Shader?.Dispose();
         paint.Shader = null;
         if (spec == null) return false;
+        if (Pattern.IsPattern(spec))
+        {
+            if (!Pattern.TryParse(spec, out var pat)) return false;
+            paint.Shader = MakePatternShader(pat, box);
+            paint.Color = SKColors.White;
+            return paint.Shader != null;
+        }
         if (Gradient.IsGradient(spec))
         {
             if (!Gradient.TryParse(spec, out var g) || MakeShader(g, box) is not { } shader) return false;
@@ -111,22 +118,43 @@ static class SceneRenderer
         var pos = g.Stops.Select(s => (float)s.Position).ToArray();
         if (!g.Radial)
         {
-            // Come in CSS: la linea passa dal centro e la sua lunghezza fa toccare gli angoli a 0% e 100%.
-            double th = g.Angle * Math.PI / 180, ux = Math.Sin(th), uy = -Math.Cos(th);
-            var len = Math.Abs(b.Width * ux) + Math.Abs(b.Height * uy);
-            if (len < 1e-6) return null;
-            double cx = b.X + b.Width / 2, cy = b.Y + b.Height / 2;
-            return SKShader.CreateLinearGradient(
-                new SKPoint((float)(cx - ux * len / 2), (float)(cy - uy * len / 2)),
-                new SKPoint((float)(cx + ux * len / 2), (float)(cy + uy * len / 2)), colors, pos, SKShaderTileMode.Clamp);
+            var (x1, y1, x2, y2) = Gradient.LinearPoints(g, b);
+            SKPoint p1 = new((float)(b.X + x1 * b.Width), (float)(b.Y + y1 * b.Height)), p2 = new((float)(b.X + x2 * b.Width), (float)(b.Y + y2 * b.Height));
+            if (Math.Abs(p1.X - p2.X) + Math.Abs(p1.Y - p2.Y) < 1e-6) return null;
+            return SKShader.CreateLinearGradient(p1, p2, colors, pos, SKShaderTileMode.Clamp);
         }
-        double px = b.X + g.CenterX * b.Width, py = b.Y + g.CenterY * b.Height;
-        double fx = Math.Max(g.CenterX * b.Width, b.Width - g.CenterX * b.Width), fy = Math.Max(g.CenterY * b.Height, b.Height - g.CenterY * b.Height);
-        // Raggio fino all'angolo più lontano (come il default CSS); l'ellisse ha le proporzioni del riquadro.
-        double rx = g.Circle ? Math.Sqrt(fx * fx + fy * fy) : fx * Math.Sqrt(2), ry = g.Circle ? rx : fy * Math.Sqrt(2);
+        var (fx, fy) = Gradient.RadialRadii(g, b);
+        double cx = b.X + g.CenterX * b.Width, cy = b.Y + g.CenterY * b.Height, rx = fx * b.Width, ry = fy * b.Height;
         if (rx < 1e-6 || ry < 1e-6) return null;
-        var m = SKMatrix.CreateScale(1, (float)(ry / rx), (float)px, (float)py);
-        return SKShader.CreateRadialGradient(new SKPoint((float)px, (float)py), (float)rx, colors, pos, SKShaderTileMode.Clamp, m);
+        // L'ellisse è un cerchio di raggio rx stirato in verticale attorno al centro.
+        var m = SKMatrix.CreateScale(1, (float)(ry / rx), (float)cx, (float)cy);
+        return SKShader.CreateRadialGradient(new SKPoint((float)cx, (float)cy), (float)rx, colors, pos, SKShaderTileMode.Clamp, m);
+    }
+
+    // Motivo: un'unità disegnata una volta come immagine vettoriale e ripetuta; parte dall'angolo in alto a sinistra dell'oggetto.
+    static SKShader? MakePatternShader(PatternSpec p, Box b)
+    {
+        var size = (float)p.Size;
+        var tile = p.Kind == "checker" ? 2 * size : size; // gli scacchi si ripetono ogni due caselle
+        using var recorder = new SKPictureRecorder();
+        var canvas = recorder.BeginRecording(new SKRect(0, 0, tile, tile));
+        using var paint = new SKPaint { IsAntialias = true, Color = ParseColor(p.Bg) ?? SKColors.Transparent };
+        canvas.DrawRect(0, 0, tile, tile, paint);
+        paint.Color = ParseColor(p.Fg) ?? SKColors.Black;
+        switch (p.Kind)
+        {
+            case "stripes": canvas.DrawRect(0, 0, size / 2, tile, paint); break;
+            case "dots": canvas.DrawCircle(size / 2, size / 2, size * 0.3f, paint); break;
+            case "checker": canvas.DrawRect(0, 0, size, size, paint); canvas.DrawRect(size, size, size, size, paint); break;
+            case "grid":
+                var t = Math.Max(size * 0.12f, 0.5f);
+                canvas.DrawRect(0, 0, tile, t, paint);
+                canvas.DrawRect(0, 0, t, tile, paint);
+                break;
+        }
+        using var picture = recorder.EndRecording();
+        var local = SKMatrix.Concat(SKMatrix.CreateTranslation((float)b.X, (float)b.Y), SKMatrix.CreateRotationDegrees((float)p.Angle));
+        return picture.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, SKFilterMode.Linear, local, new SKRect(0, 0, tile, tile));
     }
 
     static void DrawShape(SKCanvas canvas, SKPaint paint, Item it)

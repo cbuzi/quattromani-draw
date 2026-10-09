@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using GradientStop = AiDraw.Core.GradientStop;
 
 namespace AiDraw.App;
 
@@ -13,10 +14,11 @@ public partial class MainWindow : Window
     readonly CommandBus _bus = App.Bus;
     List<string> _ids = [];
     bool _syncing, _syncingScroll, _syncingText, _syncingGrad;
-    // Pannello gradiente: 0 = tinta unita, 1 = lineare, 2 = radiale; _gradArmed = quale colore sta per essere scelto dalla tavolozza (-1 nessuno).
-    int _gradKind, _gradArmed = -1;
-    string _gradFrom = "#3B82F6", _gradTo = "#FFFFFF";
-    double _gradAngle = 90;
+    // Pannello "FILL TYPE": 0 = tinta unita, 1 = lineare, 2 = radiale, 3 = motivo. _gradArmed = quale colore sta per essere scelto dalla tavolozza.
+    int _fillKind, _gradArmed = -1;
+    string _solid = "#3B82F6";
+    GradientSpec _spec = new(false, 90, false, 0.5, 0.5, [new("#3B82F6", 0), new("#FFFFFF", 1)]);
+    PatternSpec _pat = new("stripes", "#3B82F6", "#FFFFFF", 10, 0);
     TextEditRequest? _edit;
     string _editOriginal = "";
     TextStyle _textDefaults = new("", 24, false, false, "left", 1); // stile dei testi nuovi; la famiglia si imposta all'avvio
@@ -104,27 +106,53 @@ public partial class MainWindow : Window
         BuildSwatches(PaletteSwatches, (c, stroke) =>
         {
             if (stroke) ApplyStyle(stroke: c);
-            else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // un colore del gradiente è "in attesa"
+            else if (c != "none" && Canvas.TrySetSelectedStopColor(c)) { } // sosta selezionata con lo strumento di riempimento
+            else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // un colore del pannello è "in attesa"
             else ApplyStyle(fill: c);
         });
 
-        // Gradiente: due colori e un angolo; per altri gradienti si può scrivere il testo CSS nel campo Fill (o li scrive l'LLM).
-        GradSolidButton.Click += (_, _) => { _gradKind = 0; ApplyStyle(fill: _gradFrom); };
-        GradLinearButton.Click += (_, _) => ApplyGradient(1);
-        GradRadialButton.Click += (_, _) => ApplyGradient(2);
-        GradFromChip.Click += (_, _) => { _gradArmed = 0; UpdateGradientUi(); };
-        GradToChip.Click += (_, _) => { _gradArmed = 1; UpdateGradientUi(); };
+        // Riempimento: tinta unita, gradiente con più colori o motivo. Per gradienti particolari si può scrivere il testo CSS nel campo Fill.
+        GradSolidButton.Click += (_, _) => SetFillKind(0);
+        GradLinearButton.Click += (_, _) => SetFillKind(1);
+        GradRadialButton.Click += (_, _) => SetFillKind(2);
+        GradPatternButton.Click += (_, _) => SetFillKind(3);
+        GradAddButton.Click += (_, _) => AddStop();
         GradSwapButton.Click += (_, _) =>
         {
-            (_gradFrom, _gradTo) = (_gradTo, _gradFrom);
-            if (_gradKind != 0) ApplyGradient(_gradKind); else UpdateGradientUi();
+            if (_fillKind is 1 or 2) _spec = _spec with { Stops = _spec.Stops.Select(s => s with { Position = 1 - s.Position }).Reverse().ToList() };
+            ApplyFillFromPanel();
         };
         GradAngleBox.ValueChanged += (_, e) =>
         {
             if (_syncingGrad || e.NewValue is not { } v) return;
-            _gradAngle = (double)v;
-            if (_gradKind == 1) ApplyGradient(1);
+            _spec = _spec with { Angle = (double)v, X1 = null, Y1 = null, X2 = null, Y2 = null }; // l'angolo sostituisce i punti espliciti
+            if (_fillKind == 1) ApplyFillFromPanel();
         };
+        PatKindCombo.ItemsSource = Pattern.Kinds.ToList();
+        PatKindCombo.SelectionChanged += (_, _) =>
+        {
+            if (_syncingGrad || PatKindCombo.SelectedItem is not string k) return;
+            _pat = _pat with { Kind = k };
+            if (_fillKind == 3) ApplyFillFromPanel();
+        };
+        PatSizeBox.ValueChanged += (_, e) =>
+        {
+            if (_syncingGrad || e.NewValue is not { } v) return;
+            _pat = _pat with { Size = (double)v };
+            if (_fillKind == 3) ApplyFillFromPanel();
+        };
+        PatAngleBox.ValueChanged += (_, e) =>
+        {
+            if (_syncingGrad || e.NewValue is not { } v) return;
+            _pat = _pat with { Angle = (double)v };
+            if (_fillKind == 3) ApplyFillFromPanel();
+        };
+
+        // Strumento di riempimento sul canvas.
+        FillTool.Click += (_, _) => { Canvas.Tool = Tool.Fill; SyncToolButtons(); };
+        Canvas.DefaultStops = () => _fillKind is 1 or 2
+            ? _spec.Stops.ToList()
+            : [new(_fillKind == 3 ? _pat.Fg : _solid, 0), new(_fillKind == 3 ? _pat.Bg : _spec.Stops[^1].Color, 1)];
         FillHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(fill: NormalizeHex(FillHex.Text)); };
         StrokeHex.KeyDown += (_, e) => { if (e.Key == Key.Enter) ApplyStyle(stroke: NormalizeHex(StrokeHex.Text)); };
         WidthBox.ValueChanged += (_, e) =>
@@ -182,6 +210,7 @@ public partial class MainWindow : Window
         EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
         PenTool.IsChecked = Canvas.Tool == Tool.Pen;
         TextTool.IsChecked = Canvas.Tool == Tool.Text;
+        FillTool.IsChecked = Canvas.Tool == Tool.Fill;
         NodeTool.IsChecked = Canvas.Tool == Tool.Node;
         // Con lo strumento Nodi la barra mostra le operazioni sui nodi al posto di quelle booleane.
         UpdateBars();
@@ -229,11 +258,11 @@ public partial class MainWindow : Window
             ToCurves();
             e.Handled = true;
         }
-        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10 or Key.T)
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10 or Key.T or Key.G)
         {
             Canvas.Tool = e.Key switch
             {
-                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, Key.T => Tool.Text, _ => Tool.Select,
+                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, Key.T => Tool.Text, Key.G => Tool.Fill, _ => Tool.Select,
             };
             e.Handled = true;
         }
@@ -261,6 +290,10 @@ public partial class MainWindow : Window
         {
             Canvas.ApplyNodeOp(NodeOp.Delete); // con lo strumento Nodi Delete toglie i nodi, non l'oggetto
             e.Handled = true;
+        }
+        else if (e.Key is Key.Delete or Key.Back && Canvas.Tool == Tool.Fill && Canvas.DeleteSelectedStop())
+        {
+            e.Handled = true; // con lo strumento di riempimento Delete toglie la sosta di colore selezionata
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
         {
@@ -409,24 +442,72 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // ---- Gradienti ----------------------------------------------------------------------------
+    // ---- Riempimento (tinta unita, gradiente, motivo) -----------------------------------------
 
-    void ApplyGradient(int kind)
+    string BuildFill() => _fillKind switch
     {
-        _gradKind = kind;
+        1 => Gradient.Format(_spec with { Radial = false }),
+        2 => Gradient.Format(_spec with { Radial = true, X1 = null, Y1 = null, X2 = null, Y2 = null }),
+        3 => Pattern.Format(_pat),
+        _ => _solid,
+    };
+
+    void ApplyFillFromPanel()
+    {
         _gradArmed = -1;
-        var spec = new GradientSpec(kind == 2, _gradAngle, false, 0.5, 0.5, [new(_gradFrom, 0), new(_gradTo, 1)]);
-        ApplyStyle(fill: Gradient.Format(spec));
+        ApplyStyle(fill: BuildFill());
+    }
+
+    // Primo e ultimo colore del riempimento attuale: passando da un tipo all'altro i colori restano.
+    (string First, string Last) FillColors() => _fillKind switch
+    {
+        1 or 2 => (_spec.Stops[0].Color, _spec.Stops[^1].Color),
+        3 => (_pat.Fg, _pat.Bg),
+        _ => (_solid, _spec.Stops[^1].Color),
+    };
+
+    void SetFillKind(int kind)
+    {
+        var (first, last) = FillColors();
+        switch (kind)
+        {
+            case 0: _solid = first; break;
+            case 1 or 2:
+                if (_fillKind is 0 or 3) _spec = _spec with { Stops = [new(first, 0), new(last, 1)] };
+                break;
+            case 3: _pat = _pat with { Fg = first, Bg = last }; break;
+        }
+        _fillKind = kind;
+        ApplyFillFromPanel();
+    }
+
+    void AddStop()
+    {
+        if (_fillKind is not (1 or 2)) return;
+        var st = _spec.Stops;
+        var gap = Enumerable.Range(0, st.Count - 1).MaxBy(i => st[i + 1].Position - st[i].Position);
+        var t = (st[gap].Position + st[gap + 1].Position) / 2;
+        var list = st.ToList();
+        list.Insert(gap + 1, new GradientStop(Gradient.ColorAt(st, t), t));
+        _spec = _spec with { Stops = list };
+        ApplyFillFromPanel();
     }
 
     void PickGradientColor(string color)
     {
-        if (_gradArmed == 0) _gradFrom = color; else _gradTo = color;
-        var first = _gradArmed == 0;
+        var i = _gradArmed;
         _gradArmed = -1;
-        if (_gradKind != 0) ApplyGradient(_gradKind);
-        else if (first) ApplyStyle(fill: color); // in tinta unita il primo colore è il riempimento
-        else UpdateGradientUi();
+        switch (_fillKind)
+        {
+            case 1 or 2 when i < _spec.Stops.Count:
+                var st = _spec.Stops.ToList();
+                st[i] = st[i] with { Color = color.ToUpperInvariant() };
+                _spec = _spec with { Stops = st };
+                break;
+            case 3: _pat = i == 0 ? _pat with { Fg = color.ToUpperInvariant() } : _pat with { Bg = color.ToUpperInvariant() }; break;
+            default: _solid = color; break;
+        }
+        ApplyFillFromPanel();
     }
 
     // Colore del documento ("#RRGGBB" o "#RRGGBBAA") come colore Avalonia.
@@ -436,62 +517,137 @@ public partial class MainWindow : Window
         return s.Length == 7 ? Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v) : Color.FromArgb((byte)v, (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8));
     }
 
-    void SyncGradientPanel(string? fill)
+    void SyncFillPanel(string? fill)
     {
         _syncingGrad = true;
-        if (fill != null && Gradient.TryParse(fill, out var g))
-        {
-            _gradKind = g.Radial ? 2 : 1;
-            _gradFrom = g.Stops[0].Color;
-            _gradTo = g.Stops[^1].Color;
-            if (!g.Radial) _gradAngle = g.Angle;
-        }
+        if (fill != null && Pattern.TryParse(fill, out var pat)) { _fillKind = 3; _pat = pat; }
+        else if (fill != null && Gradient.TryParse(fill, out var g)) { _fillKind = g.Radial ? 2 : 1; _spec = g; }
         else
         {
-            _gradKind = 0;
-            if (fill is { Length: 7 or 9 } && fill[0] == '#') _gradFrom = fill;
+            _fillKind = 0;
+            if (fill is { Length: 7 or 9 } && fill[0] == '#') _solid = fill;
         }
         _gradArmed = -1;
-        UpdateGradientUi();
+        UpdateFillUi();
         _syncingGrad = false;
     }
 
-    void UpdateGradientUi()
+    void UpdateFillUi()
     {
         var prev = _syncingGrad;
         _syncingGrad = true;
-        GradSolidButton.IsChecked = _gradKind == 0;
-        GradLinearButton.IsChecked = _gradKind == 1;
-        GradRadialButton.IsChecked = _gradKind == 2;
-        GradFromChip.Background = new SolidColorBrush(DocColor(_gradFrom));
-        GradToChip.Background = new SolidColorBrush(DocColor(_gradTo));
-        var accent = new SolidColorBrush(Color.Parse("#3B82F6"));
-        GradFromChip.BorderBrush = _gradArmed == 0 ? accent : Brushes.Gray;
-        GradToChip.BorderBrush = _gradArmed == 1 ? accent : Brushes.Gray;
+        GradSolidButton.IsChecked = _fillKind == 0;
+        GradLinearButton.IsChecked = _fillKind == 1;
+        GradRadialButton.IsChecked = _fillKind == 2;
+        GradPatternButton.IsChecked = _fillKind == 3;
+        StopsPanel.IsVisible = _fillKind != 0;
+        StopsButtons.IsVisible = _fillKind is 1 or 2;
+        GradAngleBox.IsVisible = _fillKind == 1;
+        PatternPanel.IsVisible = _fillKind == 3;
         GradHint.IsVisible = _gradArmed >= 0;
-        GradAngleBox.IsEnabled = _gradKind == 1;
-        GradAngleBox.Value = (decimal)_gradAngle;
-
-        var stops = new GradientStops { new(DocColor(_gradFrom), 0), new(DocColor(_gradTo), 1) };
-        GradPreview.Background = _gradKind switch
-        {
-            1 => LinearBrush(stops, _gradAngle),
-            2 => new RadialGradientBrush { GradientStops = stops, Center = RelativePoint.Center, GradientOrigin = RelativePoint.Center, RadiusX = RelativeScalar.Parse("70%"), RadiusY = RelativeScalar.Parse("70%") },
-            _ => new SolidColorBrush(DocColor(_gradFrom)),
-        };
+        GradAngleBox.Value = (decimal)Math.Round(_spec.Angle, 2);
+        PatKindCombo.SelectedItem = _pat.Kind;
+        PatSizeBox.Value = (decimal)_pat.Size;
+        PatAngleBox.Value = (decimal)_pat.Angle;
+        RebuildStopRows();
+        GradPreview.Background = PreviewBrush();
         _syncingGrad = prev;
     }
 
-    // Anteprima del gradiente lineare con la stessa convenzione dell'angolo del documento (0 = verso l'alto, 90 = destra).
-    static LinearGradientBrush LinearBrush(GradientStops stops, double angle)
+    // Una riga per ogni colore: campione (si clicca e poi si sceglie dalla tavolozza), posizione in % e rimozione.
+    void RebuildStopRows()
     {
-        double th = angle * Math.PI / 180, ux = Math.Sin(th), uy = -Math.Cos(th);
-        return new LinearGradientBrush
+        StopsPanel.Children.Clear();
+        if (_fillKind is 1 or 2)
+            for (var i = 0; i < _spec.Stops.Count; i++) StopsPanel.Children.Add(StopRow(i, null, _spec.Stops[i].Color, _spec.Stops[i].Position, _spec.Stops.Count > 2));
+        else if (_fillKind == 3)
         {
-            GradientStops = stops,
-            StartPoint = new RelativePoint(0.5 - ux / 2, 0.5 - uy / 2, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0.5 + ux / 2, 0.5 + uy / 2, RelativeUnit.Relative),
+            StopsPanel.Children.Add(StopRow(0, "Pattern", _pat.Fg, null, false));
+            StopsPanel.Children.Add(StopRow(1, "Background", _pat.Bg, null, false));
+        }
+    }
+
+    Control StopRow(int index, string? label, string color, double? position, bool removable)
+    {
+        var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+        var chip = new Button
+        {
+            Width = 40, Height = 26, Padding = new(0), BorderThickness = new(2),
+            Background = new SolidColorBrush(DocColor(color)),
+            BorderBrush = _gradArmed == index ? new SolidColorBrush(Color.Parse("#3B82F6")) : Brushes.Gray,
         };
+        ToolTip.SetTip(chip, "Click, then pick a color from the palette");
+        chip.Click += (_, _) => { _gradArmed = index; UpdateFillUi(); };
+        row.Children.Add(chip);
+        if (label != null) row.Children.Add(new TextBlock { Text = label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, FontSize = 12, Opacity = 0.7 });
+        if (position is { } p)
+        {
+            var box = new NumericUpDown
+            {
+                Width = 96, Height = 26, Minimum = 0, Maximum = 100, Increment = 5, FormatString = "0.#", Value = (decimal)Math.Round(p * 100, 1),
+            };
+            box.ValueChanged += (_, e) =>
+            {
+                if (_syncingGrad || e.NewValue is not { } v) return;
+                var st = _spec.Stops.ToList();
+                st[index] = st[index] with { Position = (double)v / 100 };
+                _spec = _spec with { Stops = st.OrderBy(x => x.Position).ToList() };
+                ApplyFillFromPanel();
+            };
+            row.Children.Add(box);
+        }
+        if (removable)
+        {
+            var remove = new Button { Content = "✕", Width = 26, Height = 26, Padding = new(0) };
+            ToolTip.SetTip(remove, "Remove this color");
+            remove.Click += (_, _) =>
+            {
+                var st = _spec.Stops.ToList();
+                st.RemoveAt(index);
+                _spec = _spec with { Stops = st };
+                ApplyFillFromPanel();
+            };
+            row.Children.Add(remove);
+        }
+        return row;
+    }
+
+    // Anteprima nel pannello, con la stessa geometria del documento (punti e raggi come frazioni del riquadro).
+    IBrush PreviewBrush()
+    {
+        var box = new Box(0, 0, 200, 22);
+        var stops = new GradientStops();
+        switch (_fillKind)
+        {
+            case 1:
+            {
+                foreach (var s in _spec.Stops) stops.Add(new Avalonia.Media.GradientStop(DocColor(s.Color), s.Position));
+                var (x1, y1, x2, y2) = Gradient.LinearPoints(_spec with { Radial = false }, box);
+                return new LinearGradientBrush
+                {
+                    GradientStops = stops, StartPoint = new RelativePoint(x1, y1, RelativeUnit.Relative), EndPoint = new RelativePoint(x2, y2, RelativeUnit.Relative),
+                };
+            }
+            case 2:
+            {
+                foreach (var s in _spec.Stops) stops.Add(new Avalonia.Media.GradientStop(DocColor(s.Color), s.Position));
+                var (rx, ry) = Gradient.RadialRadii(_spec with { Radial = true }, box);
+                var centre = new RelativePoint(_spec.CenterX, _spec.CenterY, RelativeUnit.Relative);
+                return new RadialGradientBrush
+                {
+                    GradientStops = stops, Center = centre, GradientOrigin = centre,
+                    RadiusX = new RelativeScalar(rx, RelativeUnit.Relative), RadiusY = new RelativeScalar(ry, RelativeUnit.Relative),
+                };
+            }
+            case 3: // motivo: metà colore del motivo, metà sfondo
+                stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Fg), 0));
+                stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Fg), 0.5));
+                stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Bg), 0.5));
+                stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Bg), 1));
+                return new LinearGradientBrush { GradientStops = stops, StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative), EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative) };
+            default:
+                return new SolidColorBrush(DocColor(_solid));
+        }
     }
 
     void ToCurves()
@@ -589,9 +745,9 @@ public partial class MainWindow : Window
             FillHex.Text = obj.Fill ?? "none";
             StrokeHex.Text = obj.Stroke ?? "none";
             WidthBox.Value = (decimal)obj.StrokeWidth;
-            SyncGradientPanel(obj.Fill);
+            SyncFillPanel(obj.Fill);
         }
-        else SyncGradientPanel(Canvas.Fill);
+        else SyncFillPanel(Canvas.Fill);
         _syncing = false;
 
         var many = Canvas.SelectedIds.Count >= 2;

@@ -11,10 +11,11 @@ using Avalonia.Skia;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using SkiaSharp;
+using GradientStop = AiDraw.Core.GradientStop;
 
 namespace AiDraw.App;
 
-public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text }
+public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text, Fill }
 
 /// <summary>Richiesta di modificare un testo: un oggetto esistente (Id) oppure un testo nuovo in un punto, con larghezza d'a capo opzionale.</summary>
 public sealed record TextEditRequest(string? Id, Point At, double? WrapWidth);
@@ -27,7 +28,8 @@ public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox }
+    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox, FillHandle, FillDraw }
+    enum FillPart { Start, End, Stop, Center, RadX, RadY }
     enum NodePart { Node, In, Out }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
@@ -52,6 +54,18 @@ public sealed class CanvasView : Control
 
     // Strumento Nodi: selezione dei nodi (sottopath, indice) del path selezionato; durante un trascinamento
     // _nodeOrig è il modello a inizio gesto e _nodeWork quello modificato (anteprima: il documento cambia al rilascio).
+    // Strumento di riempimento: _fillWork è il gradiente in modifica durante un trascinamento (anteprima; il documento
+    // cambia al rilascio), _fillBase quello a inizio gesto; _fillSel è la sosta di colore selezionata.
+    GradientSpec? _fillWork, _fillBase;
+    FillHandle? _fillHit;
+    Item? _fillItem;
+    Point _fillStart;
+    int _fillSel = -1;
+
+    /// <summary>Soste di colore con cui nasce un nuovo gradiente trascinando sull'oggetto (le fornisce il pannello).</summary>
+    public Func<List<GradientStop>>? DefaultStops { get; set; }
+    public int FillSelectedStop => _fillSel;
+
     readonly HashSet<(int Sub, int Idx)> _nodeSel = [];
     List<SubPath>? _nodeOrig, _nodeWork;
     (int Sub, int Idx, NodePart Part) _nodeHit;
@@ -116,6 +130,8 @@ public sealed class CanvasView : Control
             if (value != Tool.Pen) _pen.Clear();
             _nodeSel.Clear();
             _nodeWork = null;
+            _fillWork = null;
+            _fillSel = -1;
             Cursor = value is Tool.Select or Tool.Node ? null : new Cursor(value == Tool.Text ? StandardCursorType.Ibeam : StandardCursorType.Cross);
             ToolChanged?.Invoke();
             InvalidateVisual();
@@ -194,6 +210,7 @@ public sealed class CanvasView : Control
         _selection.Clear();
         _selection.AddRange(list);
         _nodeSel.Clear();
+        _fillSel = -1;
         SelectionChanged?.Invoke();
         InvalidateVisual();
     }
@@ -280,6 +297,12 @@ public sealed class CanvasView : Control
             // Click = testo "artistico" in quel punto; trascinando si disegna la larghezza per l'a capo automatico.
             _createStart = _createEnd = ToDoc(pt.Position);
             _drag = Drag.TextBox;
+        }
+        else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Fill)
+        {
+            FillPress(pt.Position, e.ClickCount);
+            if (_drag != Drag.None) e.Pointer.Capture(this);
+            return;
         }
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Node)
         {
@@ -401,6 +424,255 @@ public sealed class CanvasView : Control
         }]);
         Select(r.CreatedIds[0]);
         Tool = Tool.Select;
+    }
+
+    // ---- Strumento di riempimento -------------------------------------------------------------
+
+    sealed record FillHandle(FillPart Part, int Index, Vector2 Pos, string Color);
+    sealed record FillView(List<FillHandle> Handles, List<(Vector2 A, Vector2 B)> Lines, List<Vector2>? Ellipse, int Selected);
+
+    // Il gradiente è relativo a questo riquadro, nello spazio locale dell'oggetto (per il testo: quello impaginato, poi stirato da Fit).
+    static Box GradBox(Item it) => it.Kind == Kind.Text ? it.Source : new Box(it.X, it.Y, it.W, it.H);
+
+    static Vector2 FracToPage(Item it, double fx, double fy)
+    {
+        var b = GradBox(it);
+        var p = new Vector2((float)(b.X + fx * b.Width), (float)(b.Y + fy * b.Height));
+        if (it.Kind == Kind.Text) p = Vector2.Transform(p, it.Fit);
+        return Vector2.Transform(p, it.M);
+    }
+
+    static (double X, double Y)? PageToFrac(Item it, Vector2 page)
+    {
+        if (!Matrix3x2.Invert(it.M, out var inv)) return null;
+        var p = Vector2.Transform(page, inv);
+        if (it.Kind == Kind.Text)
+        {
+            if (!Matrix3x2.Invert(it.Fit, out var fitInv)) return null;
+            p = Vector2.Transform(p, fitInv);
+        }
+        var b = GradBox(it);
+        return b.Width > 0 && b.Height > 0 ? ((p.X - b.X) / b.Width, (p.Y - b.Y) / b.Height) : null;
+    }
+
+    static GradientSpec? ParseFill(string? fill) => fill != null && Gradient.TryParse(fill, out var g) ? g : null;
+
+    FillView BuildFillView(Item it, GradientSpec g)
+    {
+        var box = GradBox(it);
+        var handles = new List<FillHandle>();
+        var lines = new List<(Vector2, Vector2)>();
+        List<Vector2>? ellipse = null;
+        var last = g.Stops.Count - 1;
+
+        if (!g.Radial)
+        {
+            var (x1, y1, x2, y2) = Gradient.LinearPoints(g, box);
+            Vector2 a = FracToPage(it, x1, y1), b = FracToPage(it, x2, y2);
+            lines.Add((a, b));
+            handles.Add(new(FillPart.Start, 0, a, g.Stops[0].Color));
+            handles.Add(new(FillPart.End, last, b, g.Stops[last].Color));
+            for (var i = 1; i < last; i++)
+            {
+                var t = g.Stops[i].Position;
+                handles.Add(new(FillPart.Stop, i, FracToPage(it, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t), g.Stops[i].Color));
+            }
+        }
+        else
+        {
+            var (rx, ry) = Gradient.RadialRadii(g, box);
+            double cx = g.CenterX, cy = g.CenterY;
+            Vector2 c = FracToPage(it, cx, cy), hx = FracToPage(it, cx + rx, cy), hy = FracToPage(it, cx, cy + ry);
+            lines.Add((c, hx));
+            lines.Add((c, hy));
+            handles.Add(new(FillPart.Center, 0, c, g.Stops[0].Color));
+            handles.Add(new(FillPart.RadX, last, hx, g.Stops[last].Color));
+            handles.Add(new(FillPart.RadY, last, hy, g.Stops[last].Color));
+            for (var i = 1; i < last; i++)
+                handles.Add(new(FillPart.Stop, i, FracToPage(it, cx + rx * g.Stops[i].Position, cy), g.Stops[i].Color));
+            ellipse = Enumerable.Range(0, 49).Select(k => FracToPage(it, cx + rx * Math.Cos(k * Math.PI / 24), cy + ry * Math.Sin(k * Math.PI / 24))).ToList();
+        }
+        return new FillView(handles, lines, ellipse, _fillSel);
+    }
+
+    FillHandle? FillHitHandle(Point screen)
+    {
+        if (SnapshotSelected() is not { } it || it.Kind == Kind.Group || ParseFill(it.Fill) is not { } g) return null;
+        return BuildFillView(it, g).Handles.Where(h => Near(h.Pos, screen)).OrderBy(h => h.Part == FillPart.Stop ? 0 : 1).FirstOrDefault();
+    }
+
+    void FillPress(Point screen, int clickCount)
+    {
+        var it = SnapshotSelected();
+        var g = it is { Kind: not Kind.Group } ? ParseFill(it.Fill) : null;
+        if (it != null && g != null)
+        {
+            if (FillHitHandle(screen) is { } h)
+            {
+                _fillItem = it; _fillBase = g; _fillHit = h;
+                _fillSel = h.Part is FillPart.Start or FillPart.End or FillPart.Stop or FillPart.Center or FillPart.RadX or FillPart.RadY ? h.Index : -1;
+                _drag = Drag.FillHandle;
+                InvalidateVisual();
+                return;
+            }
+            if (clickCount >= 2 && AddStopAt(it, g, screen)) return;
+        }
+
+        var hit = HitTest(ToDoc(screen));
+        if (hit != null && hit != SelectedId) { Select(hit); return; } // un altro oggetto: si lavora su quello
+        if (it != null && it.Kind != Kind.Group && hit == it.Id)
+        {
+            // Trascinando sull'oggetto si disegna un nuovo gradiente (come lo strumento di riempimento interattivo degli editor vettoriali classici).
+            _fillItem = it; _fillBase = g; _fillHit = null;
+            _fillStart = ToDoc(screen);
+            _drag = Drag.FillDraw;
+        }
+    }
+
+    // Doppio click sulla linea del gradiente: aggiunge una sosta di colore in quel punto.
+    bool AddStopAt(Item it, GradientSpec g, Point screen)
+    {
+        var box = GradBox(it);
+        var d = ToDoc(screen);
+        if (PageToFrac(it, new Vector2((float)d.X, (float)d.Y)) is not { } f) return false;
+        double ax, ay, bx, by; // linea su cui stanno le soste, in frazioni del riquadro
+        if (!g.Radial)
+        {
+            var (x1, y1, x2, y2) = Gradient.LinearPoints(g, box);
+            (ax, ay, bx, by) = (x1, y1, x2, y2);
+        }
+        else
+        {
+            var (rx, _) = Gradient.RadialRadii(g, box);
+            (ax, ay, bx, by) = (g.CenterX, g.CenterY, g.CenterX + rx, g.CenterY);
+        }
+        double w = box.Width, h = box.Height, dx = (bx - ax) * w, dy = (by - ay) * h, len2 = dx * dx + dy * dy;
+        if (len2 < 1e-9) return false;
+        var t = ((f.X - ax) * w * dx + (f.Y - ay) * h * dy) / len2;
+        if (t <= 0.02 || t >= 0.98) return false;
+        var px = ax + (bx - ax) * t; var py = ay + (by - ay) * t;
+        var onLine = FracToPage(it, px, py);
+        if (!Near(onLine, screen) && Vector2.Distance(onLine, new Vector2((float)d.X, (float)d.Y)) * _zoom > 6) return false;
+
+        var stops = g.Stops.ToList();
+        var index = stops.FindIndex(s => s.Position > t);
+        if (index < 0) index = stops.Count - 1;
+        stops.Insert(index, new GradientStop(Gradient.ColorAt(g.Stops, t), t));
+        _fillSel = index;
+        CommitFill(Gradient.Format(g with { Stops = stops }));
+        return true;
+    }
+
+    void FillDragMove(Point pos, bool shift)
+    {
+        if (_fillItem is not { } it) return;
+        var g0 = _fillBase; // null se l'oggetto non aveva ancora un gradiente (si sta disegnando il primo)
+        var box = GradBox(it);
+        var d = ToDoc(pos);
+        if (PageToFrac(it, new Vector2((float)d.X, (float)d.Y)) is not { } f) return;
+        double w = box.Width, h = box.Height;
+
+        if (_drag == Drag.FillDraw)
+        {
+            if (PageToFrac(it, new Vector2((float)_fillStart.X, (float)_fillStart.Y)) is not { } s) return;
+            if (Math.Abs(pos.X - (_fillStart.X * _zoom + _pan.X)) + Math.Abs(pos.Y - (_fillStart.Y * _zoom + _pan.Y)) < 3) { _fillWork = null; return; }
+            var stops = (_fillBase?.Stops ?? DefaultStops?.Invoke() ?? [new("#3B82F6", 0), new("#FFFFFF", 1)]).ToList();
+            if (_fillBase is { Radial: true } rb)
+            {
+                var r = Math.Sqrt(Math.Pow((f.X - s.X) * w, 2) + Math.Pow((f.Y - s.Y) * h, 2)); // raggio in unità documento
+                _fillWork = rb with { CenterX = s.X, CenterY = s.Y, Circle = false, Rx = r / w, Ry = r / h, Stops = stops };
+            }
+            else
+                _fillWork = new GradientSpec(false, 0, false, 0.5, 0.5, stops, s.X, s.Y, f.X, f.Y);
+            return;
+        }
+
+        if (g0 == null || _fillHit == null) return;
+        var g = g0;
+        var hit = _fillHit;
+        var st = g.Stops.ToList();
+        var last = st.Count - 1;
+        if (!g.Radial)
+        {
+            var (x1, y1, x2, y2) = Gradient.LinearPoints(g, box);
+            switch (hit.Part)
+            {
+                case FillPart.Start:
+                case FillPart.End:
+                {
+                    var start = hit.Part == FillPart.Start;
+                    var (ox, oy) = start ? (x2, y2) : (x1, y1);
+                    var (nx, ny) = (f.X, f.Y);
+                    if (shift && w > 0 && h > 0) // Shift: angolo a scatti di 15°
+                    {
+                        double vx = (nx - ox) * w, vy = (ny - oy) * h, len = Math.Sqrt(vx * vx + vy * vy);
+                        var ang = Math.Round(Math.Atan2(vy, vx) / (Math.PI / 12)) * (Math.PI / 12);
+                        (nx, ny) = (ox + len * Math.Cos(ang) / w, oy + len * Math.Sin(ang) / h);
+                    }
+                    _fillWork = start ? g with { X1 = nx, Y1 = ny, X2 = x2, Y2 = y2 } : g with { X1 = x1, Y1 = y1, X2 = nx, Y2 = ny };
+                    break;
+                }
+                case FillPart.Stop:
+                {
+                    double ax = (x2 - x1) * w, ay = (y2 - y1) * h, len2 = ax * ax + ay * ay;
+                    if (len2 < 1e-9) return;
+                    var t = ((f.X - x1) * w * ax + (f.Y - y1) * h * ay) / len2;
+                    st[hit.Index] = st[hit.Index] with { Position = Math.Clamp(t, st[hit.Index - 1].Position + 0.001, st[hit.Index + 1].Position - 0.001) };
+                    _fillWork = g with { Stops = st };
+                    break;
+                }
+            }
+        }
+        else
+        {
+            var (rx, ry) = Gradient.RadialRadii(g, box);
+            switch (hit.Part)
+            {
+                case FillPart.Center:
+                    _fillWork = g with { CenterX = f.X, CenterY = f.Y, Circle = false, Rx = rx, Ry = ry }; // il raggio resta lo stesso
+                    break;
+                case FillPart.RadX:
+                    _fillWork = g with { Circle = false, Rx = Math.Max(0.005, Math.Abs(f.X - g.CenterX)), Ry = ry };
+                    break;
+                case FillPart.RadY:
+                    _fillWork = g with { Circle = false, Rx = rx, Ry = Math.Max(0.005, Math.Abs(f.Y - g.CenterY)) };
+                    break;
+                case FillPart.Stop:
+                {
+                    var t = rx > 1e-9 ? (f.X - g.CenterX) / rx : 0;
+                    st[hit.Index] = st[hit.Index] with { Position = Math.Clamp(t, st[hit.Index - 1].Position + 0.001, st[hit.Index + 1].Position - 0.001) };
+                    _fillWork = g with { Stops = st };
+                    break;
+                }
+            }
+        }
+    }
+
+    void CommitFill(string fill)
+    {
+        if (SelectedId is { } id && Bus != null)
+            try { Bus.Execute([new SetStyle { Targets = [id], Fill = fill }]); } catch (CommandException) { }
+    }
+
+    /// <summary>Con la sosta selezionata sul canvas, un colore della tavolozza la cambia. False se non c'è una sosta selezionata.</summary>
+    public bool TrySetSelectedStopColor(string color)
+    {
+        if (Tool != Tool.Fill || _fillSel < 0 || SnapshotSelected() is not { } it || ParseFill(it.Fill) is not { } g || _fillSel >= g.Stops.Count) return false;
+        var st = g.Stops.ToList();
+        st[_fillSel] = st[_fillSel] with { Color = color.ToUpperInvariant() };
+        CommitFill(Gradient.Format(g with { Stops = st }));
+        return true;
+    }
+
+    /// <summary>Toglie la sosta selezionata (ne servono almeno due).</summary>
+    public bool DeleteSelectedStop()
+    {
+        if (Tool != Tool.Fill || _fillSel < 0 || SnapshotSelected() is not { } it || ParseFill(it.Fill) is not { } g || g.Stops.Count <= 2 || _fillSel >= g.Stops.Count) return false;
+        var st = g.Stops.ToList();
+        st.RemoveAt(_fillSel);
+        _fillSel = -1;
+        CommitFill(Gradient.Format(g with { Stops = st }));
+        return true;
     }
 
     // ---- Strumento Nodi ------------------------------------------------------------------------
@@ -581,6 +853,17 @@ public sealed class CanvasView : Control
             InvalidateVisual();
             return;
         }
+        if (_drag == Drag.None && Tool == Tool.Fill)
+        {
+            Cursor = FillHitHandle(pos) != null ? new Cursor(StandardCursorType.SizeAll) : null;
+            return;
+        }
+        if (_drag is Drag.FillHandle or Drag.FillDraw)
+        {
+            FillDragMove(pos, shift);
+            InvalidateVisual();
+            return;
+        }
         if (_drag == Drag.None && Tool == Tool.Node)
         {
             Cursor = CurrentModel() is { } hm && HitNodePart(hm, pos) != null ? new Cursor(StandardCursorType.SizeAll) : null;
@@ -642,6 +925,15 @@ public sealed class CanvasView : Control
         {
             _drag = Drag.None;
             e.Pointer.Capture(null);
+            InvalidateVisual();
+            return;
+        }
+        if (_drag is Drag.FillHandle or Drag.FillDraw)
+        {
+            var work = _fillWork;
+            _fillWork = null; _fillBase = null; _drag = Drag.None;
+            e.Pointer.Capture(null);
+            if (work != null) CommitFill(Gradient.Format(work));
             InvalidateVisual();
             return;
         }
@@ -792,6 +1084,15 @@ public sealed class CanvasView : Control
             }
         }
 
+        // Strumento di riempimento: anteprima del gradiente in modifica e maniglie.
+        FillView? fillView = null;
+        if (Tool == Tool.Fill && SelectedId != null && items.FindIndex(i => i.Id == SelectedId) is var fk and >= 0 && items[fk].Kind != Kind.Group)
+        {
+            var spec = _fillWork ?? ParseFill(items[fk].Fill);
+            if (_fillWork != null) items[fk] = items[fk] with { Fill = Gradient.Format(_fillWork) };
+            if (spec != null) fillView = BuildFillView(items[fk], spec);
+        }
+
         // L'alone di un oggetto modificato dentro un gruppo si mostra sul gruppo.
         var now = Environment.TickCount64;
         var glow = new Dictionary<string, float>();
@@ -812,7 +1113,8 @@ public sealed class CanvasView : Control
             Tool == Tool.Node,
             nodeModel?.SelectMany((sp, si) => sp.Nodes.Select((n, ni) => new NodeV(n.P, n.In, n.Out, _nodeSel.Contains((si, ni)), n.Kind))).ToList(),
             Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
-                NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)));
+                NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)),
+            Tool == Tool.Fill, fillView);
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
             ActualThemeVariant == ThemeVariant.Dark, glow, gesture));
     }
@@ -825,7 +1127,7 @@ public sealed class CanvasView : Control
     sealed record NodeV(Vector2 P, Vector2? In, Vector2? Out, bool Selected, NodeKind Kind);
 
     sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover,
-        bool NodeMode, List<NodeV>? Nodes, bool PenClosing);
+        bool NodeMode, List<NodeV>? Nodes, bool PenClosing, bool FillMode, FillView? FillOverlay);
 
     /// <summary>Maniglia di selezione; Hx/Hy sono frazioni del rettangolo locale, Pos è in coordinate documento.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
@@ -895,7 +1197,12 @@ public sealed class CanvasView : Control
 
             // Selezione: un oggetto = contorno orientato e maniglie; più oggetti = contorni e riquadro complessivo.
             var sel = items.Where(i => selection.Contains(i.Id)).ToList();
-            if (gesture.NodeMode)
+            if (gesture.FillMode)
+            {
+                foreach (var it in sel) DrawOutline(canvas, paint, it); // strumento di riempimento: contorno + maniglie del gradiente
+                if (gesture.FillOverlay is { } fo) DrawFill(canvas, paint, fo);
+            }
+            else if (gesture.NodeMode)
             {
                 // Strumento Nodi: niente maniglie di trasformazione; per un path si vedono i suoi nodi.
                 if (gesture.Nodes != null) DrawNodes(canvas, paint, gesture.Nodes);
@@ -990,6 +1297,44 @@ public sealed class CanvasView : Control
             if (a.Out is null && b.In is null) path.LineTo(ToSk(b.P));
             else path.CubicTo(ToSk(a.Out ?? a.P), ToSk(b.In ?? b.P), ToSk(b.P));
         }
+
+        // Maniglie del gradiente: linee, ellisse del raggio e punti riempiti col colore della sosta.
+        void DrawFill(SKCanvas canvas, SKPaint paint, FillView v)
+        {
+            var w = (float)(1.5 / zoom);
+            if (v.Ellipse is { } ell)
+            {
+                using var path = new SKPath();
+                path.MoveTo(ToSk(ell[0]));
+                foreach (var p in ell.Skip(1)) path.LineTo(ToSk(p));
+                Haloed(paint, w, () => canvas.DrawPath(path, paint));
+            }
+            foreach (var (a, b) in v.Lines) Haloed(paint, w, () => canvas.DrawLine(ToSk(a), ToSk(b), paint));
+
+            var size = (float)(10 / zoom);
+            for (var i = 0; i < v.Handles.Count; i++)
+            {
+                var h = v.Handles[i];
+                var c = ToSk(h.Pos);
+                var selected = v.Selected == h.Index && h.Part is FillPart.Stop or FillPart.Start or FillPart.End or FillPart.Center or FillPart.RadX or FillPart.RadY && v.Selected >= 0
+                               && IsSelectedHandle(v, h);
+                var round = h.Part is FillPart.Stop or FillPart.RadX or FillPart.RadY;
+                using var shape = new SKPath();
+                var r = SKRect.Create(c.X - size / 2, c.Y - size / 2, size, size);
+                if (round) shape.AddOval(r); else shape.AddRect(r);
+                Haloed(paint, (float)(2.2 / zoom), () => canvas.DrawPath(shape, paint));
+                paint.Style = SKPaintStyle.Fill;
+                paint.Color = SceneRenderer.ParseColor(h.Color) is { } col ? col.WithAlpha(255) : SKColors.White;
+                canvas.DrawPath(shape, paint);
+                paint.Style = SKPaintStyle.Stroke;
+                paint.StrokeWidth = (float)((selected ? 3 : 1.5) / zoom);
+                paint.Color = selected ? Accent : SKColors.White;
+                canvas.DrawPath(shape, paint);
+            }
+        }
+
+        // La sosta selezionata ha un solo punto evidenziato: quello con lo stesso indice (per gli estremi, il primo che lo porta).
+        static bool IsSelectedHandle(FillView v, FillHandle h) => v.Handles.First(x => x.Index == v.Selected) == h;
 
         // Nodi del path: la forma indica il tipo (quadrato = cuspide, cerchio = liscio, rombo = simmetrico);
         // i nodi selezionati sono pieni e mostrano le loro maniglie.

@@ -86,7 +86,11 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
           "linear-gradient(180deg, #87CEEB 0%, #FFFFFF 70%, #4ADE80 100%)"   any number of colors, optional % positions (missing ones are spread evenly)
           "radial-gradient(#FFFFFF, #000000)"   from the center out to the farthest corner; optional shape/center: "radial-gradient(circle at 30% 40%, #FFF3B0, #F59E0B)"
           "linear-gradient(90deg, #FF000080, #FF000000)"   colors may carry alpha (#RRGGBBAA) for fades
-        The gradient is stored (and returned by get_document) in canonical form with explicit % positions.
+          "linear-gradient(from 10% 20% to 90% 80%, #FDE68A, #F59E0B)"   explicit start and end points (percentages of the object's box, may go outside 0-100%) instead of an angle
+          "radial-gradient(ellipse 35% 55% at 30% 40%, #FFFFFF, #F472B6 60%, #831843)"   explicit radii (% of width, height) and center
+        PATTERNS: `fill` and `stroke` also accept two-color repeating patterns, anchored to the object's top-left corner:
+          "pattern(stripes, #DC2626, #FEF2F2, 10)"   kind (stripes, dots, checker, grid), pattern color, background color (#RRGGBB00 = transparent), size in document units, optional rotation: "pattern(dots, #1E3A8A, #DBEAFE, 12, 30)"
+        The gradient or pattern is stored (and returned by get_document) in canonical form with explicit values.
         `name` is optional but recommended on creation: it lets you address the object later without looking up its id.
         Example: [{"cmd":"shape.create","type":"rectangle","name":"sky","x":0,"y":0,"width":400,"height":200,"fill":"#87CEEB"},
                   {"cmd":"shape.create","type":"ellipse","name":"sun","x":300,"y":20,"width":60,"height":60,"fill":"#FFC800"}]
