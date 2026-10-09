@@ -11,12 +11,13 @@ public static class McpHost
 {
     public const int Port = 5577;
 
-    public static WebApplication Start(CommandBus bus)
+    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://localhost:{Port}");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Services.AddSingleton(bus);
+        builder.Services.AddSingleton(renderer);
         builder.Services.AddMcpServer().WithHttpTransport().WithTools<AiDrawTools>();
 
         var app = builder.Build();

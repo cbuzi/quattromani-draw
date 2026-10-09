@@ -23,7 +23,6 @@ public enum Tool { Select, Rectangle, Ellipse, Pen }
 public sealed class CanvasView : Control
 {
     enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee }
-    enum Kind { Rectangle, Ellipse, Path, Group }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
     double _zoom = 1;
@@ -138,7 +137,7 @@ public sealed class CanvasView : Control
                 return g.Children.Any(ch => Contains(ch, c, tolerance));
             case PathObject po:
             {
-                using var path = BuildPath(po.Segments, po.Fit);
+                using var path = SceneRenderer.BuildPath(po.Segments, po.Fit);
                 if (po.Fill != null && path.Contains(l.X, l.Y)) return true;
                 // Il tratto si "clicca" con una tolleranza minima, anche se è sottile o assente.
                 using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)(2 * Math.Max(tolerance, po.StrokeWidth / 2)) };
@@ -467,24 +466,6 @@ public sealed class CanvasView : Control
     // Gesti in corso da disegnare come anteprima.
     sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<Vector2>? Pen, Vector2 PenHover);
 
-    // Copia immutabile degli oggetti: il rendering gira su un altro thread.
-    sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
-        string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children)
-    {
-        public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
-        public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
-
-        public static Item From(SceneObject o) => o switch
-        {
-            PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
-                p.Source, p.Segments, null),
-            GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
-                g.Source, null, g.Children.Select(From).ToList()),
-            _ => new(o.Id, o is EllipseObject ? Kind.Ellipse : Kind.Rectangle, o.X, o.Y, o.Width, o.Height, o.Transform,
-                o.Fill, o.Stroke, o.StrokeWidth, default, null, null),
-        };
-    }
-
     /// <summary>Maniglia di selezione; Hx/Hy sono frazioni del rettangolo locale, Pos è in coordinate documento.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
 
@@ -505,27 +486,6 @@ public sealed class CanvasView : Control
         return list;
     }
 
-    // Path Skia dai segmenti, già stirati con `fit` (così il tratto resta uniforme).
-    static SKPath BuildPath(List<PathSeg> segs, Matrix3x2 fit)
-    {
-        static SKPoint P(double x, double y, Matrix3x2 m)
-        {
-            var v = Vector2.Transform(new((float)x, (float)y), m);
-            return new(v.X, v.Y);
-        }
-
-        var path = new SKPath();
-        foreach (var s in segs)
-            switch (s.Op)
-            {
-                case 'M': path.MoveTo(P(s.X, s.Y, fit)); break;
-                case 'L': path.LineTo(P(s.X, s.Y, fit)); break;
-                case 'C': path.CubicTo(P(s.X1, s.Y1, fit), P(s.X2, s.Y2, fit), P(s.X, s.Y, fit)); break;
-                case 'Z': path.Close(); break;
-            }
-        return path;
-    }
-
     sealed class SceneOp(Rect bounds, List<Item> items, HashSet<string> selection, Point pan, double zoom, bool dark,
         Dictionary<string, float> glow, Gesture gesture)
         : ICustomDrawOperation
@@ -538,7 +498,6 @@ public sealed class CanvasView : Control
         public void Dispose() { }
 
         static SKPoint ToSk(Vector2 v) => new(v.X, v.Y);
-        static SKMatrix ToSk(Matrix3x2 m) => new(m.M11, m.M21, m.M31, m.M12, m.M22, m.M32, 0, 0, 1);
 
         public void Render(ImmediateDrawingContext context)
         {
@@ -553,7 +512,7 @@ public sealed class CanvasView : Control
             canvas.Scale((float)zoom);
 
             using var paint = new SKPaint { IsAntialias = true };
-            foreach (var it in items) DrawItem(canvas, paint, it);
+            foreach (var it in items) SceneRenderer.DrawItem(canvas, paint, it);
 
             DrawGesture(canvas, paint);
 
@@ -589,45 +548,6 @@ public sealed class CanvasView : Control
                 paint.PathEffect = null;
             }
             canvas.Restore();
-        }
-
-        void DrawItem(SKCanvas canvas, SKPaint paint, Item it)
-        {
-            canvas.Save();
-            var m = ToSk(it.M);
-            canvas.Concat(in m);
-            if (it.Kind == Kind.Group)
-            {
-                var fit = ToSk(it.Fit);
-                canvas.Concat(in fit);
-                foreach (var child in it.Children!) DrawItem(canvas, paint, child);
-            }
-            else
-            {
-                if (ParseColor(it.Fill) is { } fill)
-                {
-                    paint.Style = SKPaintStyle.Fill; paint.Color = fill;
-                    DrawShape(canvas, paint, it);
-                }
-                if (ParseColor(it.Stroke) is { } stroke && it.StrokeWidth > 0)
-                {
-                    paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)it.StrokeWidth; paint.Color = stroke;
-                    DrawShape(canvas, paint, it);
-                }
-            }
-            canvas.Restore();
-        }
-
-        static void DrawShape(SKCanvas canvas, SKPaint paint, Item it)
-        {
-            if (it.Kind == Kind.Path)
-            {
-                using var path = BuildPath(it.Segments!, it.Fit);
-                canvas.DrawPath(path, paint);
-                return;
-            }
-            var r = SKRect.Create((float)it.X, (float)it.Y, (float)it.W, (float)it.H);
-            if (it.Kind == Kind.Ellipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint);
         }
 
         void DrawGesture(SKCanvas canvas, SKPaint paint)
@@ -707,14 +627,5 @@ public sealed class CanvasView : Control
             }
         }
 
-        // Formato del documento: "#RRGGBB" o "#RRGGBBAA" (diverso da quello ARGB di Skia).
-        static SKColor? ParseColor(string? s)
-        {
-            if (s is not { Length: 7 or 9 }) return null;
-            var v = Convert.ToUInt32(s[1..], 16);
-            return s.Length == 7
-                ? new SKColor((byte)(v >> 16), (byte)(v >> 8), (byte)v)
-                : new SKColor((byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v);
-        }
     }
 }

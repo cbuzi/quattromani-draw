@@ -25,7 +25,7 @@ public class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = new MainWindow();
-            var mcp = McpHost.Start(Bus);
+            var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus));
             desktop.Exit += (_, _) => mcp.StopAsync().Wait(TimeSpan.FromSeconds(2));
         }
 

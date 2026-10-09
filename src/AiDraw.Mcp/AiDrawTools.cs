@@ -3,12 +3,13 @@ using System.Numerics;
 using System.Text.Json;
 using AiDraw.Core;
 using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace AiDraw.Mcp;
 
 [McpServerToolType]
-public sealed class AiDrawTools(CommandBus bus)
+public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
 {
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
@@ -95,6 +96,40 @@ public sealed class AiDrawTools(CommandBus bus)
         {
             throw new McpException($"{ex.Message} (the whole batch was rolled back; nothing changed)");
         }
+    }
+
+    [McpServerTool(Name = "render", ReadOnly = true)]
+    [Description("""
+        Renders the document (or a part of it) as a PNG image so you can check the result visually. Call it after drawing to verify what you made.
+        Optional arguments: `area` = [x, y, width, height] in document units to zoom into a region (default: all the content with a small margin);
+        `maxSize` = longest side in pixels (default 800, max 2048); `background` = "#RRGGBB", "#RRGGBBAA" or "transparent" (default white);
+        `labels` = true writes each top-level object's id and name on the image, handy to match what you see with ids for later commands.
+        Returns a short text with the area shown and the scale, then the image. Selection and editing handles are not drawn.
+        """)]
+    public IEnumerable<ContentBlock> Render(
+        [Description("[x, y, width, height] in document units. Omit to render all the content.")] double[]? area = null,
+        [Description("Longest side in pixels, 64..2048.")] int maxSize = 800,
+        [Description("\"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\".")] string? background = null,
+        [Description("Write object ids and names on the image.")] bool labels = false)
+    {
+        Box? box = null;
+        if (area != null)
+        {
+            if (area.Length != 4 || area[2] <= 0 || area[3] <= 0 || area.Any(v => !double.IsFinite(v)))
+                throw new McpException("'area' must be [x, y, width, height] with width and height > 0, e.g. [0, 0, 400, 300].");
+            box = new(area[0], area[1], area[2], area[3]);
+        }
+        if (maxSize is < 64 or > 2048) throw new McpException("'maxSize' must be between 64 and 2048.");
+        if (background is not (null or "transparent") && !System.Text.RegularExpressions.Regex.IsMatch(background, "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"))
+            throw new McpException("'background' must be \"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\".");
+
+        var img = renderer.Render(box, maxSize, background, labels);
+        var a = img.Area;
+        return
+        [
+            new TextContentBlock { Text = FormattableString.Invariant($"{img.PixelWidth}x{img.PixelHeight}px showing area [{a.X:0.##}, {a.Y:0.##}, {a.Width:0.##}, {a.Height:0.##}] (1 pixel = {a.Width / img.PixelWidth:0.###} document units)") },
+            ImageContentBlock.FromBytes(img.Png, "image/png"),
+        ];
     }
 
     [McpServerTool(Name = "get_changes", ReadOnly = true)]
