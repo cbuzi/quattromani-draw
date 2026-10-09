@@ -58,6 +58,8 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
           {"cmd":"object.group","targets":["roof","wall"],"name":"house"}   (same layer/group only; returns the group id in `created`)
           {"cmd":"object.ungroup","targets":["house"]}   (children keep their look and position)
           {"cmd":"shape.boolean","op":"weld","targets":["a","b"],"name":"merged"}   (op: weld = union; intersect; subtract = the lowest object minus all the others; trim = like subtract but the cutting objects stay)
+          {"cmd":"path.set","target":"roof","d":"M 0 60 L 50 -10 L 100 60 Z"}   (replaces the geometry of a top-level path with new SVG data in page coordinates, i.e. what get_document reports in `d`; use it to move/add/remove nodes or reshape curves; accumulated move/rotation is baked into the data)
+          {"cmd":"shape.toPath","targets":["sun"]}   (turns rectangles/ellipses into paths, keeping id, name, style and rotation, so they can be reshaped with path.set)
           {"cmd":"object.delete","targets":["o1"]}
         shape.boolean works on rectangles, ellipses and paths on the same level (ungroup groups first), needs 2+ targets and returns the new path id in `created`.
         The result is a path with the style of the lowest object (in z-order); curves are flattened into short segments. Add "keepOriginals":true to keep the source objects.
@@ -82,7 +84,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

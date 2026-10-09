@@ -28,6 +28,8 @@ public static class Json
 [JsonDerivedType(typeof(GroupObjects), "object.group")]
 [JsonDerivedType(typeof(UngroupObjects), "object.ungroup")]
 [JsonDerivedType(typeof(BooleanOp), "shape.boolean")]
+[JsonDerivedType(typeof(SetPath), "path.set")]
+[JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
@@ -343,5 +345,88 @@ public sealed class UngroupObjects : Command
             container.Insert(index, g);
             for (var k = 0; k < old.Count; k++) g.Children[k].Transform = old[k];
         }
+    }
+}
+
+/// <summary>Sostituisce la geometria di un path (nodi spostati, aggiunti, eliminati...). La rotazione/spostamento accumulati vengono incorporati nei dati.</summary>
+public sealed class SetPath : Command
+{
+    public string Target { get; set; } = "";
+    /// <summary>Nuovi dati SVG, nello spazio della pagina (come in get_document).</summary>
+    public string D { get; set; } = "";
+
+    PathObject? _obj;
+    List<PathSeg> _oldSegs = [];
+    Box _oldSource, _oldRect;
+    Matrix3x2 _oldTransform;
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _obj is null ? [] : [_obj.Id];
+
+    public override void Apply(Document doc)
+    {
+        var o = doc.Find(Target);
+        if (o is not PathObject p)
+            throw new CommandException($"path.set: '{Target}' e' un {o.Type}, non un path (shape.toPath converte rettangoli ed ellissi in path).");
+        if (!doc.Pages.SelectMany(pg => pg.Layers).Any(l => l.Objects.Contains(p)))
+            throw new CommandException($"path.set: '{Target}' e' dentro un gruppo: separalo prima con object.ungroup.");
+        var segs = PathData.Parse(D);
+        var box = PathData.Bounds(segs)!.Value;
+
+        _obj = p;
+        (_oldSegs, _oldSource, _oldRect, _oldTransform) = (p.Segments, p.Source, new Box(p.X, p.Y, p.Width, p.Height), p.Transform);
+        p.Segments = segs;
+        p.Source = box;
+        (p.X, p.Y, p.Width, p.Height) = (box.X, box.Y, box.Width, box.Height);
+        p.Transform = Matrix3x2.Identity;
+    }
+
+    public override void Undo(Document doc)
+    {
+        var p = _obj!;
+        p.Segments = _oldSegs;
+        p.Source = _oldSource;
+        (p.X, p.Y, p.Width, p.Height) = (_oldRect.X, _oldRect.Y, _oldRect.Width, _oldRect.Height);
+        p.Transform = _oldTransform;
+    }
+}
+
+/// <summary>Converte rettangoli ed ellissi in path (stesso id, nome, stile e trasformazione), per poterne modificare i nodi.</summary>
+public sealed class ConvertToPath : Command
+{
+    public List<string> Targets { get; set; } = [];
+
+    List<(List<SceneObject> Container, int Index, SceneObject Old, PathObject New)> _done = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _done.Select(d => d.New.Id);
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("shape.toPath: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        if (objs.FirstOrDefault(o => o is GroupObject) is { } g)
+            throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' e' un gruppo: separalo prima con object.ungroup.");
+        var convertible = objs.Where(o => o is RectangleObject or EllipseObject).ToList();
+        if (convertible.Count == 0) throw new CommandException("shape.toPath: gli oggetti indicati sono gia' path.");
+
+        if (_done.Count == 0)
+            foreach (var o in convertible)
+            {
+                var segs = o is EllipseObject
+                    ? PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height)
+                    : PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
+                var box = new Box(o.X, o.Y, o.Width, o.Height);
+                var container = doc.ContainerOf(o)!;
+                _done.Add((container, container.IndexOf(o), o, new PathObject
+                {
+                    Id = o.Id, Name = o.Name, Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height,
+                    Transform = o.Transform, Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth,
+                }));
+            }
+        foreach (var (container, _, old, @new) in _done) container[container.IndexOf(old)] = @new;
+    }
+
+    public override void Undo(Document doc)
+    {
+        foreach (var (container, _, old, @new) in _done) container[container.IndexOf(@new)] = old;
     }
 }

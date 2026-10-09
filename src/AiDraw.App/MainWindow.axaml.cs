@@ -12,7 +12,7 @@ public partial class MainWindow : Window
 {
     readonly CommandBus _bus = App.Bus;
     List<string> _ids = [];
-    bool _syncing;
+    bool _syncing, _syncingScroll;
     long _seenVersion;
     readonly HashSet<string> _aiTouched = []; // oggetti la cui ultima modifica è dell'agente
     readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
@@ -28,7 +28,10 @@ public partial class MainWindow : Window
         _bus.Changed += () => Dispatcher.UIThread.Post(OnBusChanged);
         _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; };
         Canvas.SelectionChanged += Refresh;
-        Canvas.ViewChanged += () => ZoomText.Text = $"{Canvas.Zoom:P0}";
+        Canvas.ViewChanged += () => { ZoomText.Text = $"{Canvas.Zoom:P0}"; UpdateScrollBars(); };
+        Canvas.SizeChanged += (_, _) => UpdateScrollBars();
+        HScroll.ValueChanged += (_, e) => { if (!_syncingScroll) Canvas.ScrollTo(e.NewValue, null); };
+        VScroll.ValueChanged += (_, e) => { if (!_syncingScroll) Canvas.ScrollTo(null, e.NewValue); };
         ZoomText.Text = $"{Canvas.Zoom:P0}";
 
         WeldButton.Click += (_, _) => RunBoolean("weld");
@@ -54,6 +57,12 @@ public partial class MainWindow : Window
         RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
         PenTool.Click += (_, _) => { Canvas.Tool = Tool.Pen; SyncToolButtons(); };
+        NodeTool.Click += (_, _) => { Canvas.Tool = Tool.Node; SyncToolButtons(); };
+        NodeLineButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToLine);
+        NodeCurveButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.ToCurve);
+        NodeSmoothButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Smooth);
+        NodeDeleteButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Delete);
+        ToCurvesButton.Click += (_, _) => ToCurves();
         Canvas.ToolChanged += SyncToolButtons;
 
         // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
@@ -117,6 +126,10 @@ public partial class MainWindow : Window
         RectTool.IsChecked = Canvas.Tool == Tool.Rectangle;
         EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
         PenTool.IsChecked = Canvas.Tool == Tool.Pen;
+        NodeTool.IsChecked = Canvas.Tool == Tool.Node;
+        // Con lo strumento Nodi la barra mostra le operazioni sui nodi al posto di quelle booleane.
+        NodeBar.IsVisible = Canvas.Tool == Tool.Node;
+        BoolBar.IsVisible = Canvas.Tool != Tool.Node;
     }
 
     /// <summary>Aggiorna lo stile corrente (nuove forme) e lo applica alla selezione tramite il bus.</summary>
@@ -156,9 +169,17 @@ public partial class MainWindow : Window
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Ungroup(); else Group();
             e.Handled = true;
         }
-        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P)
+        else if (cmd && e.Key == Key.Q)
         {
-            Canvas.Tool = e.Key switch { Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, _ => Tool.Select };
+            ToCurves();
+            e.Handled = true;
+        }
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10)
+        {
+            Canvas.Tool = e.Key switch
+            {
+                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, _ => Tool.Select,
+            };
             e.Handled = true;
         }
         else if (e.Key == Key.Enter && Canvas.PenActive)
@@ -176,11 +197,47 @@ public partial class MainWindow : Window
             Canvas.PenBack(); // durante il disegno toglie l'ultimo nodo
             e.Handled = true;
         }
+        else if (e.Key is Key.Delete or Key.Back && Canvas.Tool == Tool.Node && Canvas.NodeSelectionCount > 0)
+        {
+            Canvas.ApplyNodeOp(NodeOp.Delete); // con lo strumento Nodi Delete toglie i nodi, non l'oggetto
+            e.Handled = true;
+        }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
         {
             _bus.Execute([new DeleteObjects { Targets = Canvas.SelectedIds.ToList() }]);
             e.Handled = true;
         }
+    }
+
+    void UpdateScrollBars()
+    {
+        var s = Canvas.ScrollInfo();
+        _syncingScroll = true;
+        HScroll.Maximum = Math.Max(0, s.TotalW - s.ViewW);
+        HScroll.ViewportSize = s.ViewW;
+        HScroll.Value = Math.Clamp(s.OffX, 0, HScroll.Maximum);
+        VScroll.Maximum = Math.Max(0, s.TotalH - s.ViewH);
+        VScroll.ViewportSize = s.ViewH;
+        VScroll.Value = Math.Clamp(s.OffY, 0, VScroll.Maximum);
+        _syncingScroll = false;
+    }
+
+    void ToCurves()
+    {
+        if (Canvas.SelectedIds.Count == 0) return;
+        try
+        {
+            _bus.Execute([new ConvertToPath { Targets = Canvas.SelectedIds.ToList() }]);
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    void ShowNotice(string message)
+    {
+        NoticeText.Text = message.Replace("shape.boolean: ", "").Replace("shape.toPath: ", "");
+        NoticeText.IsVisible = true;
+        _noticeTimer.Stop();
+        _noticeTimer.Start();
     }
 
     void RunBoolean(string op)
@@ -190,13 +247,7 @@ public partial class MainWindow : Window
             var r = _bus.Execute([new BooleanOp { Op = op, Targets = Canvas.SelectedIds.ToList() }]);
             Canvas.Select(r.CreatedIds[0]);
         }
-        catch (CommandException ex)
-        {
-            NoticeText.Text = ex.Message.Replace("shape.boolean: ", "");
-            NoticeText.IsVisible = true;
-            _noticeTimer.Stop();
-            _noticeTimer.Start();
-        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
     void Group()
@@ -273,5 +324,6 @@ public partial class MainWindow : Window
         WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
 
         Canvas.InvalidateVisual();
+        UpdateScrollBars(); // il contenuto può essere cambiato
     }
 }

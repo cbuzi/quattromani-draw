@@ -16,10 +16,19 @@
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
                     <Border Width="1" Height="20" Margin="8,0" Background="{DynamicResource PanelBorder}" />
-                    <Button x:Name="WeldButton" Classes="bar" Content="Weld" ToolTip.Tip="Union of the selected shapes" />
-                    <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
-                    <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
-                    <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
+                    <StackPanel x:Name="BoolBar" Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="WeldButton" Classes="bar" Content="Weld" ToolTip.Tip="Union of the selected shapes" />
+                        <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
+                        <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
+                        <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
+                    </StackPanel>
+                    <StackPanel x:Name="NodeBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                        <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />
+                        <Button x:Name="NodeLineButton" Classes="bar" Content="Line" ToolTip.Tip="Make the segments of the selected nodes straight" />
+                        <Button x:Name="NodeCurveButton" Classes="bar" Content="Curve" ToolTip.Tip="Make the segments of the selected nodes curved" />
+                        <Button x:Name="NodeSmoothButton" Classes="bar" Content="Smooth" ToolTip.Tip="Align the handles of the selected nodes" />
+                        <Button x:Name="NodeDeleteButton" Classes="bar" Content="Delete node" ToolTip.Tip="Delete the selected nodes (Delete)" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.6" />
@@ -43,6 +52,11 @@
                 <ToggleButton x:Name="SelectTool" Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
                     <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
                           Fill="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="NodeTool" Classes="tool" ToolTip.Tip="Node edit (N): move nodes and handles; double-click the path to add a node, double-click a node to delete it. Alt = independent handles">
+                    <Path Data="M5,19 C7,7 17,7 19,19 M3,17 L7,17 L7,21 L3,21 Z M17,17 L21,17 L21,21 L17,21 Z"
+                          StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
                 <ToggleButton x:Name="RectTool" Classes="tool" ToolTip.Tip="Rectangle (R)">
                     <Path Data="M4,6 L20,6 L20,18 L4,18 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
@@ -82,6 +96,10 @@
             </DockPanel>
         </Border>
 
-        <local:CanvasView x:Name="Canvas" />
+        <Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
+            <local:CanvasView x:Name="Canvas" />
+            <ScrollBar x:Name="VScroll" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" />
+            <ScrollBar x:Name="HScroll" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" />
+        </Grid>
     </DockPanel>
 </Window>

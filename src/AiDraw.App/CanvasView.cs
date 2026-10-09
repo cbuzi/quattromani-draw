@@ -14,7 +14,9 @@ using SkiaSharp;
 
 namespace AiDraw.App;
 
-public enum Tool { Select, Rectangle, Ellipse, Pen }
+public enum Tool { Select, Node, Rectangle, Ellipse, Pen }
+
+public enum NodeOp { ToLine, ToCurve, Smooth, Delete }
 
 /// <summary>
 /// Canvas Skia con pan/zoom, selezione (anche multipla), spostamento, ridimensionamento, rotazione e penna.
@@ -22,7 +24,8 @@ public enum Tool { Select, Rectangle, Ellipse, Pen }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode }
+    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle }
+    enum NodePart { Node, In, Out }
 
     Point _pan = new(120, 90); // posizione schermo dell'origine del documento
     double _zoom = 1;
@@ -43,6 +46,13 @@ public sealed class CanvasView : Control
     }
 
     readonly List<PenNode> _pen = [];
+
+    // Strumento Nodi: selezione dei nodi (sottopath, indice) del path selezionato; durante un trascinamento
+    // _nodeOrig è il modello a inizio gesto e _nodeWork quello modificato (anteprima: il documento cambia al rilascio).
+    readonly HashSet<(int Sub, int Idx)> _nodeSel = [];
+    List<SubPath>? _nodeOrig, _nodeWork;
+    (int Sub, int Idx, NodePart Part) _nodeHit;
+    double _nodeHandleX, _nodeHandleY;
     Point _penHover;
 
     // Ridimensionamento / rotazione in corso (anteprima: il documento cambia solo al rilascio).
@@ -61,6 +71,7 @@ public sealed class CanvasView : Control
     /// <summary>L'id selezionato, solo se la selezione è esattamente un oggetto.</summary>
     public string? SelectedId => _selection.Count == 1 ? _selection[0] : null;
     public double Zoom => _zoom;
+    public int NodeSelectionCount => _nodeSel.Count;
 
     /// <summary>Stile applicato alle nuove forme.</summary>
     public string? Fill { get; set; } = "#3B82F6";
@@ -75,7 +86,9 @@ public sealed class CanvasView : Control
             if (_tool == value) return;
             _tool = value;
             if (value != Tool.Pen) _pen.Clear();
-            Cursor = value == Tool.Select ? null : new Cursor(StandardCursorType.Cross);
+            _nodeSel.Clear();
+            _nodeWork = null;
+            Cursor = value is Tool.Select or Tool.Node ? null : new Cursor(StandardCursorType.Cross);
             ToolChanged?.Invoke();
             InvalidateVisual();
         }
@@ -111,6 +124,39 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
+    // ---- Barre di scorrimento ------------------------------------------------------------------
+
+    Box _scrollRange; // area scorrevole in coordinate documento, dall'ultimo ScrollInfo
+
+    /// <summary>
+    /// Misure per le barre di scorrimento, in pixel schermo. L'area scorrevole è il contenuto allargato di mezza finestra
+    /// per lato (si può sempre uscire un po' dai bordi), unita alla finestra stessa se l'utente è andato oltre.
+    /// </summary>
+    public (double TotalW, double TotalH, double OffX, double OffY, double ViewW, double ViewH) ScrollInfo()
+    {
+        var boxes = Bus?.Read(d => d.Objects.Select(o => o.Bounds).ToList()) ?? [];
+        double cx0 = 0, cy0 = 0, cx1 = 800, cy1 = 600; // documento vuoto: una "pagina" di riferimento
+        if (boxes.Count > 0)
+        {
+            cx0 = boxes.Min(b => b.X); cy0 = boxes.Min(b => b.Y);
+            cx1 = boxes.Max(b => b.X + b.Width); cy1 = boxes.Max(b => b.Y + b.Height);
+        }
+        double vw = Bounds.Width / _zoom, vh = Bounds.Height / _zoom, vx = -_pan.X / _zoom, vy = -_pan.Y / _zoom;
+        double x0 = Math.Min(cx0 - vw / 2, vx), y0 = Math.Min(cy0 - vh / 2, vy);
+        double x1 = Math.Max(cx1 + vw / 2, vx + vw), y1 = Math.Max(cy1 + vh / 2, vy + vh);
+        _scrollRange = new(x0, y0, x1 - x0, y1 - y0);
+        return ((x1 - x0) * _zoom, (y1 - y0) * _zoom, (vx - x0) * _zoom, (vy - y0) * _zoom, Bounds.Width, Bounds.Height);
+    }
+
+    /// <summary>Porta la finestra a una posizione (in pixel dall'inizio dell'area scorrevole); null = invariato.</summary>
+    public void ScrollTo(double? offX, double? offY)
+    {
+        if (offX is { } x) _pan = new(-(_scrollRange.X * _zoom + x), _pan.Y);
+        if (offY is { } y) _pan = new(_pan.X, -(_scrollRange.Y * _zoom + y));
+        ViewChanged?.Invoke();
+        InvalidateVisual();
+    }
+
     public void Select(string? id) => SetSelection(id is null ? [] : [id]);
 
     public void SetSelection(IEnumerable<string> ids)
@@ -119,6 +165,7 @@ public sealed class CanvasView : Control
         if (list.SequenceEqual(_selection)) return;
         _selection.Clear();
         _selection.AddRange(list);
+        _nodeSel.Clear();
         SelectionChanged?.Invoke();
         InvalidateVisual();
     }
@@ -191,6 +238,12 @@ public sealed class CanvasView : Control
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Pen)
         {
             PenPress(pt.Position, e.ClickCount);
+            if (_drag != Drag.None) e.Pointer.Capture(this);
+            return;
+        }
+        else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Node)
+        {
+            NodePress(pt.Position, e.ClickCount, shift);
             if (_drag != Drag.None) e.Pointer.Capture(this);
             return;
         }
@@ -304,6 +357,140 @@ public sealed class CanvasView : Control
         Tool = Tool.Select;
     }
 
+    // ---- Strumento Nodi ------------------------------------------------------------------------
+
+    // Modello a nodi del path in coordinate pagina (la trasformazione è già applicata).
+    static List<SubPath> ModelOf(Item it) => PathNodes.FromSegments(PathData.Transform(it.Segments!, it.Fit * it.M));
+
+    List<SubPath>? CurrentModel() =>
+        Tool == Tool.Node && SnapshotSelected() is { Kind: Kind.Path } it ? ModelOf(it) : null;
+
+    bool Near(Vector2 v, Point screen) =>
+        Math.Abs(v.X * _zoom + _pan.X - screen.X) <= 7 && Math.Abs(v.Y * _zoom + _pan.Y - screen.Y) <= 7;
+
+    (int Sub, int Idx, NodePart Part)? HitNodePart(List<SubPath> model, Point screen)
+    {
+        // Le maniglie dei nodi selezionati stanno sopra i nodi.
+        foreach (var (si, ni) in _nodeSel)
+        {
+            if (si >= model.Count || ni >= model[si].Nodes.Count) continue;
+            var n = model[si].Nodes[ni];
+            if (n.In is { } i && Near(i, screen)) return (si, ni, NodePart.In);
+            if (n.Out is { } o && Near(o, screen)) return (si, ni, NodePart.Out);
+        }
+        for (var si = 0; si < model.Count; si++)
+            for (var ni = 0; ni < model[si].Nodes.Count; ni++)
+                if (Near(model[si].Nodes[ni].P, screen)) return (si, ni, NodePart.Node);
+        return null;
+    }
+
+    void NodePress(Point screen, int clickCount, bool shift)
+    {
+        var model = CurrentModel();
+        if (model != null)
+        {
+            if (HitNodePart(model, screen) is { } hit)
+            {
+                if (hit.Part == NodePart.Node)
+                {
+                    if (clickCount >= 2) // doppio click su un nodo: lo elimina
+                    {
+                        _nodeSel.Clear(); _nodeSel.Add((hit.Sub, hit.Idx));
+                        ApplyNodeOp(NodeOp.Delete);
+                        return;
+                    }
+                    if (shift) { if (!_nodeSel.Remove((hit.Sub, hit.Idx))) _nodeSel.Add((hit.Sub, hit.Idx)); }
+                    else if (!_nodeSel.Contains((hit.Sub, hit.Idx))) { _nodeSel.Clear(); _nodeSel.Add((hit.Sub, hit.Idx)); }
+                }
+                _nodeOrig = PathNodes.Clone(model);
+                _nodeHit = hit;
+                _drag = hit.Part == NodePart.Node ? Drag.NodeMove : Drag.NodeHandle;
+                InvalidateVisual();
+                return;
+            }
+
+            // Doppio click sul tracciato: aggiunge un nodo senza cambiare la forma.
+            var d = ToDoc(screen);
+            if (clickCount >= 2 && PathNodes.Nearest(model, new((float)d.X, (float)d.Y)) is { } near && near.Dist * _zoom <= 6)
+            {
+                var m = PathNodes.Clone(model);
+                var idx = PathNodes.InsertNode(m[near.Sub], near.Seg, near.T);
+                CommitNodes(m);
+                _nodeSel.Clear(); _nodeSel.Add((near.Sub, idx));
+                InvalidateVisual();
+                return;
+            }
+        }
+
+        if (HitTest(ToDoc(screen)) is { } obj)
+        {
+            if (obj != SelectedId) Select(obj); // un altro oggetto: mostra i suoi nodi
+            return;
+        }
+        if (!shift) _nodeSel.Clear();
+        _marqueeAdd = shift;
+        _marqueeStart = _marqueeEnd = ToDoc(screen);
+        _drag = Drag.Marquee;
+    }
+
+    // Anteprima del trascinamento di nodi o maniglie, a partire dal modello a inizio gesto.
+    void NodeDragMove(Point pos, bool alt)
+    {
+        if (_nodeOrig == null) return;
+        if (Math.Abs(pos.X - _start.X) + Math.Abs(pos.Y - _start.Y) < 3) { _nodeWork = null; return; }
+        var work = PathNodes.Clone(_nodeOrig);
+        var delta = new Vector2((float)((pos.X - _start.X) / _zoom), (float)((pos.Y - _start.Y) / _zoom));
+        if (_drag == Drag.NodeMove)
+        {
+            foreach (var (si, ni) in _nodeSel)
+            {
+                if (si >= work.Count || ni >= work[si].Nodes.Count) continue;
+                var n = work[si].Nodes[ni];
+                n.P += delta;
+                if (n.In is { } i) n.In = i + delta;
+                if (n.Out is { } o) n.Out = o + delta;
+            }
+        }
+        else
+        {
+            var d = ToDoc(pos);
+            var n = work[_nodeHit.Sub].Nodes[_nodeHit.Idx];
+            PathNodes.MoveHandle(n, _nodeHit.Part == NodePart.Out, new((float)d.X, (float)d.Y), alt); // Alt: maniglie indipendenti
+        }
+        _nodeWork = work;
+    }
+
+    void CommitNodes(List<SubPath> subs)
+    {
+        if (SelectedId is not { } id || Bus == null) return;
+        try
+        {
+            Bus.Execute([new SetPath { Target = id, D = PathData.ToString(PathNodes.ToSegments(subs), 4) }]);
+        }
+        catch (CommandException) { }
+    }
+
+    /// <summary>Applica un'operazione ai nodi selezionati del path (un solo undo).</summary>
+    public void ApplyNodeOp(NodeOp op)
+    {
+        if (CurrentModel() is not { } model || _nodeSel.Count == 0) return;
+        var m = PathNodes.Clone(model);
+        switch (op)
+        {
+            case NodeOp.ToLine: PathNodes.SegmentsToLine(m, _nodeSel); break;
+            case NodeOp.ToCurve: PathNodes.SegmentsToCurve(m, _nodeSel); break;
+            case NodeOp.Smooth: PathNodes.MakeSmooth(m, _nodeSel); break;
+            case NodeOp.Delete:
+                foreach (var g in _nodeSel.GroupBy(n => n.Sub))
+                    foreach (var idx in g.Select(n => n.Idx).OrderDescending())
+                        if (g.Key < m.Count && idx < m[g.Key].Nodes.Count) PathNodes.RemoveNode(m[g.Key], idx);
+                _nodeSel.Clear();
+                break;
+        }
+        CommitNodes(m);
+        InvalidateVisual();
+    }
+
     // Cursori standard di Avalonia: li traduce per Windows, macOS e Linux.
     static readonly Cursor SizeWE = new(StandardCursorType.SizeWestEast), SizeNS = new(StandardCursorType.SizeNorthSouth),
         SizeNWSE = new(StandardCursorType.TopLeftCorner), SizeNESW = new(StandardCursorType.TopRightCorner),
@@ -343,6 +530,17 @@ public sealed class CanvasView : Control
                 n.In = new Point(2 * n.P.X - d.X, 2 * n.P.Y - d.Y);
             }
             else n.In = n.Out = null;
+            InvalidateVisual();
+            return;
+        }
+        if (_drag == Drag.None && Tool == Tool.Node)
+        {
+            Cursor = CurrentModel() is { } hm && HitNodePart(hm, pos) != null ? new Cursor(StandardCursorType.SizeAll) : null;
+            return;
+        }
+        if (_drag is Drag.NodeMove or Drag.NodeHandle)
+        {
+            NodeDragMove(pos, e.KeyModifiers.HasFlag(KeyModifiers.Alt));
             InvalidateVisual();
             return;
         }
@@ -399,6 +597,15 @@ public sealed class CanvasView : Control
             InvalidateVisual();
             return;
         }
+        if (_drag is Drag.NodeMove or Drag.NodeHandle)
+        {
+            var work = _nodeWork;
+            _nodeWork = null; _nodeOrig = null; _drag = Drag.None;
+            e.Pointer.Capture(null);
+            if (work != null) CommitNodes(work);
+            InvalidateVisual();
+            return;
+        }
         if (_drag == Drag.Create)
         {
             var b = CreateBox();
@@ -412,6 +619,21 @@ public sealed class CanvasView : Control
                 }]);
                 Select(r.CreatedIds[0]);
                 Tool = Tool.Select; // dopo aver disegnato si torna alla selezione
+            }
+        }
+        else if (_drag == Drag.Marquee && Tool == Tool.Node)
+        {
+            // Selezione a rettangolo dei nodi del path.
+            var m = MarqueeBox();
+            if (CurrentModel() is { } model && (m.Width * _zoom >= 3 || m.Height * _zoom >= 3))
+            {
+                if (!_marqueeAdd) _nodeSel.Clear();
+                for (var si = 0; si < model.Count; si++)
+                    for (var ni = 0; ni < model[si].Nodes.Count; ni++)
+                    {
+                        var p = model[si].Nodes[ni].P;
+                        if (p.X >= m.X && p.X <= m.X + m.Width && p.Y >= m.Y && p.Y <= m.Y + m.Height) _nodeSel.Add((si, ni));
+                    }
             }
         }
         else if (_drag == Drag.Marquee)
@@ -497,6 +719,22 @@ public sealed class CanvasView : Control
         for (var i = 0; i < items.Count; i++)
             if (_selection.Contains(items[i].Id)) items[i] = Preview(items[i]);
 
+        // Strumento Nodi: modello da mostrare (quello in modifica, se c'è) e anteprima del path modificato.
+        List<SubPath>? nodeModel = null;
+        if (Tool == Tool.Node && SelectedId != null)
+        {
+            if (_nodeWork != null) nodeModel = _nodeWork;
+            else if (items.FirstOrDefault(i => i.Id == SelectedId) is { Kind: Kind.Path } pi) nodeModel = ModelOf(pi);
+            if (_nodeWork != null)
+            {
+                var segs = PathNodes.ToSegments(_nodeWork);
+                var box = PathData.Bounds(segs)!.Value;
+                var k = items.FindIndex(i => i.Id == SelectedId);
+                if (k >= 0)
+                    items[k] = items[k] with { Segments = segs, Source = box, X = box.X, Y = box.Y, W = box.Width, H = box.Height, M = Matrix3x2.Identity };
+            }
+        }
+
         // L'alone di un oggetto modificato dentro un gruppo si mostra sul gruppo.
         var now = Environment.TickCount64;
         var glow = new Dictionary<string, float>();
@@ -514,6 +752,8 @@ public sealed class CanvasView : Control
                 ? _pen.Select(n => new PenNodeView(V(n.P), n.In is { } i ? V(i) : null, n.Out is { } o ? V(o) : null)).ToList()
                 : null,
             V(_penHover),
+            Tool == Tool.Node,
+            nodeModel?.SelectMany((sp, si) => sp.Nodes.Select((n, ni) => new NodeV(n.P, n.In, n.Out, _nodeSel.Contains((si, ni))))).ToList(),
             Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
                 NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)));
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
@@ -525,7 +765,10 @@ public sealed class CanvasView : Control
 
     sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
 
-    sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover, bool PenClosing);
+    sealed record NodeV(Vector2 P, Vector2? In, Vector2? Out, bool Selected);
+
+    sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover,
+        bool NodeMode, List<NodeV>? Nodes, bool PenClosing);
 
     /// <summary>Maniglia di selezione; Hx/Hy sono frazioni del rettangolo locale, Pos è in coordinate documento.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
@@ -595,7 +838,13 @@ public sealed class CanvasView : Control
 
             // Selezione: un oggetto = contorno orientato e maniglie; più oggetti = contorni e riquadro complessivo.
             var sel = items.Where(i => selection.Contains(i.Id)).ToList();
-            if (sel.Count == 1 && gesture.Create is null) DrawSelection(canvas, paint, sel[0]);
+            if (gesture.NodeMode)
+            {
+                // Strumento Nodi: niente maniglie di trasformazione; per un path si vedono i suoi nodi.
+                if (gesture.Nodes != null) DrawNodes(canvas, paint, gesture.Nodes);
+                else foreach (var it in sel) DrawOutline(canvas, paint, it);
+            }
+            else if (sel.Count == 1 && gesture.Create is null) DrawSelection(canvas, paint, sel[0]);
             else if (sel.Count > 1)
             {
                 foreach (var it in sel) DrawOutline(canvas, paint, it);
@@ -670,6 +919,32 @@ public sealed class CanvasView : Control
         {
             if (a.Out is null && b.In is null) path.LineTo(ToSk(b.P));
             else path.CubicTo(ToSk(a.Out ?? a.P), ToSk(b.In ?? b.P), ToSk(b.P));
+        }
+
+        // Nodi del path: quadrati (pieni se selezionati); i nodi selezionati mostrano le loro maniglie.
+        void DrawNodes(SKCanvas canvas, SKPaint paint, List<NodeV> nodes)
+        {
+            var size = (float)(8 / zoom);
+            paint.StrokeWidth = (float)(1.25 / zoom);
+            foreach (var n in nodes.Where(n => n.Selected))
+                foreach (var h in new[] { n.In, n.Out })
+                {
+                    if (h is not { } hp) continue;
+                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                    canvas.DrawLine(ToSk(n.P), ToSk(hp), paint);
+                    paint.Style = SKPaintStyle.Fill; paint.Color = SKColors.White;
+                    canvas.DrawCircle(ToSk(hp), size * 0.55f, paint);
+                    paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                    canvas.DrawCircle(ToSk(hp), size * 0.55f, paint);
+                }
+            foreach (var n in nodes)
+            {
+                var r = SKRect.Create(n.P.X - size / 2, n.P.Y - size / 2, size, size);
+                paint.Style = SKPaintStyle.Fill; paint.Color = n.Selected ? Accent : SKColors.White;
+                canvas.DrawRect(r, paint);
+                paint.Style = SKPaintStyle.Stroke; paint.Color = Accent;
+                canvas.DrawRect(r, paint);
+            }
         }
 
         // Contorno orientato del rettangolo dell'oggetto.

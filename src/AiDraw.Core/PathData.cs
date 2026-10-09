@@ -115,6 +115,27 @@ public static class PathData
         return segs;
     }
 
+    public static List<PathSeg> RectangleSegments(double x, double y, double w, double h) =>
+    [
+        new('M', X: x, Y: y), new('L', X: x + w, Y: y), new('L', X: x + w, Y: y + h), new('L', X: x, Y: y + h), new('Z'),
+    ];
+
+    /// <summary>Ellisse come quattro curve cubiche (approssimazione standard con k = 0.5523).</summary>
+    public static List<PathSeg> EllipseSegments(double x, double y, double w, double h)
+    {
+        const double k = 0.5522847498;
+        double cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2;
+        return
+        [
+            new('M', X: cx + rx, Y: cy),
+            new('C', cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry),
+            new('C', cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy),
+            new('C', cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry),
+            new('C', cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy),
+            new('Z'),
+        ];
+    }
+
     static PathSeg QuadToCubic(double x0, double y0, double qx, double qy, double x, double y) =>
         new('C', x0 + 2.0 / 3 * (qx - x0), y0 + 2.0 / 3 * (qy - y0), x + 2.0 / 3 * (qx - x), y + 2.0 / 3 * (qy - y), x, y);
 
@@ -162,13 +183,14 @@ public static class PathData
         }
     }
 
-    public static string ToString(IEnumerable<PathSeg> segs)
+    public static string ToString(IEnumerable<PathSeg> segs, int decimals = 2)
     {
-        static string F(double v)
+        var format = "0." + new string('#', decimals);
+        string F(double v)
         {
-            v = Math.Round(v, 2);
+            v = Math.Round(v, decimals);
             if (v == 0) v = 0; // niente "-0"
-            return v.ToString("0.##", CultureInfo.InvariantCulture);
+            return v.ToString(format, CultureInfo.InvariantCulture);
         }
 
         var sb = new StringBuilder();

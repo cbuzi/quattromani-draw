@@ -27,27 +27,11 @@ internal static class PolyBoolean
         switch (o)
         {
             case RectangleObject:
-                segs =
-                [
-                    new('M', X: o.X, Y: o.Y), new('L', X: o.X + o.Width, Y: o.Y),
-                    new('L', X: o.X + o.Width, Y: o.Y + o.Height), new('L', X: o.X, Y: o.Y + o.Height), new('Z'),
-                ];
+                segs = PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
                 break;
             case EllipseObject:
-            {
-                const double k = 0.5522847498;
-                double cx = o.X + o.Width / 2, cy = o.Y + o.Height / 2, rx = o.Width / 2, ry = o.Height / 2;
-                segs =
-                [
-                    new('M', X: cx + rx, Y: cy),
-                    new('C', cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry),
-                    new('C', cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy),
-                    new('C', cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry),
-                    new('C', cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy),
-                    new('Z'),
-                ];
+                segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);
                 break;
-            }
             case PathObject p:
                 segs = PathData.Transform(p.Segments, p.Fit);
                 break;
