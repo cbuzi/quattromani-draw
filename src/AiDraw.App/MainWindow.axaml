@@ -15,9 +15,15 @@
                     <TextBlock Text="AiDraw" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,16,0" />
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
+                    <Border Width="1" Height="20" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <Button x:Name="WeldButton" Classes="bar" Content="Weld" ToolTip.Tip="Union of the selected shapes" />
+                    <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
+                    <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
+                    <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock x:Name="ZoomText" VerticalAlignment="Center" Opacity="0.6" />
+                    <TextBlock x:Name="NoticeText" VerticalAlignment="Center" Foreground="#EF4444" FontSize="12" IsVisible="False" />
                     <Border x:Name="AgentChip" IsVisible="False" CornerRadius="12" Padding="10,4" Background="#26A855F7">
                         <StackPanel Orientation="Horizontal" Spacing="7">
                             <Ellipse Width="8" Height="8" Fill="#A855F7" VerticalAlignment="Center" />

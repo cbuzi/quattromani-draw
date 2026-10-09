@@ -15,6 +15,7 @@ public partial class MainWindow : Window
     bool _syncing;
     long _seenVersion;
     readonly HashSet<string> _aiTouched = []; // oggetti la cui ultima modifica è dell'agente
+    readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     readonly DispatcherTimer _chipTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public MainWindow()
@@ -29,6 +30,12 @@ public partial class MainWindow : Window
         Canvas.SelectionChanged += Refresh;
         Canvas.ViewChanged += () => ZoomText.Text = $"{Canvas.Zoom:P0}";
         ZoomText.Text = $"{Canvas.Zoom:P0}";
+
+        WeldButton.Click += (_, _) => RunBoolean("weld");
+        TrimButton.Click += (_, _) => RunBoolean("trim");
+        IntersectButton.Click += (_, _) => RunBoolean("intersect");
+        SubtractButton.Click += (_, _) => RunBoolean("subtract");
+        _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); NoticeText.IsVisible = false; };
 
         UndoButton.Click += (_, _) => _bus.Undo();
         RedoButton.Click += (_, _) => _bus.Redo();
@@ -171,6 +178,22 @@ public partial class MainWindow : Window
         }
     }
 
+    void RunBoolean(string op)
+    {
+        try
+        {
+            var r = _bus.Execute([new BooleanOp { Op = op, Targets = Canvas.SelectedIds.ToList() }]);
+            Canvas.Select(r.CreatedIds[0]);
+        }
+        catch (CommandException ex)
+        {
+            NoticeText.Text = ex.Message.Replace("shape.boolean: ", "");
+            NoticeText.IsVisible = true;
+            _noticeTimer.Stop();
+            _noticeTimer.Start();
+        }
+    }
+
     void Group()
     {
         var ids = Canvas.SelectedIds.ToList();
@@ -240,6 +263,9 @@ public partial class MainWindow : Window
             WidthBox.Value = (decimal)obj.StrokeWidth;
         }
         _syncing = false;
+
+        var many = Canvas.SelectedIds.Count >= 2;
+        WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
 
         Canvas.InvalidateVisual();
     }

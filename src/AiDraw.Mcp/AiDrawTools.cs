@@ -56,7 +56,10 @@ public sealed class AiDrawTools(CommandBus bus)
           {"cmd":"object.rotate","targets":["sun"],"degrees":45}   (added to the current rotation, clockwise, around the object's center)
           {"cmd":"object.group","targets":["roof","wall"],"name":"house"}   (same layer/group only; returns the group id in `created`)
           {"cmd":"object.ungroup","targets":["house"]}   (children keep their look and position)
+          {"cmd":"shape.boolean","op":"weld","targets":["a","b"],"name":"merged"}   (op: weld = union; intersect; subtract = the lowest object minus all the others; trim = like subtract but the cutting objects stay)
           {"cmd":"object.delete","targets":["o1"]}
+        shape.boolean works on rectangles, ellipses and paths on the same level (ungroup groups first), needs 2+ targets and returns the new path id in `created`.
+        The result is a path with the style of the lowest object (in z-order); curves are flattened into short segments. Add "keepOriginals":true to keep the source objects.
         Path data `d` is SVG syntax: M L H V C S Q T A Z, absolute (uppercase) or relative (lowercase), e.g. "M 10 10 h 80 v 50 h -80 z" or a circle "M 0 50 A 50 50 0 1 1 100 50 A 50 50 0 1 1 0 50 Z".
         Styling a group (object.style) applies to every shape inside it; moving, resizing and rotating a group transforms it as a whole.
         `targets` are object ids ("o1") or names ("sun"). Colors are "#RRGGBB", "#RRGGBBAA" or "none".
@@ -78,7 +81,7 @@ public sealed class AiDrawTools(CommandBus bus)
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

@@ -27,6 +27,7 @@ public static class Json
 [JsonDerivedType(typeof(RotateObjects), "object.rotate")]
 [JsonDerivedType(typeof(GroupObjects), "object.group")]
 [JsonDerivedType(typeof(UngroupObjects), "object.ungroup")]
+[JsonDerivedType(typeof(BooleanOp), "shape.boolean")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
