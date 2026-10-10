@@ -170,15 +170,27 @@ public partial class MainWindow : Window
         Canvas.ToolChanged += SyncToolButtons;
 
         // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
-        BuildSwatches(PaletteSwatches, (c, stroke) =>
+        void PickColor(string c, bool stroke)
         {
             if (stroke) ApplyStyle(stroke: c);
             else if (c != "none" && Canvas.TrySetSelectedStopColor(c)) { } // sosta selezionata con lo strumento di riempimento
             else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // un colore del pannello è "in attesa"
             else ApplyStyle(fill: c);
-        });
+        }
+        BuildSwatches(PaletteSwatches, PickColor);
+        BuildPaletteGrid(PaletteGrid, PickColor);
+        PaletteExpandButton.Click += (_, _) => SetPaletteOpen(!PaletteFlyout.IsVisible);
+        // Il pannello esteso si chiude cliccando altrove (il click passa comunque a ciò che c'è sotto).
+        AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (!PaletteFlyout.IsVisible) return;
+            var inside = (e.Source as Visual)?.GetSelfAndVisualAncestors().Any(v => ReferenceEquals(v, PaletteFlyout) || ReferenceEquals(v, PaletteExpandButton)) ?? false;
+            if (!inside) SetPaletteOpen(false);
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 
         // Riempimento: tinta unita, gradiente con più colori o motivo. Per gradienti particolari si può scrivere il testo CSS nel campo Fill.
+        GroupButton.Click += (_, _) => Group();
+        UngroupButton.Click += (_, _) => Ungroup();
         GradSolidButton.Click += (_, _) => SetFillKind(0);
         GradLinearButton.Click += (_, _) => SetFillKind(1);
         GradRadialButton.Click += (_, _) => SetFillKind(2);
@@ -231,35 +243,94 @@ public partial class MainWindow : Window
         Refresh();
     }
 
-    static readonly string[] Palette =
-    [
-        "#000000", "#FFFFFF", "#6B7280", "#EF4444", "#F97316", "#FFC800",
-        "#22C55E", "#14B8A6", "#3B82F6", "#6366F1", "#A855F7", "#EC4899", "none",
-    ];
-
-    /// <summary>Come negli editor vettoriali classici: click sinistro = fill, click destro = stroke.</summary>
-    static void BuildSwatches(WrapPanel panel, Action<string, bool> pick)
+    // Apre o chiude la tavolozza completa; la freccia del bottone indica dove si va ("‹" apre verso il disegno, "›" richiude).
+    void SetPaletteOpen(bool open)
     {
-        foreach (var c in Palette)
+        PaletteFlyout.IsVisible = open;
+        PaletteChevron.Data = Geometry.Parse(open ? "M5,3 L9,8 L5,13" : "M9,3 L5,8 L9,13");
+        ToolTip.SetTip(PaletteExpandButton, open ? "Close the palette" : "Show the whole palette");
+    }
+
+    // ---- Tavolozza: una colonna di campioni tondi lungo il bordo destro, come negli editor vettoriali classici ------------------------
+
+    // Colore HSL -> "#RRGGBB" (h in gradi, s e l in 0..1).
+    static string Hsl(double h, double s, double l)
+    {
+        double c = (1 - Math.Abs(2 * l - 1)) * s, x = c * (1 - Math.Abs(h / 60 % 2 - 1)), m = l - c / 2;
+        var (r, g, b) = (int)(h / 60) switch
         {
-            var b = new Button
-            {
-                Width = 24, Height = 24, Margin = new(0, 0, 6, 6), Padding = new(0), CornerRadius = new(12),
-                BorderBrush = new SolidColorBrush(Color.Parse("#80808080")), BorderThickness = new(1),
-                Background = c == "none" ? Brushes.Transparent : new SolidColorBrush(Color.Parse(c)),
-                Content = c == "none"
-                    ? new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse("M5,19 L19,5"), Stroke = Brushes.Red, StrokeThickness = 2, Width = 24, Height = 24, Stretch = Stretch.None }
-                    : null,
-            };
-            ToolTip.SetTip(b, c);
-            // Button gestisce solo il click sinistro: ascolto il rilascio per distinguere i due tasti.
-            b.AddHandler(PointerReleasedEvent, (_, e) =>
-            {
-                if (!new Rect(b.Bounds.Size).Contains(e.GetPosition(b))) return;
-                if (e.InitialPressMouseButton == MouseButton.Left) pick(c, false);
-                else if (e.InitialPressMouseButton == MouseButton.Right) pick(c, true);
-            }, handledEventsToo: true);
-            panel.Children.Add(b);
+            0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x),
+        };
+        static int B(double v) => (int)Math.Round(Math.Clamp(v, 0, 1) * 255);
+        return $"#{B(r + m):X2}{B(g + m):X2}{B(b + m):X2}";
+    }
+
+    // Gruppi di colori nell'ordine in cui compaiono: nessun colore, grigi, poi ogni tinta con i suoi toni dal più chiaro al più scuro.
+    static readonly List<List<string>> PaletteGroups = BuildPalette();
+
+    static List<List<string>> BuildPalette()
+    {
+        var groups = new List<List<string>>
+        {
+            new() { "none" },
+            new() { "#FFFFFF", "#F3F4F6", "#E5E7EB", "#D1D5DB", "#9CA3AF", "#6B7280", "#4B5563", "#374151", "#1F2937", "#000000" },
+        };
+        double[] lightness = [0.94, 0.85, 0.74, 0.63, 0.52, 0.41, 0.30, 0.20];
+        double[] saturation = [0.90, 0.85, 0.82, 0.80, 0.78, 0.76, 0.72, 0.68];
+        foreach (var hue in new double[] { 0, 18, 32, 46, 60, 85, 120, 150, 172, 190, 207, 225, 245, 268, 290, 315, 338 })
+            groups.Add(lightness.Select((l, i) => Hsl(hue, saturation[i], l)).ToList());
+        // Marroni e beige: tinte calde poco sature.
+        groups.Add(lightness.Select((l, i) => Hsl(28, 0.45 + i * 0.01, Math.Min(0.92, l + 0.02))).ToList());
+        return groups;
+    }
+
+    // Un campione tondo: click sinistro = fill, click destro = stroke (come negli editor vettoriali classici).
+    static Button Swatch(string c, int size, double bottomMargin, Action<string, bool> pick)
+    {
+        var b = new Button
+        {
+            Width = size, Height = size, MinHeight = 0, MinWidth = 0, Margin = new(0, 0, 0, bottomMargin), Padding = new(0), CornerRadius = new(size / 2.0),
+            BorderBrush = new SolidColorBrush(Color.Parse("#66808080")), BorderThickness = new(1),
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            Background = c == "none" ? Brushes.Transparent : new SolidColorBrush(Color.Parse(c)),
+            Content = c == "none"
+                ? new Avalonia.Controls.Shapes.Path { Data = Geometry.Parse($"M3,{size - 3} L{size - 3},3"), Stroke = Brushes.Red, StrokeThickness = 1.6, Width = size, Height = size, Stretch = Stretch.None }
+                : null,
+        };
+        ToolTip.SetTip(b, c == "none" ? "No color" : c);
+        // Button gestisce solo il click sinistro: ascolto il rilascio per distinguere i due tasti.
+        b.AddHandler(PointerReleasedEvent, (_, e) =>
+        {
+            if (!new Rect(b.Bounds.Size).Contains(e.GetPosition(b))) return;
+            if (e.InitialPressMouseButton == MouseButton.Left) pick(c, false);
+            else if (e.InitialPressMouseButton == MouseButton.Right) pick(c, true);
+        }, handledEventsToo: true);
+        return b;
+    }
+
+    // Colonna stretta lungo il bordo: tutti i colori in fila.
+    static void BuildSwatches(Panel panel, Action<string, bool> pick)
+    {
+        foreach (var group in PaletteGroups)
+        {
+            foreach (var c in group) panel.Children.Add(Swatch(c, 17, 3, pick));
+            panel.Children.Add(new Border { Height = 6 }); // un po' di aria tra una famiglia e l'altra
+        }
+    }
+
+    // Pannello esteso: una colonna per ogni tinta (la prima con "nessun colore" e i grigi), un tono per riga.
+    static void BuildPaletteGrid(Panel host, Action<string, bool> pick)
+    {
+        // Prima colonna: nessun colore e 7 grigi, così ha 8 righe come le altre.
+        var first = new StackPanel();
+        var grays = PaletteGroups[1];
+        foreach (var c in PaletteGroups[0].Concat(new[] { 0, 2, 3, 4, 5, 7, 9 }.Select(i => grays[i]))) first.Children.Add(Swatch(c, 24, 3, pick));
+        host.Children.Add(first);
+        foreach (var group in PaletteGroups.Skip(2))
+        {
+            var column = new StackPanel();
+            foreach (var c in group) column.Children.Add(Swatch(c, 24, 3, pick));
+            host.Children.Add(column);
         }
     }
 
@@ -359,6 +430,11 @@ public partial class MainWindow : Window
         else if (e.Key is Key.Enter or Key.F2 && Canvas.SelectedId != null)
         {
             Canvas.EditSelectedText(); // Invio o F2 su un testo selezionato: lo si modifica
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && PaletteFlyout.IsVisible)
+        {
+            SetPaletteOpen(false);
             e.Handled = true;
         }
         else if (e.Key == Key.Escape && Canvas.PenActive)
@@ -942,6 +1018,9 @@ public partial class MainWindow : Window
         else SyncFillPanel(Canvas.Fill);
         _syncing = false;
 
+        // Group e Ungroup sono sempre sulla barra; si accendono quando hanno senso.
+        GroupButton.IsEnabled = Canvas.SelectedIds.Count >= 2;
+        UngroupButton.IsEnabled = _bus.Read(d => Canvas.SelectedIds.Any(id => d.Objects.FirstOrDefault(o => o.Id == id) is GroupObject));
         var many = Canvas.SelectedIds.Count >= 2;
         WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
 

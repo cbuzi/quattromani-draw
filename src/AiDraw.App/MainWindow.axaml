@@ -5,9 +5,10 @@
         Title="AiDraw" Width="1280" Height="800"
         Background="{DynamicResource WorkBg}">
 
+    <Grid>
     <DockPanel>
         <!-- Barra superiore -->
-        <Border DockPanel.Dock="Top" Height="48" Padding="12,0"
+        <Border DockPanel.Dock="Top" Height="62" Padding="12,0"
                 Background="{DynamicResource PanelBg}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -28,7 +29,26 @@
                     </Button>
                     <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
                     <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
-                    <Border Width="1" Height="20" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <Border Width="1" Height="28" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <Button x:Name="GroupButton" Classes="tb" ToolTip.Tip="Group the selected objects (Ctrl/Cmd+G)">
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M2,2 H24 V22 H2 Z" StrokeThickness="1.4" StrokeDashArray="2.5,2" Stroke="{Binding $parent[Button].Foreground}" />
+                                <Path Data="M6,6 H14 V14 H6 Z M12,10 H20 V18 H12 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                            </Grid>
+                            <TextBlock Text="Group" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="UngroupButton" Classes="tb" ToolTip.Tip="Separate the selected group (Ctrl/Cmd+Shift+G)">
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M1.5,1.5 H12 V12 H1.5 Z M14,12 H24.5 V22.5 H14 Z" StrokeThickness="1.4" StrokeDashArray="2.5,2" Stroke="{Binding $parent[Button].Foreground}" />
+                                <Path Data="M4,4 H9.5 V9.5 H4 Z M16.5,14.5 H22 V20 H16.5 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                            </Grid>
+                            <TextBlock Text="Ungroup" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Border Width="1" Height="28" Margin="8,0" Background="{DynamicResource PanelBorder}" />
                     <StackPanel x:Name="PageBar" Orientation="Horizontal" Spacing="6">
                         <ComboBox x:Name="PagePresetCombo" Width="230" VerticalAlignment="Center" ToolTip.Tip="Page size" />
                         <NumericUpDown x:Name="PageWBox" Width="116" Minimum="1" Maximum="100000" Increment="1" FormatString="0.##" VerticalAlignment="Center" ToolTip.Tip="Page width" />
@@ -145,15 +165,28 @@
             </StackPanel>
         </Border>
 
+        <!-- Tavolozza: una colonna di colori tondi lungo il bordo destro -->
+        <Border DockPanel.Dock="Right" Width="34" Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
+            <Grid RowDefinitions="Auto,*">
+                <Button x:Name="PaletteExpandButton" Classes="bar" Height="26" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Margin="3,4,3,0" ToolTip.Tip="Show the whole palette">
+                    <Path x:Name="PaletteChevron" Data="M9,3 L5,8 L9,13" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Width="14" Height="16" Stretch="None"
+                          Stroke="{Binding $parent[Button].Foreground}" />
+                </Button>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
+                              ToolTip.Tip="Palette: left click = fill, right click = outline. Scroll for more tones.">
+                    <StackPanel x:Name="PaletteSwatches" Margin="0,8" />
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
         <!-- Pannello oggetti -->
         <Border DockPanel.Dock="Right" Width="260"
                 Background="{DynamicResource PanelBg}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="16,14,16,12" Spacing="8">
-                    <TextBlock Classes="caption" Text="PALETTE" />
-                    <WrapPanel x:Name="PaletteSwatches" />
-                    <TextBlock Text="Left click: fill  ·  Right click: stroke" FontSize="11" Opacity="0.5" />
                     <TextBlock Classes="caption" Text="FILL TYPE" Margin="0,6,0,0" />
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <ToggleButton x:Name="GradSolidButton" Content="Solid" Padding="9,4" />
@@ -202,4 +235,15 @@
             <ScrollBar x:Name="HScroll" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" />
         </Grid>
     </DockPanel>
+
+    <!-- Tavolozza completa: si apre sopra il disegno dal bottone in cima alla colonna dei colori -->
+    <Border x:Name="PaletteFlyout" IsVisible="False" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,70,42,0"
+            Padding="14" CornerRadius="12" Background="{DynamicResource PanelBg}"
+            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" BoxShadow="0 8 28 0 #66000000">
+        <StackPanel Spacing="10">
+            <TextBlock Classes="caption" Text="PALETTE   ·   left click: fill   ·   right click: outline" />
+            <StackPanel x:Name="PaletteGrid" Orientation="Horizontal" Spacing="3" />
+        </StackPanel>
+    </Border>
+    </Grid>
 </Window>

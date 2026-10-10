@@ -12,6 +12,19 @@
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="12,6" />
         </Style>
+        <Style Selector="Button.tb">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="MinWidth" Value="60" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.tb TextBlock">
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Button.tb:disabled">
+            <Setter Property="Opacity" Value="0.38" />
+        </Style>
         <Style Selector="ToggleButton.tool">
             <Setter Property="Width" Value="40" />
             <Setter Property="Height" Value="40" />
