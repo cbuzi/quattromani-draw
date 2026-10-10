@@ -170,6 +170,13 @@ public partial class MainWindow : Window
         AlignCenterButton.Click += (_, _) => ApplyTextStyle(align: "center");
         AlignRightButton.Click += (_, _) => ApplyTextStyle(align: "right");
         TextToCurvesButton.Click += (_, _) => ToCurves();
+        FitPathButton.Click += (_, _) => FitTextToPath();
+        PathAlignCombo.ItemsSource = new[] { "Start of the path", "Center", "End of the path" };
+        PathAlignCombo.SelectionChanged += (_, _) => ApplyOnPath(align: new[] { "start", "center", "end" }[Math.Max(0, PathAlignCombo.SelectedIndex)]);
+        PathOffsetBox.ValueChanged += (_, e) => { if (e.NewValue is { } v) ApplyOnPath(offset: Units.ToPx((double)v, _unit)); };
+        PathDistanceBox.ValueChanged += (_, e) => { if (e.NewValue is { } v) ApplyOnPath(distance: Units.ToPx((double)v, _unit)); };
+        PathReverseCheck.IsCheckedChanged += (_, _) => ApplyOnPath(reverse: PathReverseCheck.IsChecked == true);
+        PathDetachButton.Click += (_, _) => { TextPathButton.Flyout?.Hide(); ApplyOnPath(detach: true); };
         Canvas.TextEditRequested += BeginTextEdit;
         TextEditor.LostFocus += (_, _) => CommitTextEdit();
         TextEditor.KeyDown += (_, e) =>
@@ -727,7 +734,44 @@ public partial class MainWindow : Window
         AlignLeftButton.IsChecked = st.Align == "left";
         AlignCenterButton.IsChecked = st.Align == "center";
         AlignRightButton.IsChecked = st.Align == "right";
+        // Un testo su tracciato mostra le sue opzioni (nell'unità scelta).
+        var op = Canvas.SelectedId is { } sid ? _bus.Read(d => (d.Objects.FirstOrDefault(o => o.Id == sid) as TextObject)?.OnPath) : null;
+        TextPathButton.IsVisible = op != null;
+        if (op != null)
+        {
+            PathAlignCombo.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "start", "center", "end" }, op.Align));
+            PathOffsetBox.Value = (decimal)Math.Round(Units.FromPx(op.Offset, _unit), 3);
+            PathDistanceBox.Value = (decimal)Math.Round(Units.FromPx(op.Distance, _unit), 3);
+            PathReverseCheck.IsChecked = op.Reverse;
+        }
         _syncingText = false;
+    }
+
+    // Un testo e un tracciato (path, rettangolo o ellisse) selezionati insieme: il testo si mette sul tracciato.
+    (string Text, string Path)? FitPathPair()
+    {
+        if (Canvas.SelectedIds.Count != 2) return null;
+        return _bus.Read(d =>
+        {
+            var objs = Canvas.SelectedIds.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().ToList();
+            var text = objs.FirstOrDefault(o => o is TextObject);
+            var path = objs.FirstOrDefault(o => o is PathObject or RectangleObject or EllipseObject);
+            return text != null && path != null ? ((string, string)?)(text.Id, path.Id) : null;
+        });
+    }
+
+    void FitTextToPath()
+    {
+        if (FitPathPair() is not var (text, path)) return;
+        try { _bus.Execute([new SetTextOnPath { Targets = [text], Path = path }]); }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    void ApplyOnPath(string? align = null, double? offset = null, double? distance = null, bool? reverse = null, bool detach = false)
+    {
+        if (_syncingText || Canvas.SelectedId is not { } id) return;
+        try { _bus.Execute([new SetTextOnPath { Targets = [id], Align = align, Offset = offset, Distance = distance, Reverse = reverse, Detach = detach }]); }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
     // Cambia lo stile dei testi nuovi e applica la modifica ai testi selezionati (un solo undo).
@@ -1174,6 +1218,7 @@ public partial class MainWindow : Window
         MenuDistributeX.IsEnabled = MenuDistributeY.IsEnabled = MenuDistributeCX.IsEnabled = MenuDistributeCY.IsEnabled = Canvas.SelectedIds.Count >= 3;
         UngroupButton.IsEnabled = _bus.Read(d => Canvas.SelectedIds.Any(id => d.Objects.FirstOrDefault(o => o.Id == id) is GroupObject));
         var many = Canvas.SelectedIds.Count >= 2;
+        FitPathButton.IsEnabled = FitPathPair() != null;
         WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
 
         Canvas.InvalidateVisual();

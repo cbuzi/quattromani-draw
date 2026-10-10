@@ -424,6 +424,13 @@ public sealed class CanvasView : Control
                 using var outline = paint.GetFillPath(path);
                 return outline != null && outline.Contains(l.X, l.Y);
             }
+            case TextObject { PathGlyphs: { } glyphs } t: // testo su tracciato: si clicca sulle lettere e tra una lettera e l'altra
+            {
+                using var path = SceneRenderer.BuildPath(glyphs, t.Fit);
+                using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)(2 * Math.Max(tolerance, t.FontSize * 0.3)) };
+                using var outline = paint.GetFillPath(path);
+                return path.Contains(l.X, l.Y) || (outline != null && outline.Contains(l.X, l.Y));
+            }
             case EllipseObject:
             {
                 var rx = o.Width / 2; var ry = o.Height / 2;

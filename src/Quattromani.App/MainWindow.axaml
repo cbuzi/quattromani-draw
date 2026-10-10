@@ -114,6 +114,7 @@
                         <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
                         <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
                         <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
+                        <Button x:Name="FitPathButton" Classes="bar" Content="Text to path" ToolTip.Tip="Select a text and a path, rectangle or ellipse: the text follows it" />
                     </StackPanel>
                     <StackPanel x:Name="XformBar" Orientation="Horizontal" Spacing="2" Margin="8,0,0,0">
                         <TextBlock Text="X" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
@@ -129,7 +130,7 @@
                     </StackPanel>
                     <StackPanel x:Name="TextBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                         <ComboBox x:Name="FontCombo" Width="180" VerticalAlignment="Center" ToolTip.Tip="Font" />
-                        <NumericUpDown x:Name="FontSizeBox" Width="96" Minimum="1" Maximum="1000" Increment="1" FormatString="0.##" Value="24" VerticalAlignment="Center" ToolTip.Tip="Font size" />
+                        <NumericUpDown x:Name="FontSizeBox" Width="112" Minimum="1" Maximum="1000" Increment="1" FormatString="0.##" Value="24" VerticalAlignment="Center" ToolTip.Tip="Font size" />
                         <ToggleButton x:Name="BoldButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Bold">
                             <TextBlock Text="B" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </ToggleButton>
@@ -146,6 +147,22 @@
                             <Path Data="M4,6 H20 M10,10 H20 M4,14 H20 M12,18 H20" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
                         </ToggleButton>
                         <Button x:Name="TextToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert the text to editable curves (Ctrl/Cmd+Q)" />
+                        <Button x:Name="TextPathButton" Classes="bar" Content="On path ▾" IsVisible="False" ToolTip.Tip="Options of the text on its path">
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                    <StackPanel Spacing="6" Width="220">
+                                        <TextBlock Classes="caption" Text="ANCHOR ON THE PATH" />
+                                        <ComboBox x:Name="PathAlignCombo" Width="200" MinHeight="0" Height="30" />
+                                        <TextBlock Classes="caption" Text="OFFSET ALONG THE PATH" Margin="0,4,0,0" />
+                                        <NumericUpDown x:Name="PathOffsetBox" Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.##" Height="30" MinHeight="0" />
+                                        <TextBlock Classes="caption" Text="DISTANCE FROM THE PATH" Margin="0,4,0,0" />
+                                        <NumericUpDown x:Name="PathDistanceBox" Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.##" Height="30" MinHeight="0" />
+                                        <CheckBox x:Name="PathReverseCheck" Content="Reverse direction" Margin="0,4,0,0" />
+                                        <Button x:Name="PathDetachButton" Content="Detach from path" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
                     </StackPanel>
                     <StackPanel x:Name="NodeBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                         <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />

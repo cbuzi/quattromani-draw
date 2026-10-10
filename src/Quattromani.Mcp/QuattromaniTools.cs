@@ -274,7 +274,9 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         """)]
     public string GetSelection()
     {
-        var items = bus.Read(d => selection.Get().Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().Select(o => new { id = o.Id, name = o.Name }).ToList());
+        // La selezione si chiede al thread UI prima di prendere il lock del documento: tenendolo, il thread UI (che aspetta lo stesso lock per disegnare) e questo si bloccherebbero a vicenda.
+        var ids = selection.Get();
+        var items = bus.Read(d => ids.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().Select(o => new { id = o.Id, name = o.Name }).ToList());
         return JsonSerializer.Serialize(new { selection = items }, Json.Options);
     }
 

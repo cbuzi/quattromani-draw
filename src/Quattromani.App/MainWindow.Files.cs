@@ -90,6 +90,8 @@ public partial class MainWindow
                 new NativeMenuItemSeparator(),
                 Entry("Distribute Horizontally", () => DistributeSelected("x", "gaps")),
                 Entry("Distribute Vertically", () => DistributeSelected("y", "gaps")),
+                new NativeMenuItemSeparator(),
+                Entry("Fit Text to Path", FitTextToPath),
             },
         };
         var help = new NativeMenuItem("Help") { Menu = new NativeMenu { Entry("Connect an AI agent…", App.ShowAbout) } };

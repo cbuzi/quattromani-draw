@@ -268,16 +268,29 @@ public sealed class ResizeObject : Command
         var (ax, ay) = Core.Anchor.Parse(Anchor);
 
         _old = Targets.Select(t => doc.Find(t)).Select(o => (o, new Box(o.X, o.Y, o.Width, o.Height))).ToList();
+        _oldFonts = [];
         foreach (var (obj, old) in _old)
         {
+            if (obj is TextObject { OnPath: not null } text && old.Width > 0 && old.Height > 0)
+            {
+                // Un testo su tracciato non si stira: il suo ingombro lo decide il tracciato. Ridimensionarlo cambia il corpo del carattere.
+                var kw = (Width ?? old.Width) / old.Width;
+                var kh = (Height ?? old.Height) / old.Height;
+                _oldFonts.Add((text, text.FontSize));
+                text.FontSize = Math.Clamp(text.FontSize * (Math.Abs(kw - 1) >= Math.Abs(kh - 1) ? kw : kh), 1, 2000);
+                continue;
+            }
             var b = Resized(old, ax, ay, Width ?? old.Width, Height ?? old.Height);
             (obj.X, obj.Y, obj.Width, obj.Height) = (b.X, b.Y, b.Width, b.Height);
         }
     }
 
+    List<(TextObject Text, double FontSize)> _oldFonts = [];
+
     public override void Undo(Document doc)
     {
         foreach (var (obj, b) in _old) (obj.X, obj.Y, obj.Width, obj.Height) = (b.X, b.Y, b.Width, b.Height);
+        foreach (var (text, size) in _oldFonts) text.FontSize = size;
     }
 }
 
