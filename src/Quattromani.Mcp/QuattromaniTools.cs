@@ -105,7 +105,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         """)]
     public string Execute(
         [Description("JSON array of command objects (see tool description).")] JsonElement commands,
-        [Description("Your agent name, e.g. \"claude-code\". Recorded as author \"llm:<name>\".")] string agent = "agent")
+        McpServer server,
+        [Description("Optional. Your agent name; if omitted it is taken from the MCP client (e.g. \"claude-code\"). Recorded as author \"llm:<name>\".")] string? agent = null)
     {
         if (commands.ValueKind != JsonValueKind.Array)
             throw new McpException("'commands' must be a JSON array of command objects, e.g. [{\"cmd\":\"object.move\",\"targets\":[\"o1\"],\"dx\":10,\"dy\":0}].");
@@ -124,7 +125,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
 
         try
         {
-            var r = bus.Execute(parsed, "llm:" + agent);
+            var r = bus.Execute(parsed, "llm:" + (string.IsNullOrWhiteSpace(agent) ? server.ClientInfo?.Name ?? "agent" : agent.Trim()));
             return JsonSerializer.Serialize(new { version = r.Version, created = r.CreatedIds }, Json.Options);
         }
         catch (CommandException ex)

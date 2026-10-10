@@ -21,7 +21,7 @@ public static class McpHost
         builder.Services.AddSingleton(renderer);
         builder.Services.AddSingleton(files);
         builder.Services.AddSingleton(selection);
-        builder.Services.AddMcpServer().WithHttpTransport().WithTools<QuattromaniTools>();
+        builder.Services.AddMcpServer().WithHttpTransport(o => o.Stateless = false).WithTools<QuattromaniTools>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");
