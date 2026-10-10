@@ -177,8 +177,13 @@
                     </StackPanel>
                 </StackPanel>
                 <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Width="38" Height="38" Padding="0" VerticalAlignment="Center" ToolTip.Tip="Switch between light and dark theme">
-                    <Path Data="M13,3 A9,9 0 1 0 21,13 A7,7 0 0 1 13,3 Z" StrokeThickness="1.7" StrokeJoin="Round" Width="24" Height="24" Stretch="None"
-                          Stroke="{Binding $parent[Button].Foreground}" />
+                    <Grid Width="24" Height="24">
+                        <!-- Il pulsante mostra il tema a cui si passa: sole quando è scuro, luna quando è chiaro. -->
+                        <Path x:Name="MoonIcon" Data="M13,3 A9,9 0 1 0 21,13 A7,7 0 0 1 13,3 Z" StrokeThickness="1.7" StrokeJoin="Round" Stretch="None"
+                              Stroke="{Binding $parent[Button].Foreground}" />
+                        <Path x:Name="SunIcon" Data="M16,12 A4,4 0 1 1 8,12 A4,4 0 1 1 16,12 Z M12,2.5 V5 M12,19 V21.5 M2.5,12 H5 M19,12 H21.5 M5.3,5.3 L7,7 M17,17 L18.7,18.7 M5.3,18.7 L7,17 M17,7 L18.7,5.3"
+                              StrokeThickness="1.7" StrokeLineCap="Round" StrokeJoin="Round" Stretch="None" Stroke="{Binding $parent[Button].Foreground}" />
+                    </Grid>
                 </Button>
             </Grid>
         </Border>

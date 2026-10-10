@@ -142,6 +142,14 @@ public partial class MainWindow : Window
         RedoButton.Click += (_, _) => _bus.Redo();
         ThemeButton.Click += (_, _) => Application.Current!.RequestedThemeVariant =
             ActualThemeVariant == ThemeVariant.Dark ? ThemeVariant.Light : ThemeVariant.Dark;
+        void SyncThemeIcon()
+        {
+            var dark = ActualThemeVariant == ThemeVariant.Dark;
+            SunIcon.IsVisible = dark;
+            MoonIcon.IsVisible = !dark;
+        }
+        ActualThemeVariantChanged += (_, _) => SyncThemeIcon();
+        SyncThemeIcon();
 
         ObjectList.SelectionChanged += (_, _) =>
         {
