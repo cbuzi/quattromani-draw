@@ -36,6 +36,7 @@ public static class Json
 [JsonDerivedType(typeof(OrderObjects), "object.order")]
 [JsonDerivedType(typeof(AlignObjects), "object.align")]
 [JsonDerivedType(typeof(DistributeObjects), "object.distribute")]
+[JsonDerivedType(typeof(SetTextOnPath), "text.onPath")]
 [JsonDerivedType(typeof(AddGuide), "guide.add")]
 [JsonDerivedType(typeof(MoveGuide), "guide.move")]
 [JsonDerivedType(typeof(DeleteGuide), "guide.delete")]
@@ -472,9 +473,13 @@ public sealed class ConvertToPath : Command
                 if (o is TextObject t)
                 {
                     // I glifi diventano curve: posizionati e stirati come il testo, poi la trasformazione resta quella dell'oggetto.
-                    var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile.");
-                    var outline = engine.Outline(t.Style, t.Lines);
-                    segs = PathData.Transform(outline, Matrix3x2.CreateTranslation((float)t.Source.X, (float)t.Source.Y) * t.Fit);
+                    if (t.PathGlyphs != null) segs = PathData.Transform(t.PathGlyphs, t.Fit); // testo su tracciato: i glifi sono gia' disposti
+                    else
+                    {
+                        var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile.");
+                        var outline = engine.Outline(t.Style, t.Lines);
+                        segs = PathData.Transform(outline, Matrix3x2.CreateTranslation((float)t.Source.X, (float)t.Source.Y) * t.Fit);
+                    }
                     if (!segs.Any(s => s.Op is 'L' or 'C')) throw new CommandException("shape.toPath: il testo non contiene caratteri visibili.");
                 }
                 else if (o is EllipseObject) segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);

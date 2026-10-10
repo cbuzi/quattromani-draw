@@ -44,12 +44,14 @@ public sealed class CommandBus(Document document)
                 {
                     cmd.Author = author;
                     cmd.Apply(document);
+                    document.RefreshPathTexts();
                     applied.Add(cmd);
                 }
             }
             catch
             {
                 for (var i = applied.Count - 1; i >= 0; i--) applied[i].Undo(document);
+                document.RefreshPathTexts();
                 throw;
             }
 
@@ -72,6 +74,7 @@ public sealed class CommandBus(Document document)
         lock (_gate)
         {
             document.ReplaceWith(loaded);
+            document.RefreshPathTexts();
             _undo.Clear();
             _redo.Clear();
             _log.Add(new(++document.Version, author, "reset", new DocumentReset { Reason = reason, File = file, Author = author }));
@@ -85,6 +88,7 @@ public sealed class CommandBus(Document document)
         {
             if (!_undo.TryPop(out var batch)) return false;
             for (var i = batch.Count - 1; i >= 0; i--) batch[i].Undo(document);
+            document.RefreshPathTexts();
             Record(Enumerable.Reverse(batch), author, "undo");
             _redo.Push(batch);
         }
@@ -97,7 +101,7 @@ public sealed class CommandBus(Document document)
         lock (_gate)
         {
             if (!_redo.TryPop(out var batch)) return false;
-            foreach (var cmd in batch) cmd.Apply(document);
+            foreach (var cmd in batch) { cmd.Apply(document); document.RefreshPathTexts(); }
             Record(batch, author, "redo");
             _undo.Push(batch);
         }

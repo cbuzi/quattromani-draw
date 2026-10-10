@@ -21,6 +21,9 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
     {
         PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             p.Source, p.Segments, null, p.NodeKinds),
+        // Testo su tracciato: i glifi sono già contorni, si disegna come un path (con tutti i suoi riempimenti).
+        TextObject { PathGlyphs: { } glyphs } t => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
+            t.Source, glyphs, null),
         TextObject t => new(o.Id, Kind.Text, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             t.Source, null, null, Text: new TextInfo(t.Lines, t.Style)),
         GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,

@@ -31,7 +31,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
 
     sealed record ObjInfo(string Id, string? Name, string Type, double[] Bounds, double? Rotation, double[]? Size,
         string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children,
-        string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null);
+        string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null);
 
     // `parent` porta dallo spazio del contenitore (gruppo) allo spazio pagina.
     static ObjInfo Describe(SceneObject o, Matrix3x2 parent)
@@ -47,7 +47,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             o is PathObject p ? PathData.ToString(PathData.Transform(p.Segments, p.Fit * world)) : null,
             o is GroupObject g ? g.Children.Select(c => Describe(c, g.Fit * world)).ToList() : null,
             (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
-            o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align);
+            o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null);
     }
 
     [McpServerTool(Name = "execute")]
@@ -74,6 +74,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.toPath","targets":["sun"]}   (turns rectangles/ellipses into paths, keeping id, name, style and rotation, so they can be reshaped with path.set)
           {"cmd":"shape.create","type":"text","name":"title","text":"Hello\nworld","fontFamily":"Helvetica Neue","fontSize":32,"bold":true,"align":"center","fill":"#111827","x":20,"y":20}   (text: '\n' = new line; with `width` the text wraps at that width, otherwise it is one line per '\n'; height is computed; accepts rel too)
           {"cmd":"text.set","targets":["title"],"text":"Goodbye","fontSize":40,"italic":true}   (change content and/or style; omitted fields stay; width 0 removes wrapping)
+          {"cmd":"text.onPath","targets":["title"],"path":"arc","align":"center","distance":6}   (the text follows a path, rectangle or ellipse: glyphs run along it, rotated to its direction. offset = px along the path from the anchor, align "start"|"center"|"end" = where along the path the text is anchored, distance = px away from the path on the upper side of the direction of travel (negative = other side), "reverse":true runs the path backwards (e.g. to read along the bottom of a circle). Omitted fields keep their value. {"cmd":"text.onPath","targets":["title"],"detach":true} makes it horizontal again. The text follows the path when it moves or is edited; get_document shows it under onPath. Create the text with shape.create first (same batch is fine). To make it bigger or smaller change fontSize with text.set; shape.toPath turns it into plain curves)
           {"cmd":"object.delete","targets":["o1"]}
         GUIDES (alignment lines the user can snap to; listed in get_document under page.guides, not drawn in exports):
           {"cmd":"guide.add","axis":"x","position":100}   (axis "x" = vertical line at x=100, "y" = horizontal line)
@@ -122,7 +123,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

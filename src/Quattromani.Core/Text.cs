@@ -23,6 +23,8 @@ public interface ITextEngine
     TextLayout Layout(TextStyle style, string text, double? wrapWidth);
     /// <summary>Contorni dei glifi delle righe, in coordinate del layout (stesse di <see cref="TextLine"/>).</summary>
     List<PathSeg> Outline(TextStyle style, IReadOnlyList<TextLine> lines);
+    /// <summary>Un glifo per carattere di una sola riga (senza a capo): serve a disporre il testo su un tracciato.</summary>
+    List<GlyphShape> Glyphs(TextStyle style, string text);
 }
 
 /// <summary>
@@ -47,6 +49,10 @@ public sealed class TextObject : SceneObject
     public double? WrapWidth { get; internal set; }
 
     public List<TextLine> Lines { get; internal set; } = [];
+    /// <summary>Se non è null il testo segue un tracciato: i glifi sono in <see cref="PathGlyphs"/> (ricalcolati dal documento) e <see cref="Lines"/> non si usa.</summary>
+    public TextOnPath? OnPath { get; internal set; }
+    public List<PathSeg>? PathGlyphs { get; internal set; }
+    internal string? PathKey { get; set; }
     public Box Source { get; internal set; }
     public Matrix3x2 Fit => FitMatrix(Source, new(X, Y, Width, Height));
 

@@ -189,6 +189,13 @@ public sealed partial class Document
         _nextId = other._nextId;
     }
 
+    /// <summary>Ricalcola i testi su tracciato (cambiano quando cambia il tracciato o il testo; i comandi non se ne occupano).</summary>
+    internal void RefreshPathTexts()
+    {
+        foreach (var t in AllObjects.OfType<TextObject>().Where(t => t.OnPath != null).ToList())
+            TextOnPathLayout.Update(this, t);
+    }
+
     internal string NewId() => "o" + ++_nextId;
 
     /// <summary>Trova un oggetto per id o per name.</summary>

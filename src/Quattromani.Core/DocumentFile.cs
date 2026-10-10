@@ -72,6 +72,7 @@ public static partial class DocumentFile
         public bool? Bold { get; set; }
         public bool? Italic { get; set; }
         public string? Align { get; set; }
+        public TextOnPath? OnPath { get; set; }
         public double? LineHeight { get; set; }
         public double? WrapWidth { get; set; }
         public List<LineDto>? Lines { get; set; }
@@ -119,6 +120,7 @@ public static partial class DocumentFile
                     (t.Text, t.FontFamily, t.FontSize, t.Bold ? true : null, t.Italic ? true : null, t.Align, t.LineHeight, t.WrapWidth);
                 dto.Source = [t.Source.X, t.Source.Y, t.Source.Width, t.Source.Height];
                 dto.Lines = t.Lines.Select(l => new LineDto { Text = l.Text, X = l.X, Y = l.Y }).ToList();
+                dto.OnPath = t.OnPath; // i glifi sul tracciato si ricalcolano all'apertura
                 break;
         }
         return dto;
@@ -168,6 +170,14 @@ public static partial class DocumentFile
         return doc;
     }
 
+    static TextOnPath? ValidOnPath(TextOnPath? p, string label)
+    {
+        if (p == null) return null;
+        if (string.IsNullOrEmpty(p.PathId) || p.Align is not ("start" or "center" or "end") || !double.IsFinite(p.Offset) || !double.IsFinite(p.Distance))
+            throw new CommandException($"Oggetto {label}: testo su tracciato non valido.");
+        return p;
+    }
+
     [GeneratedRegex(@"^o(\d+)$")]
     private static partial Regex IdNumber();
 
@@ -205,6 +215,7 @@ public static partial class DocumentFile
                     Text = d.Text ?? "", FontFamily = d.FontFamily ?? "", FontSize = d.FontSize ?? 24, Bold = d.Bold ?? false, Italic = d.Italic ?? false,
                     Align = d.Align ?? "left", LineHeight = d.LineHeight ?? 1, WrapWidth = d.WrapWidth,
                     Source = Src(), Lines = (d.Lines ?? []).Select(l => new TextLine(l.Text, l.X, l.Y)).ToList(),
+                    OnPath = ValidOnPath(d.OnPath, label),
                 };
                 break;
             default: throw new CommandException($"Oggetto {label}: tipo '{d.Type}' sconosciuto (rectangle, ellipse, path, group, text).");

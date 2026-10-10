@@ -67,6 +67,19 @@ sealed class GlyphFonts(TextStyle style) : IDisposable
         return path;
     }
 
+    /// <summary>Un glifo per carattere (Unicode, non per unità UTF-16): avanzamento e contorno con l'origine sulla linea di base.</summary>
+    public List<(double Advance, SKPath Outline)> Glyphs(string text)
+    {
+        var list = new List<(double, SKPath)>();
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var t = rune.ToString();
+            var font = FontFor(rune.Value);
+            list.Add((font.MeasureText(t), font.GetTextPath(t, new SKPoint(0, 0))));
+        }
+        return list;
+    }
+
     public void Dispose()
     {
         _primary.Dispose();
@@ -134,6 +147,40 @@ sealed class SkiaTextEngine : ITextEngine
         return new TextLayout(result, width, (lines.Count - 1) * advance + asc + desc);
     }
 
+    /// <summary>Un SKPath come segmenti M/L/C/Z (le quadratiche diventano cubiche).</summary>
+    static List<PathSeg> ToSegments(SKPath path)
+    {
+        var segs = new List<PathSeg>();
+        using var it = path.CreateRawIterator();
+        var p = new SKPoint[4];
+        SKPoint cur = default;
+        SKPathVerb verb;
+        while ((verb = it.Next(p)) != SKPathVerb.Done)
+            switch (verb)
+            {
+                case SKPathVerb.Move: segs.Add(new('M', X: p[0].X, Y: p[0].Y)); cur = p[0]; break;
+                case SKPathVerb.Line: segs.Add(new('L', X: p[1].X, Y: p[1].Y)); cur = p[1]; break;
+                case SKPathVerb.Quad: // quadratica -> cubica
+                case SKPathVerb.Conic: // (peso ignorato: nei glifi è quasi sempre 1)
+                    segs.Add(new('C', cur.X + 2f / 3 * (p[1].X - cur.X), cur.Y + 2f / 3 * (p[1].Y - cur.Y),
+                        p[2].X + 2f / 3 * (p[1].X - p[2].X), p[2].Y + 2f / 3 * (p[1].Y - p[2].Y), p[2].X, p[2].Y));
+                    cur = p[2];
+                    break;
+                case SKPathVerb.Cubic: segs.Add(new('C', p[1].X, p[1].Y, p[2].X, p[2].Y, p[3].X, p[3].Y)); cur = p[3]; break;
+                case SKPathVerb.Close: segs.Add(new('Z')); break;
+            }
+        return segs;
+    }
+
+    public List<GlyphShape> Glyphs(TextStyle s, string text)
+    {
+        using var fonts = new GlyphFonts(s);
+        return fonts.Glyphs(text).Select(g =>
+        {
+            using (g.Outline) return new GlyphShape(g.Advance, ToSegments(g.Outline));
+        }).ToList();
+    }
+
     public List<PathSeg> Outline(TextStyle s, IReadOnlyList<TextLine> lines)
     {
         using var fonts = new GlyphFonts(s);
@@ -142,24 +189,7 @@ sealed class SkiaTextEngine : ITextEngine
         {
             if (line.Text.Length == 0) continue;
             using var path = fonts.Outline(line.Text, (float)line.X, (float)line.Y);
-            using var it = path.CreateRawIterator();
-            var p = new SKPoint[4];
-            SKPoint cur = default;
-            SKPathVerb verb;
-            while ((verb = it.Next(p)) != SKPathVerb.Done)
-                switch (verb)
-                {
-                    case SKPathVerb.Move: segs.Add(new('M', X: p[0].X, Y: p[0].Y)); cur = p[0]; break;
-                    case SKPathVerb.Line: segs.Add(new('L', X: p[1].X, Y: p[1].Y)); cur = p[1]; break;
-                    case SKPathVerb.Quad: // quadratica -> cubica
-                    case SKPathVerb.Conic: // (peso ignorato: nei glifi è quasi sempre 1)
-                        segs.Add(new('C', cur.X + 2f / 3 * (p[1].X - cur.X), cur.Y + 2f / 3 * (p[1].Y - cur.Y),
-                            p[2].X + 2f / 3 * (p[1].X - p[2].X), p[2].Y + 2f / 3 * (p[1].Y - p[2].Y), p[2].X, p[2].Y));
-                        cur = p[2];
-                        break;
-                    case SKPathVerb.Cubic: segs.Add(new('C', p[1].X, p[1].Y, p[2].X, p[2].Y, p[3].X, p[3].Y)); cur = p[3]; break;
-                    case SKPathVerb.Close: segs.Add(new('Z')); break;
-                }
+            segs.AddRange(ToSegments(path));
         }
         return segs;
     }
