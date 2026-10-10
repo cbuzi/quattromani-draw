@@ -12,7 +12,7 @@ public static class McpHost
     /// <summary>Porta del server; QUATTROMANI_PORT la cambia (utile per avere più istanze o fare prove senza toccare quella in uso).</summary>
     public static int Port { get; } = int.TryParse(Environment.GetEnvironmentVariable("QUATTROMANI_PORT"), out var p) ? p : 5577;
 
-    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer, IFileService files)
+    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer, IFileService files, ISelectionService selection)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://localhost:{Port}");
@@ -20,6 +20,7 @@ public static class McpHost
         builder.Services.AddSingleton(bus);
         builder.Services.AddSingleton(renderer);
         builder.Services.AddSingleton(files);
+        builder.Services.AddSingleton(selection);
         builder.Services.AddMcpServer().WithHttpTransport().WithTools<QuattromaniTools>();
 
         var app = builder.Build();

@@ -9,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace Quattromani.Mcp;
 
 [McpServerToolType]
-public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer, IFileService files)
+public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer, IFileService files, ISelectionService selection)
 {
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
@@ -259,6 +259,30 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             new TextContentBlock { Text = FormattableString.Invariant($"{img.PixelWidth}x{img.PixelHeight}px showing area [{a.X:0.##}, {a.Y:0.##}, {a.Width:0.##}, {a.Height:0.##}] (1 pixel = {a.Width / img.PixelWidth:0.###} document units)") },
             ImageContentBlock.FromBytes(img.Png, "image/png"),
         ];
+    }
+
+    [McpServerTool(Name = "get_selection", ReadOnly = true)]
+    [Description("""
+        Returns the objects the user has currently selected on the canvas: {"selection":[{"id":"o1","name":"sole"}]} (empty when nothing is selected).
+        Use it to understand what "this", "these" or "the selected shape" refers to in the user's request.
+        """)]
+    public string GetSelection()
+    {
+        var items = bus.Read(d => selection.Get().Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().Select(o => new { id = o.Id, name = o.Name }).ToList());
+        return JsonSerializer.Serialize(new { selection = items }, Json.Options);
+    }
+
+    [McpServerTool(Name = "select")]
+    [Description("""
+        Sets the selection on the user's canvas, to show them which objects you are talking about or to prepare what they will work on (e.g. "I selected the sun, pick a color for it").
+        `targets` are ids or names (["o1","sole"]); an empty list clears the selection. It replaces the current selection and is not an edit: it does not change the document or the undo history.
+        Returns the new selection like get_selection. Unknown ids or names fail with an explanatory error and leave the selection unchanged.
+        """)]
+    public string Select([Description("Ids or names of the objects to select; empty = select nothing.")] List<string>? targets = null)
+    {
+        var ids = Guard(() => bus.Read(d => (targets ?? []).Select(t => d.Find(t).Id).Distinct().ToList()));
+        selection.Set(ids);
+        return GetSelection();
     }
 
     [McpServerTool(Name = "get_changes", ReadOnly = true)]

@@ -34,9 +34,13 @@ public partial class MainWindow : Window
     readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     readonly DispatcherTimer _chipTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
+    /// <summary>Selezione del canvas per l'MCP.</summary>
+    public Quattromani.Mcp.ISelectionService Selection { get; }
+
     public MainWindow()
     {
         InitializeComponent();
+        Selection = new CanvasSelection(Canvas);
         InitFiles();
         Canvas.Bus = _bus;
 
