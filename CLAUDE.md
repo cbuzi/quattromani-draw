@@ -1,4 +1,7 @@
-# AiDraw
+# Quattromani Draw
+
+Nome prodotto: **Quattromani Draw**. Namespace, progetti ed eseguibile: **`Quattromani`** (senza "Draw").
+Il nome viene dall'espressione italiana "a quattro mani": umano e LLM disegnano insieme.
 
 Editor di grafica vettoriale open source, multipiattaforma (Windows, macOS, Linux), ispirato agli editor vettoriali professionali classici.
 Caratteristica distintiva: **disegno "a quattro mani" tra umano e LLM**. Un agente esterno (Claude Code, Codex, OpenCode, Claude Desktop...) si collega all'app in esecuzione via MCP e disegna insieme all'utente sullo stesso documento.
@@ -12,9 +15,9 @@ Caratteristica distintiva: **disegno "a quattro mani" tra umano e LLM**. Un agen
 ## Struttura
 
 ```
-AiDraw.Core   → document model, geometria, comandi, undo/redo, versioning. NESSUNA dipendenza da UI o MCP.
-AiDraw.App    → Avalonia: shell, canvas Skia, strumenti, pannelli.
-AiDraw.Mcp    → server MCP HTTP su localhost, ospitato nel processo dell'app.
+Quattromani.Core   → document model, geometria, comandi, undo/redo, versioning. NESSUNA dipendenza da UI o MCP.
+Quattromani.App    → Avalonia: shell, canvas Skia, strumenti, pannelli.
+Quattromani.Mcp    → server MCP HTTP su localhost, ospitato nel processo dell'app.
 ```
 
 Import/export SVG vive in Core finché è piccolo.
@@ -39,7 +42,7 @@ Import/export SVG vive in Core finché è piccolo.
 ## API MCP (LLM-oriented)
 
 Endpoint: `http://localhost:5577/mcp`
-Registrazione in Claude Code: `claude mcp add --transport http aidraw http://localhost:5577/mcp`
+Registrazione in Claude Code: `claude mcp add --transport http quattromani http://localhost:5577/mcp`
 
 Tool, pochi ma ricchi:
 

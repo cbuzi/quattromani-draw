@@ -1,0 +1,296 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:Quattromani.App"
+        x:Class="Quattromani.App.MainWindow"
+        Title="Quattromani Draw" Width="1280" Height="800"
+        Background="{DynamicResource WorkBg}">
+
+    <Grid>
+    <DockPanel>
+        <!-- Barra superiore -->
+        <Border DockPanel.Dock="Top" Height="62" Padding="12,0"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="Quattromani Draw" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <Button x:Name="FileButton" Classes="bar" Content="File">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                <MenuItem x:Name="MenuNew" Header="New" />
+                                <MenuItem x:Name="MenuOpen" Header="Open…" />
+                                <Separator />
+                                <MenuItem x:Name="MenuSave" Header="Save" />
+                                <MenuItem x:Name="MenuSaveAs" Header="Save as…" />
+                                <Separator />
+                                <MenuItem x:Name="MenuExportPdf" Header="Export PDF…" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
+                    <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
+                    <Border Width="1" Height="28" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <Button x:Name="GroupButton" Classes="tb" ToolTip.Tip="Group the selected objects (Ctrl/Cmd+G)">
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M2,2 H24 V22 H2 Z" StrokeThickness="1.4" StrokeDashArray="2.5,2" Stroke="{Binding $parent[Button].Foreground}" />
+                                <Path Data="M6,6 H14 V14 H6 Z M12,10 H20 V18 H12 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                            </Grid>
+                            <TextBlock Text="Group" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="UngroupButton" Classes="tb" ToolTip.Tip="Separate the selected group (Ctrl/Cmd+Shift+G)">
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M1.5,1.5 H12 V12 H1.5 Z M14,12 H24.5 V22.5 H14 Z" StrokeThickness="1.4" StrokeDashArray="2.5,2" Stroke="{Binding $parent[Button].Foreground}" />
+                                <Path Data="M4,4 H9.5 V9.5 H4 Z M16.5,14.5 H22 V20 H16.5 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                            </Grid>
+                            <TextBlock Text="Ungroup" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ArrangeButton" Classes="tb" ToolTip.Tip="Stacking order of the selected objects">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                <MenuItem x:Name="MenuToFront" Header="To front" />
+                                <MenuItem x:Name="MenuForward" Header="Forward one" />
+                                <MenuItem x:Name="MenuBackward" Header="Back one" />
+                                <MenuItem x:Name="MenuToBack" Header="To back" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M2.5,2.5 H15.5 V15.5 H2.5 Z" StrokeThickness="1.5" Stroke="{Binding $parent[Button].Foreground}" Opacity="0.6" />
+                                <Path Data="M9.5,8.5 H22.5 V21.5 H9.5 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" Fill="{DynamicResource PanelBg}" />
+                            </Grid>
+                            <TextBlock Text="Arrange" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="AlignButton" Classes="tb" ToolTip.Tip="Align and distribute the selected objects">
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                <MenuItem x:Name="MenuAlignLeft" Header="Align left" />
+                                <MenuItem x:Name="MenuAlignCenter" Header="Align centers (horizontal)" />
+                                <MenuItem x:Name="MenuAlignRight" Header="Align right" />
+                                <Separator />
+                                <MenuItem x:Name="MenuAlignTop" Header="Align top" />
+                                <MenuItem x:Name="MenuAlignMiddle" Header="Align middles (vertical)" />
+                                <MenuItem x:Name="MenuAlignBottom" Header="Align bottom" />
+                                <Separator />
+                                <MenuItem x:Name="MenuCenterPage" Header="Center on page" />
+                                <Separator />
+                                <MenuItem x:Name="MenuDistributeX" Header="Distribute horizontally (equal gaps)" />
+                                <MenuItem x:Name="MenuDistributeY" Header="Distribute vertically (equal gaps)" />
+                                <MenuItem x:Name="MenuDistributeCX" Header="Distribute centers horizontally" />
+                                <MenuItem x:Name="MenuDistributeCY" Header="Distribute centers vertically" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                        <StackPanel Spacing="3">
+                            <Grid Width="26" Height="24" HorizontalAlignment="Center">
+                                <Path Data="M3,2 V22" StrokeThickness="1.6" StrokeLineCap="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                                <Path Data="M7,5 H21 V10 H7 Z M7,14 H15 V19 H7 Z" StrokeThickness="1.6" StrokeJoin="Round" Stroke="{Binding $parent[Button].Foreground}" />
+                            </Grid>
+                            <TextBlock Text="Align" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Border Width="1" Height="28" Margin="8,0" Background="{DynamicResource PanelBorder}" />
+                    <StackPanel x:Name="PageBar" Orientation="Horizontal" Spacing="6">
+                        <ComboBox x:Name="PagePresetCombo" Width="195" VerticalAlignment="Center" ToolTip.Tip="Page size" />
+                        <NumericUpDown x:Name="PageWBox" Width="140" Minimum="1" Maximum="100000" Increment="1" FormatString="0.##" VerticalAlignment="Center" ToolTip.Tip="Page width" />
+                        <TextBlock Text="×" VerticalAlignment="Center" Opacity="0.6" />
+                        <NumericUpDown x:Name="PageHBox" Width="140" Minimum="1" Maximum="100000" Increment="1" FormatString="0.##" VerticalAlignment="Center" ToolTip.Tip="Page height" />
+                        <TextBlock x:Name="PageUnitText" VerticalAlignment="Center" Opacity="0.6" />
+                        <ToggleButton x:Name="PortraitButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Portrait">
+                            <Path Data="M8,4 H16 V20 H8 Z" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="LandscapeButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Landscape">
+                            <Path Data="M4,8 H20 V16 H4 Z" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                    </StackPanel>
+                    <StackPanel x:Name="BoolBar" Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="WeldButton" Classes="bar" Content="Weld" ToolTip.Tip="Union of the selected shapes" />
+                        <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
+                        <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
+                        <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
+                    </StackPanel>
+                    <StackPanel x:Name="TextBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                        <ComboBox x:Name="FontCombo" Width="180" VerticalAlignment="Center" ToolTip.Tip="Font" />
+                        <NumericUpDown x:Name="FontSizeBox" Width="96" Minimum="1" Maximum="1000" Increment="1" FormatString="0.##" Value="24" VerticalAlignment="Center" ToolTip.Tip="Font size" />
+                        <ToggleButton x:Name="BoldButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Bold">
+                            <TextBlock Text="B" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="ItalicButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Italic">
+                            <TextBlock Text="I" FontStyle="Italic" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignLeftButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Align left">
+                            <Path Data="M4,6 H20 M4,10 H14 M4,14 H20 M4,18 H12" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignCenterButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Center">
+                            <Path Data="M4,6 H20 M7,10 H17 M4,14 H20 M8,18 H16" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="AlignRightButton" Width="34" Height="34" Padding="0" ToolTip.Tip="Align right">
+                            <Path Data="M4,6 H20 M10,10 H20 M4,14 H20 M12,18 H20" StrokeThickness="1.6" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                        </ToggleButton>
+                        <Button x:Name="TextToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert the text to editable curves (Ctrl/Cmd+Q)" />
+                    </StackPanel>
+                    <StackPanel x:Name="NodeBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
+                        <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />
+                        <Button x:Name="NodeLineButton" Classes="bar" Content="Line" ToolTip.Tip="Make the segments of the selected nodes straight" />
+                        <Button x:Name="NodeCurveButton" Classes="bar" Content="Curve" ToolTip.Tip="Make the segments of the selected nodes curved" />
+                        <Border Width="1" Height="20" Margin="4,0" Background="{DynamicResource PanelBorder}" />
+                        <Button x:Name="NodeCuspButton" Classes="bar" Content="Cusp" ToolTip.Tip="Cusp node (square): the two handles are independent" />
+                        <Button x:Name="NodeSmoothButton" Classes="bar" Content="Smooth" ToolTip.Tip="Smooth node (circle): the handles stay aligned, each keeps its length" />
+                        <Button x:Name="NodeSymmetricButton" Classes="bar" Content="Symmetric" ToolTip.Tip="Symmetric node (diamond): the handles stay aligned and equal in length" />
+                        <Border Width="1" Height="20" Margin="4,0" Background="{DynamicResource PanelBorder}" />
+                        <Button x:Name="NodeDeleteButton" Classes="bar" Content="Delete node" ToolTip.Tip="Delete the selected nodes (Delete)" />
+                    </StackPanel>
+                </StackPanel>
+                <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Width="38" Height="38" Padding="0" VerticalAlignment="Center" ToolTip.Tip="Switch between light and dark theme">
+                    <Path Data="M13,3 A9,9 0 1 0 21,13 A7,7 0 0 1 13,3 Z" StrokeThickness="1.7" StrokeJoin="Round" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[Button].Foreground}" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Barra di stato -->
+        <Border DockPanel.Dock="Bottom" Height="34" Padding="14,0"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                    <TextBlock x:Name="StatusInfo" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="NoticeText" VerticalAlignment="Center" Foreground="#EF4444" FontSize="12" IsVisible="False" />
+                    <Border x:Name="AgentChip" IsVisible="False" CornerRadius="12" Padding="10,3" Background="#26A855F7" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Ellipse Width="8" Height="8" Fill="#A855F7" VerticalAlignment="Center" />
+                            <TextBlock x:Name="AgentText" FontSize="12" FontWeight="SemiBold" Foreground="#A855F7" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <TextBlock x:Name="CursorText" Grid.Column="1" Margin="14,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="150" />
+                <ComboBox x:Name="UnitCombo" Grid.Column="2" Width="76" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="Units shown for sizes and positions (the document itself works in px at 96 dpi)" />
+                <ComboBox x:Name="PageViewCombo" Grid.Column="3" Margin="8,0,0,0" Width="150" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="How the page is shown on the work area" />
+                <Button x:Name="FitPageButton" Grid.Column="4" Classes="bar" Margin="8,0,0,0" Content="Fit page" FontSize="12" Padding="10,2" ToolTip.Tip="Show the whole page (Ctrl/Cmd+0)" />
+                <TextBlock x:Name="ZoomText" Grid.Column="5" Margin="12,0,0,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="48" TextAlignment="Right" ToolTip.Tip="Zoom (Ctrl/Cmd+1 = 100%)" />
+            </Grid>
+        </Border>
+
+        <!-- Toolbox -->
+        <Border DockPanel.Dock="Left" Width="60" Padding="0,10"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
+            <StackPanel Spacing="6" HorizontalAlignment="Center">
+                <ToggleButton x:Name="SelectTool" Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
+                    <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
+                          Fill="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="NodeTool" Classes="tool" ToolTip.Tip="Node edit (N): move nodes and handles; double-click the path to add a node, double-click a node to delete it. Alt while dragging a handle = turns the node into a cusp">
+                    <Path Data="M5,19 C7,7 17,7 19,19 M3,17 L7,17 L7,21 L3,21 Z M17,17 L21,17 L21,21 L17,21 Z"
+                          StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="RectTool" Classes="tool" ToolTip.Tip="Rectangle (R)">
+                    <Path Data="M4,6 L20,6 L20,18 L4,18 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="EllipseTool" Classes="tool" ToolTip.Tip="Ellipse (E)">
+                    <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="FillTool" Classes="tool" ToolTip.Tip="Fill (G): drag across an object to draw a gradient; drag its handles to change it. Double-click the line to add a color, click a handle then a palette color to recolor it, Delete removes it. Shift = 15° steps">
+                    <Path Data="M4,5 H20 V19 H4 Z M7.5,16.5 L16.5,7.5 M5.5,15 h4 v4 h-4 Z M14.5,5 h4 v4 h-4 Z"
+                          StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="TextTool" Classes="tool" ToolTip.Tip="Text (T): click to type, drag to set a wrapping width. Double-click a text to edit it; Ctrl/Cmd+Enter or click outside to finish, Esc cancels">
+                    <TextBlock Text="T" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </ToggleButton>
+                <ToggleButton x:Name="PenTool" Classes="tool" ToolTip.Tip="Pen (P): click = corner node, click and drag = smooth curve. Click the first node to close, double-click or Enter to finish, Backspace removes the last node, Esc cancels">
+                    <Path Data="M12,21 L6,11 L8,3 L16,3 L18,11 Z M12,21 L12,13 M13.6,10 A1.6,1.6 0 1 0 10.4,10 A1.6,1.6 0 1 0 13.6,10 Z"
+                          StrokeThickness="1.8" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+            </StackPanel>
+        </Border>
+
+        <!-- Tavolozza: una colonna di colori tondi lungo il bordo destro -->
+        <Border DockPanel.Dock="Right" Width="34" Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
+            <Grid RowDefinitions="Auto,*">
+                <Button x:Name="PaletteExpandButton" Classes="bar" Height="26" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Margin="3,4,3,0" ToolTip.Tip="Show the whole palette">
+                    <Path x:Name="PaletteChevron" Data="M9,3 L5,8 L9,13" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round" Width="14" Height="16" Stretch="None"
+                          Stroke="{Binding $parent[Button].Foreground}" />
+                </Button>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
+                              ToolTip.Tip="Palette: left click = fill, right click = outline. Scroll for more tones.">
+                    <StackPanel x:Name="PaletteSwatches" Margin="0,8" />
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- Pannello oggetti -->
+        <Border DockPanel.Dock="Right" Width="260"
+                Background="{DynamicResource PanelBg}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="16,14,16,12" Spacing="8">
+                    <TextBlock Classes="caption" Text="FILL TYPE" Margin="0,6,0,0" />
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <ToggleButton x:Name="GradSolidButton" Content="Solid" Padding="9,4" />
+                        <ToggleButton x:Name="GradLinearButton" Content="Linear" Padding="9,4" />
+                        <ToggleButton x:Name="GradRadialButton" Content="Radial" Padding="9,4" />
+                        <ToggleButton x:Name="GradPatternButton" Content="Pattern" Padding="9,4" />
+                    </StackPanel>
+                    <Border x:Name="GradPreview" Height="22" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource PanelBorder}" />
+                    <StackPanel x:Name="StopsPanel" Spacing="4" />
+                    <StackPanel x:Name="StopsButtons" Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="GradAddButton" Content="+ Color" Height="28" Padding="8,0" ToolTip.Tip="Add a color in the middle of the widest gap (double-click the gradient line with the Fill tool to add one where you want)" />
+                        <Button x:Name="GradSwapButton" Content="⇄" Width="32" Height="28" Padding="0" ToolTip.Tip="Reverse the colors" />
+                        <NumericUpDown x:Name="GradAngleBox" Width="96" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="90"
+                                       ToolTip.Tip="Angle in degrees: 0 = bottom to top, 90 = left to right, 180 = top to bottom" />
+                    </StackPanel>
+                    <StackPanel x:Name="PatternPanel" Spacing="6" IsVisible="False">
+                        <ComboBox x:Name="PatKindCombo" Width="190" ToolTip.Tip="Pattern type" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <NumericUpDown x:Name="PatSizeBox" Width="96" Height="28" Minimum="1" Maximum="500" Increment="1" FormatString="0.##" Value="10" ToolTip.Tip="Size of the pattern (document units)" />
+                            <NumericUpDown x:Name="PatAngleBox" Width="96" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="0" ToolTip.Tip="Rotation of the pattern (degrees)" />
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock x:Name="GradHint" Text="Now pick a color from the palette" FontSize="11" Opacity="0.6" IsVisible="False" />
+                    <TextBlock Classes="caption" Text="FILL" Margin="0,6,0,0" />
+                    <TextBox x:Name="FillHex" Watermark="#RRGGBB" />
+                    <TextBlock Classes="caption" Text="STROKE" Margin="0,6,0,0" />
+                    <TextBox x:Name="StrokeHex" Watermark="#RRGGBB" />
+                    <TextBlock Classes="caption" Text="STROKE WIDTH" Margin="0,6,0,0" />
+                    <NumericUpDown x:Name="WidthBox" Minimum="0" Maximum="200" Increment="1" FormatString="0.##" Value="2" />
+                </StackPanel>
+                <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource PanelBorder}" />
+                <TextBlock DockPanel.Dock="Top" Classes="caption" Text="OBJECTS" Margin="16,14,16,8" />
+                <Grid Margin="6,0">
+                    <ListBox x:Name="ObjectList" Background="Transparent" />
+                    <TextBox x:Name="RenameBox" IsVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8,0"
+                             VerticalContentAlignment="Center" MinHeight="0" Watermark="Name" />
+                </Grid>
+            </DockPanel>
+        </Border>
+
+        <Grid RowDefinitions="*,Auto" ColumnDefinitions="*,Auto">
+            <local:CanvasView x:Name="Canvas" />
+            <TextBox x:Name="TextEditor" IsVisible="False" AcceptsReturn="True" HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Padding="0" MinWidth="30" MinHeight="0" BorderThickness="1" BorderBrush="#3B82F6" Background="Transparent" />
+            <ScrollBar x:Name="VScroll" Grid.Column="1" Orientation="Vertical" AllowAutoHide="False" />
+            <ScrollBar x:Name="HScroll" Grid.Row="1" Orientation="Horizontal" AllowAutoHide="False" />
+        </Grid>
+    </DockPanel>
+
+    <!-- Tavolozza completa: si apre sopra il disegno dal bottone in cima alla colonna dei colori -->
+    <Border x:Name="PaletteFlyout" IsVisible="False" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,70,42,0"
+            Padding="14" CornerRadius="12" Background="{DynamicResource PanelBg}"
+            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" BoxShadow="0 8 28 0 #66000000">
+        <StackPanel Spacing="10">
+            <TextBlock Classes="caption" Text="PALETTE   ·   left click: fill   ·   right click: outline" />
+            <StackPanel x:Name="PaletteGrid" Orientation="Horizontal" Spacing="3" />
+        </StackPanel>
+    </Border>
+    </Grid>
+</Window>
