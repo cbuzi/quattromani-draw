@@ -100,6 +100,53 @@ static class TextOnPathLayout
         return (pts, closed);
     }
 
+    /// <summary>
+    /// Parametri del testo dopo uno spostamento di <paramref name="delta"/> (in pagina): il centro del testo viene proiettato sul tracciato
+    /// prima e dopo, la differenza lungo il tracciato diventa offset e quella perpendicolare diventa distanza. Null se il tracciato non c'è.
+    /// </summary>
+    internal static TextOnPath? Slide(Document doc, TextObject t, Vector2 delta)
+    {
+        var op = t.OnPath!;
+        var target = doc.AllObjects.FirstOrDefault(o => o.Id == op.PathId && o != t);
+        if (target == null || PageSegments(doc, target) is not { } segs) return null;
+        var (pts, closed) = Flatten(segs);
+        if (op.Reverse) pts.Reverse();
+        if (pts.Count < 2) return null;
+        var cum = new double[pts.Count];
+        for (var i = 1; i < pts.Count; i++) cum[i] = cum[i - 1] + Vector2.Distance(pts[i - 1], pts[i]);
+        var length = cum[^1];
+        if (length < 1e-3) return null;
+
+        // Posizione lungo il tracciato e distanza (positiva dal lato "alto") del punto più vicino.
+        (double S, double D) Nearest(Vector2 p)
+        {
+            double best = double.MaxValue, bs = 0, bd = 0;
+            for (var i = 1; i < pts.Count; i++)
+            {
+                var a = pts[i - 1]; var ab = pts[i] - a;
+                var len2 = ab.LengthSquared();
+                if (len2 < 1e-12f) continue;
+                var u = Math.Clamp(Vector2.Dot(p - a, ab) / len2, 0, 1);
+                var q = a + ab * u;
+                var dist = Vector2.Distance(p, q);
+                if (dist >= best) continue;
+                var dir = Vector2.Normalize(ab);
+                best = dist;
+                bs = cum[i - 1] + u * Math.Sqrt(len2);
+                bd = Vector2.Dot(p - q, new Vector2(dir.Y, -dir.X));
+            }
+            return (bs, bd);
+        }
+
+        var b = doc.PageBounds(t);
+        var c = new Vector2((float)(b.X + b.Width / 2), (float)(b.Y + b.Height / 2));
+        var (s0, d0) = Nearest(c);
+        var (s1, d1) = Nearest(c + delta);
+        var ds = s1 - s0;
+        if (closed) { ds = ((ds % length) + length) % length; if (ds > length / 2) ds -= length; } // sul giro il percorso più corto
+        return op with { Offset = op.Offset + ds, Distance = op.Distance + (d1 - d0) };
+    }
+
     /// <summary>Contorni dei glifi disposti sul tracciato, in coordinate pagina; null se non si può (tracciato troppo corto o testo senza glifi).</summary>
     static List<PathSeg>? Place(ITextEngine engine, TextObject t, TextOnPath op, List<PathSeg> pageSegs)
     {

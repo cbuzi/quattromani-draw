@@ -169,13 +169,31 @@ public sealed class MoveObjects : Command
     {
         if (Targets.Count == 0) throw new CommandException("object.move: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
         _old = Targets.Select(t => doc.Find(t)).Select(o => (o, o.Transform)).ToList();
+        _oldOnPath = [];
         foreach (var (obj, old) in _old)
+        {
+            if (obj is TextObject { OnPath: { } op } text)
+            {
+                if (_old.Any(e => e.Obj.Id == op.PathId)) continue; // si muove anche il tracciato: il testo lo segue da solo
+                // Un testo su tracciato non ha una posizione propria: spostarlo lo fa scorrere lungo il tracciato (offset) e lo avvicina o allontana (distanza).
+                var delta = System.Numerics.Vector2.TransformNormal(new((float)Dx, (float)Dy), doc.ParentMatrix(text));
+                if (TextOnPathLayout.Slide(doc, text, delta) is { } moved)
+                {
+                    _oldOnPath.Add((text, op));
+                    text.OnPath = moved;
+                    continue;
+                }
+            }
             obj.Transform = old * Matrix3x2.CreateTranslation((float)Dx, (float)Dy);
+        }
     }
+
+    List<(TextObject Text, TextOnPath OnPath)> _oldOnPath = [];
 
     public override void Undo(Document doc)
     {
         foreach (var (obj, old) in _old) obj.Transform = old;
+        foreach (var (text, op) in _oldOnPath) text.OnPath = op;
     }
 }
 
