@@ -7,6 +7,8 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using GradientStop = Quattromani.Core.GradientStop;
+using Matrix3x2 = System.Numerics.Matrix3x2;
+using Vector2 = System.Numerics.Vector2;
 
 namespace Quattromani.App;
 
@@ -168,6 +170,7 @@ public partial class MainWindow : Window
         NodeDeleteButton.Click += (_, _) => Canvas.ApplyNodeOp(NodeOp.Delete);
         ToCurvesButton.Click += (_, _) => ToCurves();
         Canvas.ToolChanged += SyncToolButtons;
+        foreach (var box in new[] { XBox, YBox, WBox, HBox, RotBox }) box.ValueChanged += (_, _) => ApplyXform(box);
 
         // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
         void PickColor(string c, bool stroke)
@@ -341,17 +344,17 @@ public partial class MainWindow : Window
     }
 
     // Pannello esteso: una colonna per ogni tinta (la prima con "nessun colore" e i grigi), un tono per riga.
-    static void BuildPaletteGrid(Panel host, Action<string, bool> pick)
+    static void BuildPaletteGrid(Panel host, Action<string, bool> pick, int size = 24)
     {
         // Prima colonna: nessun colore e 7 grigi, così ha 8 righe come le altre.
         var first = new StackPanel();
         var grays = PaletteGroups[1];
-        foreach (var c in PaletteGroups[0].Concat(new[] { 0, 2, 3, 4, 5, 7, 9 }.Select(i => grays[i]))) first.Children.Add(Swatch(c, 24, 3, pick));
+        foreach (var c in PaletteGroups[0].Concat(new[] { 0, 2, 3, 4, 5, 7, 9 }.Select(i => grays[i]))) first.Children.Add(Swatch(c, size, 3, pick));
         host.Children.Add(first);
         foreach (var group in PaletteGroups.Skip(2))
         {
             var column = new StackPanel();
-            foreach (var c in group) column.Children.Add(Swatch(c, 24, 3, pick));
+            foreach (var c in group) column.Children.Add(Swatch(c, size, 3, pick));
             host.Children.Add(column);
         }
     }
@@ -613,6 +616,76 @@ public partial class MainWindow : Window
         TextBar.IsVisible = text;
         PageBar.IsVisible = page;
         BoolBar.IsVisible = !node && !text && !page;
+        XformBar.IsVisible = BoolBar.IsVisible;
+    }
+
+    // ---- Campi numerici di posizione, dimensione e rotazione -----------------------------------
+
+    bool _syncingXform;
+
+    void SyncXformBar()
+    {
+        var info = _bus.Read(d =>
+        {
+            var objs = Canvas.SelectedIds.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().ToList();
+            if (objs.Count == 0) return null;
+            var boxes = objs.Select(d.PageBounds).ToList();
+            var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);
+            var rot = objs.Count == 1 ? Math.Atan2(objs[0].Transform.M12, objs[0].Transform.M11) * 180 / Math.PI : 0;
+            return ((Box, double)?)(new Box(x0, y0, boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0), rot);
+        });
+        _syncingXform = true;
+        XformBar.IsEnabled = info != null;
+        if (info is var (b, rot))
+        {
+            decimal V(double px) => (decimal)Math.Round(Units.FromPx(px, _unit), 3);
+            XBox.Value = V(b.X); YBox.Value = V(b.Y); WBox.Value = V(b.Width); HBox.Value = V(b.Height);
+            RotBox.Value = (decimal)Math.Round(rot, 2);
+            WBox.IsEnabled = HBox.IsEnabled = Canvas.SelectedIds.Count == 1 && Math.Abs(rot) < 0.05;
+            RotBox.IsEnabled = Canvas.SelectedIds.Count == 1;
+        }
+        _syncingXform = false;
+    }
+
+    // Applica il valore digitato: X/Y spostano la selezione, W/H ridimensionano, la rotazione porta l'oggetto all'angolo indicato.
+    void ApplyXform(NumericUpDown box)
+    {
+        if (_syncingXform || box.Value is not { } val || Canvas.SelectedIds.Count == 0) return;
+        var ids = Canvas.SelectedIds.ToList();
+        var v = Units.ToPx((double)val, _unit);
+        try
+        {
+            if (box == XBox || box == YBox)
+                _bus.Execute(_bus.Read(d =>
+                {
+                    var boxes = ids.Select(id => d.Objects.First(o => o.Id == id)).Select(d.PageBounds).ToList();
+                    var cur = box == XBox ? boxes.Min(b => b.X) : boxes.Min(b => b.Y);
+                    var delta = new Vector2(box == XBox ? (float)(v - cur) : 0, box == YBox ? (float)(v - cur) : 0);
+                    // Ogni oggetto vive nello spazio del suo contenitore: porto lo spostamento da pagina a quello spazio.
+                    return ids.Select(id =>
+                    {
+                        var o = d.Objects.First(x => x.Id == id);
+                        Matrix3x2.Invert(d.ParentMatrix(o), out var inv);
+                        var local = Vector2.TransformNormal(delta, inv);
+                        return (Command)new MoveObjects { Targets = [id], Dx = local.X, Dy = local.Y };
+                    }).ToList();
+                }));
+            else if (box == RotBox)
+            {
+                var o = _bus.Read(d => d.Objects.First(x => x.Id == ids[0]));
+                var cur = Math.Atan2(o.Transform.M12, o.Transform.M11) * 180 / Math.PI;
+                if (Math.Abs((double)val - cur) > 0.001) _bus.Execute([new RotateObjects { Targets = ids, Degrees = (double)val - cur }]);
+            }
+            else
+            {
+                // La dimensione si cambia con la stessa proporzione del riquadro in pagina, che include l'eventuale scala dei gruppi.
+                var (o, b) = _bus.Read(d => { var x = d.Objects.First(o => o.Id == ids[0]); return (x, d.PageBounds(x)); });
+                var k = v / (box == WBox ? b.Width : b.Height);
+                _bus.Execute([new ResizeObject { Targets = ids, Width = box == WBox ? o.Width * k : null, Height = box == HBox ? o.Height * k : null }]);
+            }
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+        SyncXformBar();
     }
 
     /// <summary>Stile del testo selezionato (se è un solo testo).</summary>
@@ -864,8 +937,17 @@ public partial class MainWindow : Window
             Background = new SolidColorBrush(DocColor(color)),
             BorderBrush = _gradArmed == index ? new SolidColorBrush(Color.Parse("#3B82F6")) : Brushes.Gray,
         };
-        ToolTip.SetTip(chip, "Click, then pick a color from the palette");
-        chip.Click += (_, _) => { _gradArmed = index; UpdateFillUi(); };
+        ToolTip.SetTip(chip, "Click to pick a color");
+        var grid = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 2 };
+        var flyout = new Flyout { Content = new Border { Padding = new(6), Child = grid }, Placement = PlacementMode.BottomEdgeAlignedLeft };
+        BuildPaletteGrid(grid, (c, _) =>
+        {
+            if (c == "none") return;
+            flyout.Hide();
+            _gradArmed = index;
+            PickGradientColor(c);
+        }, 16);
+        chip.Flyout = flyout;
         row.Children.Add(chip);
         if (label != null) row.Children.Add(new TextBlock { Text = label, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, FontSize = 12, Opacity = 0.7 });
         if (position is { } p)
@@ -1075,6 +1157,7 @@ public partial class MainWindow : Window
         UpdateBars();
         SyncTextBar();
         SyncPageBar();
+        SyncXformBar();
         UpdateStatus();
         UpdateTitle(); // il titolo mostra "*" se ci sono modifiche non salvate
     }

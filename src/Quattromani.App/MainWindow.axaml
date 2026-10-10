@@ -13,8 +13,7 @@
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <TextBlock Text="Quattromani Draw" FontWeight="Bold" FontSize="15" VerticalAlignment="Center" Margin="0,0,16,0" />
-                    <Button x:Name="FileButton" Classes="bar" Content="File">
+                                        <Button x:Name="FileButton" Classes="bar" Content="File">
                         <Button.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
                                 <MenuItem x:Name="MenuNew" Header="New" />
@@ -27,8 +26,12 @@
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
-                    <Button x:Name="UndoButton" Classes="bar" Content="Undo" />
-                    <Button x:Name="RedoButton" Classes="bar" Content="Redo" />
+                    <Button x:Name="UndoButton" Classes="bar" Padding="8,6" ToolTip.Tip="Undo (Ctrl/Cmd+Z)">
+                        <Path Data="M9,7 L4,12 L9,17 M4,12 H15 A5,5 0 0 1 15,22 H10" StrokeThickness="1.8" StrokeLineCap="Round" StrokeJoin="Round" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[Button].Foreground}" />
+                    </Button>
+                    <Button x:Name="RedoButton" Classes="bar" Padding="8,6" ToolTip.Tip="Redo (Ctrl/Cmd+Shift+Z)">
+                        <Path Data="M15,7 L20,12 L15,17 M20,12 H9 A5,5 0 0 0 9,22 H14" StrokeThickness="1.8" StrokeLineCap="Round" StrokeJoin="Round" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[Button].Foreground}" />
+                    </Button>
                     <Border Width="1" Height="28" Margin="8,0" Background="{DynamicResource PanelBorder}" />
                     <Button x:Name="GroupButton" Classes="tb" ToolTip.Tip="Group the selected objects (Ctrl/Cmd+G)">
                         <StackPanel Spacing="3">
@@ -111,6 +114,18 @@
                         <Button x:Name="TrimButton" Classes="bar" Content="Trim" ToolTip.Tip="The lowest shape is trimmed by the others, which stay" />
                         <Button x:Name="IntersectButton" Classes="bar" Content="Intersect" ToolTip.Tip="Overlap of the selected shapes" />
                         <Button x:Name="SubtractButton" Classes="bar" Content="Subtract" ToolTip.Tip="The lowest shape minus the others, which disappear" />
+                    </StackPanel>
+                    <StackPanel x:Name="XformBar" Orientation="Horizontal" Spacing="2" Margin="8,0,0,0">
+                        <TextBlock Text="X" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
+                        <NumericUpDown x:Name="XBox" ShowButtonSpinner="False" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Width="66" Height="30" MinHeight="0" Padding="2,0" FontSize="12" Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" VerticalAlignment="Center" ToolTip.Tip="X position (left edge). Arrow keys and mouse wheel adjust it" />
+                        <TextBlock Text="Y" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
+                        <NumericUpDown x:Name="YBox" ShowButtonSpinner="False" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Width="66" Height="30" MinHeight="0" Padding="2,0" FontSize="12" Minimum="-1000000" Maximum="1000000" Increment="1" FormatString="0.###" VerticalAlignment="Center" ToolTip.Tip="Y position (top edge)" />
+                        <TextBlock Text="W" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
+                        <NumericUpDown x:Name="WBox" ShowButtonSpinner="False" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Width="66" Height="30" MinHeight="0" Padding="2,0" FontSize="12" Minimum="0.001" Maximum="1000000" Increment="1" FormatString="0.###" VerticalAlignment="Center" ToolTip.Tip="Width (single, unrotated object)" />
+                        <TextBlock Text="H" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
+                        <NumericUpDown x:Name="HBox" ShowButtonSpinner="False" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Width="66" Height="30" MinHeight="0" Padding="2,0" FontSize="12" Minimum="0.001" Maximum="1000000" Increment="1" FormatString="0.###" VerticalAlignment="Center" ToolTip.Tip="Height (single, unrotated object)" />
+                        <TextBlock Text="∠" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="4,0,0,0" />
+                        <NumericUpDown x:Name="RotBox" ShowButtonSpinner="False" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" Width="58" Height="30" MinHeight="0" Padding="2,0" FontSize="12" Minimum="-360" Maximum="360" Increment="15" FormatString="0.##°" VerticalAlignment="Center" ToolTip.Tip="Rotation in degrees (single object)" />
                     </StackPanel>
                     <StackPanel x:Name="TextBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                         <ComboBox x:Name="FontCombo" Width="180" VerticalAlignment="Center" ToolTip.Tip="Font" />
@@ -252,8 +267,8 @@
                     <StackPanel x:Name="PatternPanel" Spacing="6" IsVisible="False">
                         <ComboBox x:Name="PatKindCombo" Width="190" ToolTip.Tip="Pattern type" />
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <NumericUpDown x:Name="PatSizeBox" Width="96" Height="28" Minimum="1" Maximum="500" Increment="1" FormatString="0.##" Value="10" ToolTip.Tip="Size of the pattern (document units)" />
-                            <NumericUpDown x:Name="PatAngleBox" Width="96" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="0" ToolTip.Tip="Rotation of the pattern (degrees)" />
+                            <NumericUpDown x:Name="PatSizeBox" Width="112" Height="28" Minimum="1" Maximum="500" Increment="1" FormatString="0.##" Value="10" ToolTip.Tip="Size of the pattern (document units)" />
+                            <NumericUpDown x:Name="PatAngleBox" Width="112" Height="28" Minimum="0" Maximum="360" Increment="15" FormatString="0.##" Value="0" ToolTip.Tip="Rotation of the pattern (degrees)" />
                         </StackPanel>
                     </StackPanel>
                     <TextBlock x:Name="GradHint" Text="Now pick a color from the palette" FontSize="11" Opacity="0.6" IsVisible="False" />
