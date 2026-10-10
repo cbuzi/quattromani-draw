@@ -59,6 +59,9 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer, IFil
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
           {"cmd":"page.set","preset":"A4","orientation":"landscape"}   (page size: preset A0-A8, B4-B6, Letter, Legal, Tabloid, Executive, HD, FullHD, Square; or {"cmd":"page.set","width":210,"height":297,"unit":"mm"} with unit px|mm|cm|in|pt (default px); or only "orientation")
           {"cmd":"object.rename","target":"o3","name":"sun"}   (names like "o12" are reserved for ids; an empty name removes the name)
+          {"cmd":"object.order","targets":["sun"],"action":"front"}   (stacking order: front, back, forward, backward; or "above":"sky" / "below":"sky" to sit right above/below another object; objects in the same layer/group; several targets keep their relative order)
+          {"cmd":"object.align","targets":["a","b","c"],"x":"center","y":"middle"}   (aligns each object to the selection's box; x: left|center|right, y: top|middle|bottom, either or both; "to":"page" or "to":"<object>" changes the reference; a single object aligns to the page)
+          {"cmd":"object.distribute","targets":["a","b","c"],"axis":"x"}   (equal gaps between 3+ objects, first and last stay; "mode":"centers" for equally spaced centers; "gap":20 for an explicit gap starting from the first object)
           {"cmd":"object.move","targets":["o1"],"dx":50,"dy":-20}
           {"cmd":"object.place","targets":["sun"],"rel":{"inside":"sky","anchor":"top-right","margin":20}}   (moves existing objects relative to another one; several targets move together as one block)
           {"cmd":"object.style","targets":["sun"],"fill":"#FF0000","stroke":"none","strokeWidth":1}   (omitted fields stay unchanged)
@@ -114,7 +117,7 @@ public sealed class AiDrawTools(CommandBus bus, IDocumentRenderer renderer, IFil
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.order, object.align, object.distribute, object.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

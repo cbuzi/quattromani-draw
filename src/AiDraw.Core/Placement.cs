@@ -101,13 +101,7 @@ public sealed class PlaceObjects : Command
 
         // Lo spostamento è in spazio pagina: per gli oggetti dentro un gruppo va riportato nello spazio del gruppo.
         _old = objs.Select(o => (o, o.Transform)).ToList();
-        foreach (var (obj, old) in _old)
-        {
-            var local = Matrix3x2.Invert(doc.ParentMatrix(obj), out var inv)
-                ? Vector2.TransformNormal(new((float)dx, (float)dy), inv)
-                : new Vector2((float)dx, (float)dy);
-            obj.Transform = old * Matrix3x2.CreateTranslation(local);
-        }
+        foreach (var (obj, _) in _old) obj.Transform = Shift.Apply(doc, obj, dx, dy);
     }
 
     public override void Undo(Document doc)

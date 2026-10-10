@@ -67,8 +67,33 @@ public partial class MainWindow
         {
             Menu = new NativeMenu { Entry("Undo", () => _bus.Undo()), Entry("Redo", () => _bus.Redo()) },
         };
+        // Menu Object: raggruppa, ordine di sovrapposizione, allinea e distribuisci (stessi comandi dei pulsanti in alto).
+        var obj = new NativeMenuItem("Object")
+        {
+            Menu = new NativeMenu
+            {
+                Entry("Group", Group, Key.G),
+                Entry("Ungroup", Ungroup, Key.G, KeyModifiers.Shift),
+                new NativeMenuItemSeparator(),
+                Entry("To Front", () => OrderSelected("front"), Key.OemCloseBrackets, KeyModifiers.Shift),
+                Entry("Forward One", () => OrderSelected("forward"), Key.OemCloseBrackets),
+                Entry("Back One", () => OrderSelected("backward"), Key.OemOpenBrackets),
+                Entry("To Back", () => OrderSelected("back"), Key.OemOpenBrackets, KeyModifiers.Shift),
+                new NativeMenuItemSeparator(),
+                Entry("Align Left", () => AlignSelected("left", null)),
+                Entry("Align Centers", () => AlignSelected("center", null)),
+                Entry("Align Right", () => AlignSelected("right", null)),
+                Entry("Align Top", () => AlignSelected(null, "top")),
+                Entry("Align Middles", () => AlignSelected(null, "middle")),
+                Entry("Align Bottom", () => AlignSelected(null, "bottom")),
+                Entry("Center on Page", () => AlignSelected("center", "middle", "page")),
+                new NativeMenuItemSeparator(),
+                Entry("Distribute Horizontally", () => DistributeSelected("x", "gaps")),
+                Entry("Distribute Vertically", () => DistributeSelected("y", "gaps")),
+            },
+        };
         var help = new NativeMenuItem("Help") { Menu = new NativeMenu { Entry("Connect an AI agent…", App.ShowAbout) } };
-        NativeMenu.SetMenu(this, new NativeMenu { file, edit, help });
+        NativeMenu.SetMenu(this, new NativeMenu { file, edit, obj, help });
     }
 
     void UpdateTitle() =>

@@ -189,6 +189,28 @@ public partial class MainWindow : Window
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 
         // Riempimento: tinta unita, gradiente con più colori o motivo. Per gradienti particolari si può scrivere il testo CSS nel campo Fill.
+        // Ordine di sovrapposizione, allineamento e distribuzione.
+        var cmdKey = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        MenuToFront.InputGesture = new KeyGesture(Key.OemCloseBrackets, cmdKey | KeyModifiers.Shift);
+        MenuForward.InputGesture = new KeyGesture(Key.OemCloseBrackets, cmdKey);
+        MenuBackward.InputGesture = new KeyGesture(Key.OemOpenBrackets, cmdKey);
+        MenuToBack.InputGesture = new KeyGesture(Key.OemOpenBrackets, cmdKey | KeyModifiers.Shift);
+        MenuToFront.Click += (_, _) => OrderSelected("front");
+        MenuForward.Click += (_, _) => OrderSelected("forward");
+        MenuBackward.Click += (_, _) => OrderSelected("backward");
+        MenuToBack.Click += (_, _) => OrderSelected("back");
+        MenuAlignLeft.Click += (_, _) => AlignSelected("left", null);
+        MenuAlignCenter.Click += (_, _) => AlignSelected("center", null);
+        MenuAlignRight.Click += (_, _) => AlignSelected("right", null);
+        MenuAlignTop.Click += (_, _) => AlignSelected(null, "top");
+        MenuAlignMiddle.Click += (_, _) => AlignSelected(null, "middle");
+        MenuAlignBottom.Click += (_, _) => AlignSelected(null, "bottom");
+        MenuCenterPage.Click += (_, _) => AlignSelected("center", "middle", "page");
+        MenuDistributeX.Click += (_, _) => DistributeSelected("x", "gaps");
+        MenuDistributeY.Click += (_, _) => DistributeSelected("y", "gaps");
+        MenuDistributeCX.Click += (_, _) => DistributeSelected("x", "centers");
+        MenuDistributeCY.Click += (_, _) => DistributeSelected("y", "centers");
+
         GroupButton.Click += (_, _) => Group();
         UngroupButton.Click += (_, _) => Ungroup();
         GradSolidButton.Click += (_, _) => SetFillKind(0);
@@ -394,6 +416,13 @@ public partial class MainWindow : Window
         else if (cmd && e.Key == Key.O) { _ = OpenAsync(); e.Handled = true; }
         else if (cmd && e.Key == Key.N) { _ = NewDocumentAsync(); e.Handled = true; }
         else if (cmd && e.Key == Key.E) { _ = ExportPdfAsync(); e.Handled = true; }
+        else if (cmd && e.Key is Key.OemCloseBrackets or Key.OemOpenBrackets)
+        {
+            var up = e.Key == Key.OemCloseBrackets;
+            var extreme = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            OrderSelected(up ? (extreme ? "front" : "forward") : (extreme ? "back" : "backward"));
+            e.Handled = true;
+        }
         else if (cmd && e.Key == Key.D0)
         {
             Canvas.FitPage();
@@ -938,6 +967,21 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
+    // Applica un comando alla selezione corrente; con la selezione vuota non fa nulla, e gli errori diventano un avviso.
+    void ExecuteOnSelection(Func<List<string>, Command> make)
+    {
+        var ids = Canvas.SelectedIds.ToList();
+        if (ids.Count == 0) return;
+        try { _bus.Execute([make(ids)]); }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    void OrderSelected(string action) => ExecuteOnSelection(ids => new OrderObjects { Targets = ids, Action = action });
+
+    void AlignSelected(string? x, string? y, string? to = null) => ExecuteOnSelection(ids => new AlignObjects { Targets = ids, X = x, Y = y, To = to });
+
+    void DistributeSelected(string axis, string mode) => ExecuteOnSelection(ids => new DistributeObjects { Targets = ids, Axis = axis, Mode = mode });
+
     void Group()
     {
         var ids = Canvas.SelectedIds.ToList();
@@ -1020,6 +1064,8 @@ public partial class MainWindow : Window
 
         // Group e Ungroup sono sempre sulla barra; si accendono quando hanno senso.
         GroupButton.IsEnabled = Canvas.SelectedIds.Count >= 2;
+        ArrangeButton.IsEnabled = AlignButton.IsEnabled = Canvas.SelectedIds.Count >= 1;
+        MenuDistributeX.IsEnabled = MenuDistributeY.IsEnabled = MenuDistributeCX.IsEnabled = MenuDistributeCY.IsEnabled = Canvas.SelectedIds.Count >= 3;
         UngroupButton.IsEnabled = _bus.Read(d => Canvas.SelectedIds.Any(id => d.Objects.FirstOrDefault(o => o.Id == id) is GroupObject));
         var many = Canvas.SelectedIds.Count >= 2;
         WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
