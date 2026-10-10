@@ -13,7 +13,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
 {
     [McpServerTool(Name = "get_document", ReadOnly = true)]
     [Description("""
-        Returns the current document as compact JSON: {"version":N,"page":{"width":W,"height":H},"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
+        Returns the current document as compact JSON: {"version":N,"page":{"width":W,"height":H,"guides":[{"axis":"x","position":100}]},"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
         All coordinates and sizes are document pixels (96 dpi, like CSS px); the page starts at (0,0) at the top-left and extends to (width,height) (A4 portrait = 793.7 x 1122.52). Objects may lie outside the page.
         type is "rectangle", "ellipse", "path", "text" or "group". Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z);
         groups include `children` (same structure, listed bottom to top).
@@ -25,7 +25,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     public string GetDocument() => bus.Read(d => JsonSerializer.Serialize(new
     {
         version = d.Version,
-        page = new { width = Math.Round(d.Pages[0].Width, 2), height = Math.Round(d.Pages[0].Height, 2) },
+        page = new { width = Math.Round(d.Pages[0].Width, 2), height = Math.Round(d.Pages[0].Height, 2), guides = d.Pages[0].Guides.Count == 0 ? null : d.Pages[0].Guides.Select(g => new { axis = g.Axis, position = Math.Round(g.Position, 2) }).ToList() },
         objects = d.Objects.Select(o => Describe(o, Matrix3x2.Identity)).ToList(),
     }, Json.Options));
 
@@ -75,6 +75,10 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.create","type":"text","name":"title","text":"Hello\nworld","fontFamily":"Helvetica Neue","fontSize":32,"bold":true,"align":"center","fill":"#111827","x":20,"y":20}   (text: '\n' = new line; with `width` the text wraps at that width, otherwise it is one line per '\n'; height is computed; accepts rel too)
           {"cmd":"text.set","targets":["title"],"text":"Goodbye","fontSize":40,"italic":true}   (change content and/or style; omitted fields stay; width 0 removes wrapping)
           {"cmd":"object.delete","targets":["o1"]}
+        GUIDES (alignment lines the user can snap to; listed in get_document under page.guides, not drawn in exports):
+          {"cmd":"guide.add","axis":"x","position":100}   (axis "x" = vertical line at x=100, "y" = horizontal line)
+          {"cmd":"guide.move","axis":"x","from":100,"to":150}
+          {"cmd":"guide.delete","axis":"x","position":150}   (without "axis" it deletes every guide)
         Fonts: if you omit fontFamily a default is used; call list_fonts for the families installed on this computer (an unknown font gives an error listing some). Text can be moved, resized (stretches it), rotated, grouped and positioned with rel like any object; shape.toPath turns text into editable curves (needed for shape.boolean).
         shape.boolean works on rectangles, ellipses and paths on the same level (ungroup groups first), needs 2+ targets and returns the new path id in `created`.
         The result is a path with the style of the lowest object (in z-order); curves are flattened into short segments. Add "keepOriginals":true to keep the source objects.
@@ -118,7 +122,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.order, object.align, object.distribute, object.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

@@ -181,7 +181,26 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-                <TextBlock x:Name="CursorText" Grid.Column="1" Margin="14,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="150" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock x:Name="CursorText" Margin="14,0,8,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="150" />
+                    <ToggleButton x:Name="GridToggle" Content="Grid" FontSize="12" MinHeight="0" Height="26" Padding="10,0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" ToolTip.Tip="Show the grid" />
+                    <ToggleButton x:Name="SnapToggle" Content="Snap" FontSize="12" MinHeight="0" Height="26" Padding="10,0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" IsChecked="True" ToolTip.Tip="Snap to grid, guides and other objects while drawing and moving (pink line = snapped)" />
+                    <Button x:Name="SnapOptionsButton" Content="⋯" FontSize="14" MinHeight="0" Height="26" Width="30" Padding="0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center" ToolTip.Tip="Grid and snap options">
+                        <Button.Flyout>
+                            <Flyout Placement="TopEdgeAlignedLeft">
+                                <StackPanel Spacing="6" Width="210">
+                                    <TextBlock Classes="caption" Text="SNAP TO" />
+                                    <CheckBox x:Name="SnapGridCheck" Content="Grid (when shown)" IsChecked="True" />
+                                    <CheckBox x:Name="SnapGuidesCheck" Content="Guides" IsChecked="True" />
+                                    <CheckBox x:Name="SnapObjectsCheck" Content="Objects and page" IsChecked="True" />
+                                    <TextBlock Classes="caption" Text="GRID SPACING" Margin="0,6,0,0" />
+                                    <NumericUpDown x:Name="GridSizeBox" Minimum="0.01" Maximum="100000" Increment="1" FormatString="0.##" Height="30" MinHeight="0" />
+                                    <TextBlock Text="Drag from a ruler to create a guide; drag a guide back onto the ruler to delete it." FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
                 <ComboBox x:Name="UnitCombo" Grid.Column="2" Width="76" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="Units shown for sizes and positions (the document itself works in px at 96 dpi)" />
                 <ComboBox x:Name="PageViewCombo" Grid.Column="3" Margin="8,0,0,0" Width="150" MinHeight="0" Height="26" Padding="8,0" FontSize="12" ToolTip.Tip="How the page is shown on the work area" />
                 <Button x:Name="FitPageButton" Grid.Column="4" Classes="bar" Margin="8,0,0,0" Content="Fit page" FontSize="12" Padding="10,2" ToolTip.Tip="Show the whole page (Ctrl/Cmd+0)" />

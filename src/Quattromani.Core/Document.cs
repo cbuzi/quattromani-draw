@@ -117,6 +117,8 @@ public sealed class Page
     public double Width { get; set; } = Units.ToPx(210, "mm");
     public double Height { get; set; } = Units.ToPx(297, "mm");
     public List<Layer> Layers { get; } = [new("Layer 1")];
+    /// <summary>Linee guida (non si stampano né si esportano).</summary>
+    public List<Guide> Guides { get; } = [];
 }
 
 public sealed partial class Document

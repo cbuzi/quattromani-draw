@@ -26,6 +26,7 @@ public static partial class DocumentFile
         public string Name { get; set; } = "";
         public double Width { get; set; }
         public double Height { get; set; }
+        public List<Guide>? Guides { get; set; }
         public List<LayerDto> Layers { get; set; } = [];
     }
 
@@ -89,7 +90,7 @@ public static partial class DocumentFile
         NextId = doc.NextIdValue,
         Pages = doc.Pages.Select(p => new PageDto
         {
-            Name = p.Name, Width = p.Width, Height = p.Height,
+            Name = p.Name, Width = p.Width, Height = p.Height, Guides = p.Guides.Count == 0 ? null : p.Guides,
             Layers = p.Layers.Select(l => new LayerDto { Name = l.Name, Objects = l.Objects.Select(ToDto).ToList() }).ToList(),
         }).ToList(),
     }, Options);
@@ -145,6 +146,11 @@ public static partial class DocumentFile
             if (!(pd.Width >= 1 && pd.Height >= 1 && pd.Width <= 100000 && pd.Height <= 100000))
                 throw new CommandException($"Pagina '{pd.Name}': dimensioni non valide ({pd.Width} x {pd.Height}).");
             var page = new Page { Name = pd.Name, Width = pd.Width, Height = pd.Height };
+            foreach (var g in pd.Guides ?? [])
+            {
+                if (g.Axis is not ("x" or "y") || !double.IsFinite(g.Position)) throw new CommandException($"Guida non valida ({g.Axis} = {g.Position}).");
+                page.Guides.Add(g);
+            }
             page.Layers.Clear();
             foreach (var ld in pd.Layers)
             {

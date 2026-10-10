@@ -31,7 +31,7 @@ public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox, FillHandle, FillDraw }
+    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox, FillHandle, FillDraw, GuideNew, GuideMove }
     enum FillPart { Start, End, Stop, Center, RadX, RadY }
     enum NodePart { Node, In, Out }
 
@@ -81,6 +81,23 @@ public sealed class CanvasView : Control
     double _newW, _newH;
     Vector2 _rotCenter;
     double _startAngle, _rotDelta;
+
+    // Griglia, guide e aggancio (le guide stanno nel documento; il resto è stato di vista).
+    const double RulerSize = 20;
+    bool _showGrid;
+    public bool ShowGrid { get => _showGrid; set { _showGrid = value; InvalidateVisual(); } }
+    /// <summary>Passo della griglia in px di documento.</summary>
+    public double GridSize { get; set; } = 10;
+    public bool SnapOn { get; set; } = true;
+    public bool SnapToGrid { get; set; } = true;
+    public bool SnapToGuides { get; set; } = true;
+    public bool SnapToObjects { get; set; } = true;
+    readonly List<double> _snapXs = [], _snapYs = []; // guide, bordi e centri degli altri oggetti e della pagina
+    double? _snapLineX, _snapLineY; // obiettivi agganciati dal gesto in corso, mostrati come linee
+    Box _moveBounds;
+    string _guideAxis = "x";
+    double _guidePos, _guideFrom;
+    bool _guideOut; // la guida è sopra un righello: al rilascio si elimina
 
     const long HighlightMs = 3000;
     readonly Dictionary<string, long> _highlights = []; // id oggetto -> TickCount64 della modifica dell'agente
@@ -265,6 +282,123 @@ public sealed class CanvasView : Control
     /// <summary>Toglie dalla selezione gli oggetti che non esistono più.</summary>
     public void PruneSelection(ICollection<string> valid) => SetSelection(_selection.Where(valid.Contains));
 
+    /// <summary>Raccoglie gli obiettivi dell'aggancio per il gesto che inizia (gli oggetti in <paramref name="exclude"/> non contano: si stanno muovendo).</summary>
+    void BeginSnap(IReadOnlyCollection<string>? exclude = null)
+    {
+        _snapXs.Clear(); _snapYs.Clear();
+        _snapLineX = _snapLineY = null;
+        if (!SnapOn || Bus == null) return;
+        Bus.Read(d =>
+        {
+            var page = d.Pages[0];
+            if (SnapToGuides)
+                foreach (var g in page.Guides) (g.Axis == "x" ? _snapXs : _snapYs).Add(g.Position);
+            if (SnapToObjects)
+            {
+                _snapXs.AddRange([0, page.Width / 2, page.Width]);
+                _snapYs.AddRange([0, page.Height / 2, page.Height]);
+                foreach (var o in d.Objects)
+                {
+                    if (exclude?.Contains(o.Id) == true) continue;
+                    var b = d.PageBounds(o);
+                    _snapXs.AddRange([b.X, b.X + b.Width / 2, b.X + b.Width]);
+                    _snapYs.AddRange([b.Y, b.Y + b.Height / 2, b.Y + b.Height]);
+                }
+            }
+            return 0;
+        });
+    }
+
+    /// <summary>Correzione da sommare a <paramref name="v"/> per agganciarla all'obiettivo più vicino (entro 6 px schermo), e coordinata dell'obiettivo.</summary>
+    (double Delta, double Line)? SnapAxis(double v, List<double> targets)
+    {
+        if (!SnapOn) return null;
+        var tol = 6 / _zoom;
+        (double Delta, double Line)? best = null;
+        void Try(double t)
+        {
+            var d = t - v;
+            if (Math.Abs(d) <= tol && (best is null || Math.Abs(d) < Math.Abs(best.Value.Delta))) best = (d, t);
+        }
+        foreach (var t in targets) Try(t);
+        if (SnapToGrid && _showGrid && GridSize > 0) Try(Math.Round(v / GridSize) * GridSize);
+        return best;
+    }
+
+    /// <summary>Aggancia un punto (x e y indipendenti) e ricorda gli obiettivi trovati per mostrarli.</summary>
+    Point SnapPoint(Point p)
+    {
+        var sx = SnapAxis(p.X, _snapXs);
+        var sy = SnapAxis(p.Y, _snapYs);
+        _snapLineX = sx?.Line; _snapLineY = sy?.Line;
+        return new(p.X + (sx?.Delta ?? 0), p.Y + (sy?.Delta ?? 0));
+    }
+
+    void BeginMove()
+    {
+        var ids = _selection.ToList();
+        _moveBounds = Bus?.Read(d =>
+        {
+            var boxes = ids.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().Select(d.PageBounds).ToList();
+            if (boxes.Count == 0) return default;
+            var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);
+            return new Box(x0, y0, boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0);
+        }) ?? default;
+        BeginSnap(ids);
+    }
+
+    // Spostamento: il riquadro della selezione aggancia bordo sinistro/centro/destro e alto/centro/basso.
+    void SnapMove()
+    {
+        _snapLineX = _snapLineY = null;
+        if (!SnapOn) return;
+        var b = _moveBounds; var o = _moveOffset;
+        (double Delta, double Line)? Best(params (double, double)?[] c) => c.Where(x => x != null).Select(x => x!.Value).OrderBy(x => Math.Abs(x.Item1)).Cast<(double, double)?>().FirstOrDefault();
+        var sx = Best(SnapAxis(b.X + o.X, _snapXs), SnapAxis(b.X + b.Width / 2 + o.X, _snapXs), SnapAxis(b.X + b.Width + o.X, _snapXs));
+        var sy = Best(SnapAxis(b.Y + o.Y, _snapYs), SnapAxis(b.Y + b.Height / 2 + o.Y, _snapYs), SnapAxis(b.Y + b.Height + o.Y, _snapYs));
+        _snapLineX = sx?.Line; _snapLineY = sy?.Line;
+        _moveOffset = new(o.X + (sx?.Delta ?? 0), o.Y + (sy?.Delta ?? 0));
+    }
+
+    // ---- Righelli e guide ----
+
+    bool InRuler(Point p) => p.X < RulerSize || p.Y < RulerSize;
+
+    Guide? HitGuide(Point screen) =>
+        Bus?.Read(d => d.Pages[0].Guides.FirstOrDefault(g =>
+            Math.Abs(g.Axis == "x" ? g.Position * _zoom + _pan.X - screen.X : g.Position * _zoom + _pan.Y - screen.Y) <= 4));
+
+    // Dai righelli si tirano fuori le guide; con lo strumento Selezione si spostano quelle esistenti.
+    bool StartGuideDrag(Point pos)
+    {
+        if (InRuler(pos))
+        {
+            if (pos.X < RulerSize && pos.Y < RulerSize) return true; // angolo: niente
+            _guideAxis = pos.Y < RulerSize ? "y" : "x"; // dal righello in alto una guida orizzontale
+            _drag = Drag.GuideNew;
+            BeginSnap();
+            GuideDragMove(pos);
+            return true;
+        }
+        if (Tool == Tool.Select && HitHandle(pos) == null && HitGuide(pos) is { } g)
+        {
+            (_guideAxis, _guideFrom) = (g.Axis, g.Position);
+            _drag = Drag.GuideMove;
+            BeginSnap();
+            GuideDragMove(pos);
+            return true;
+        }
+        return false;
+    }
+
+    void GuideDragMove(Point pos)
+    {
+        var d = ToDoc(pos);
+        var v = _guideAxis == "x" ? d.X : d.Y;
+        _guidePos = v + (SnapAxis(v, _guideAxis == "x" ? _snapXs : _snapYs)?.Delta ?? 0);
+        _guideOut = InRuler(pos);
+    }
+
     Point ToDoc(Point screen) => new((screen.X - _pan.X) / _zoom, (screen.Y - _pan.Y) / _zoom);
 
     string? HitTest(Point doc) =>
@@ -325,6 +459,12 @@ public sealed class CanvasView : Control
         _last = _start = pt.Position;
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
 
+        if (pt.Properties.IsLeftButtonPressed && StartGuideDrag(pt.Position))
+        {
+            e.Pointer.Capture(this);
+            InvalidateVisual();
+            return;
+        }
         if (pt.Properties.IsMiddleButtonPressed || pt.Properties.IsRightButtonPressed)
             _drag = Drag.Pan;
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Pen)
@@ -342,7 +482,8 @@ public sealed class CanvasView : Control
                 return;
             }
             // Click = testo "artistico" in quel punto; trascinando si disegna la larghezza per l'a capo automatico.
-            _createStart = _createEnd = ToDoc(pt.Position);
+            BeginSnap();
+            _createStart = _createEnd = SnapPoint(ToDoc(pt.Position));
             _drag = Drag.TextBox;
         }
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Fill)
@@ -359,7 +500,8 @@ public sealed class CanvasView : Control
         }
         else if (pt.Properties.IsLeftButtonPressed && Tool != Tool.Select)
         {
-            _createStart = _createEnd = ToDoc(pt.Position);
+            BeginSnap();
+            _createStart = _createEnd = SnapPoint(ToDoc(pt.Position));
             _drag = Drag.Create;
         }
         else if (pt.Properties.IsLeftButtonPressed)
@@ -368,6 +510,7 @@ public sealed class CanvasView : Control
             {
                 _dragItem = it;
                 _newW = it.W; _newH = it.H;
+                BeginSnap([it.Id]);
                 if (h.Rotate)
                 {
                     _drag = Drag.Rotate;
@@ -395,6 +538,7 @@ public sealed class CanvasView : Control
                 {
                     if (!_selection.Contains(hit)) SetSelection([hit]);
                     _drag = Drag.Move; // sposta tutta la selezione
+                    BeginMove();
                 }
             }
             else
@@ -415,7 +559,8 @@ public sealed class CanvasView : Control
     {
         if (clickCount >= 2) { FinishPen(false); return; }
         if (_pen.Count >= 2 && NearFirstNode(screen)) { FinishPen(true); return; }
-        _pen.Add(new PenNode(ToDoc(screen)));
+        BeginSnap();
+        _pen.Add(new PenNode(SnapPoint(ToDoc(screen))));
         _drag = Drag.PenNode; // trascinando si tirano fuori le maniglie
         InvalidateVisual();
     }
@@ -900,8 +1045,14 @@ public sealed class CanvasView : Control
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         if (_drag == Drag.None && Tool == Tool.Pen)
         {
-            _penHover = ToDoc(pos);
+            _penHover = SnapPoint(ToDoc(pos));
             if (_pen.Count > 0) InvalidateVisual();
+            return;
+        }
+        if (_drag is Drag.GuideNew or Drag.GuideMove)
+        {
+            GuideDragMove(pos);
+            InvalidateVisual();
             return;
         }
         if (_drag == Drag.PenNode)
@@ -942,7 +1093,8 @@ public sealed class CanvasView : Control
         }
         if (_drag == Drag.None && Tool == Tool.Select) // nessun gesto: cursore in base a cosa c'è sotto
         {
-            Cursor = HitHandle(pos) is var (hh, hit) ? CursorFor(hh, hit) : null;
+            Cursor = HitHandle(pos) is var (hh, hit) ? CursorFor(hh, hit)
+                : HitGuide(pos) is { } hg ? new Cursor(hg.Axis == "x" ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) : null;
             return;
         }
         if (_drag == Drag.Pan)
@@ -951,15 +1103,24 @@ public sealed class CanvasView : Control
             ViewChanged?.Invoke();
         }
         else if (_drag == Drag.Move)
+        {
             _moveOffset = (pos - _start) / _zoom;
+            SnapMove();
+        }
         else if (_drag is Drag.Create or Drag.TextBox)
-            _createEnd = ToDoc(pos);
+            _createEnd = SnapPoint(ToDoc(pos));
         else if (_drag == Drag.Marquee)
             _marqueeEnd = ToDoc(pos);
         else if (_drag == Drag.Resize && _dragItem is { } it)
         {
             if (!Matrix3x2.Invert(it.M, out var inv)) return;
             var d = ToDoc(pos);
+            _snapLineX = _snapLineY = null;
+            if (Math.Abs(it.M.M12) < 1e-4 && Math.Abs(it.M.M21) < 1e-4) // l'aggancio vale solo per oggetti non ruotati
+            {
+                if (_handleX != .5 && SnapAxis(d.X, _snapXs) is { } sx) { d = new(d.X + sx.Delta, d.Y); _snapLineX = sx.Line; }
+                if (_handleY != .5 && SnapAxis(d.Y, _snapYs) is { } sy) { d = new(d.X, d.Y + sy.Delta); _snapLineY = sy.Line; }
+            }
             var p = Vector2.Transform(new((float)d.X, (float)d.Y), inv);
             // L'ancora (lato o angolo opposto alla maniglia) resta ferma; la nuova dimensione è la distanza del mouse da essa.
             double ax = 1 - _handleX, ay = 1 - _handleY;
@@ -987,6 +1148,21 @@ public sealed class CanvasView : Control
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (_drag is Drag.GuideNew or Drag.GuideMove)
+        {
+            var (axis, pos, from, isNew, del) = (_guideAxis, Math.Round(_guidePos, 3), _guideFrom, _drag == Drag.GuideNew, _guideOut);
+            _drag = Drag.None;
+            e.Pointer.Capture(null);
+            try
+            {
+                if (isNew) { if (!del) Bus?.Execute([new AddGuide { Axis = axis, Position = pos }]); }
+                else if (del) Bus?.Execute([new DeleteGuide { Axis = axis, Position = from }]);
+                else if (Math.Abs(pos - from) > 1e-6) Bus?.Execute([new MoveGuide { Axis = axis, From = from, To = pos }]);
+            }
+            catch (CommandException) { } // per esempio una guida già presente nello stesso punto
+            InvalidateVisual();
+            return;
+        }
         if (_drag == Drag.PenNode)
         {
             _drag = Drag.None;
@@ -1085,6 +1261,7 @@ public sealed class CanvasView : Control
             Bus?.Execute([new RotateObjects { Targets = [rit.Id], Degrees = _rotDelta }]);
         }
         _moveOffset = default;
+        _snapLineX = _snapLineY = null;
         _dragItem = null;
         _drag = Drag.None;
         e.Pointer.Capture(null);
@@ -1182,12 +1359,22 @@ public sealed class CanvasView : Control
             Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
                 NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)),
             Tool == Tool.Fill, fillView);
+        var guides = Bus.Read(d => d.Pages[0].Guides.ToList());
+        if (_drag is Drag.GuideNew or Drag.GuideMove)
+        {
+            if (_drag == Drag.GuideMove) guides.RemoveAll(g => g.Is(_guideAxis, _guideFrom));
+            if (!_guideOut) guides.Add(new Guide(_guideAxis, _guidePos));
+        }
+        var overlay = new Overlay(guides, _showGrid ? GridSize : 0, _snapLineX, _snapLineY, UnitLabel);
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
-            ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView));
+            ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView, overlay));
     }
 
     // Gesti in corso da disegnare come anteprima.
     static Vector2 V(Point p) => new((float)p.X, (float)p.Y);
+
+    /// <summary>Griglia (passo in px, 0 = nascosta), guide, linee d'aggancio in corso e unità dei righelli.</summary>
+    sealed record Overlay(List<Guide> Guides, double Grid, double? SnapX, double? SnapY, string Unit);
 
     sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
 
@@ -1217,7 +1404,7 @@ public sealed class CanvasView : Control
     }
 
     sealed class SceneOp(Rect bounds, List<Item> items, HashSet<string> selection, Point pan, double zoom, bool dark,
-        Dictionary<string, float> glow, Gesture gesture, Box page, PageView pageView)
+        Dictionary<string, float> glow, Gesture gesture, Box page, PageView pageView, Overlay overlay)
         : ICustomDrawOperation
     {
         static readonly SKColor Accent = new(0x3B, 0x82, 0xF6);
@@ -1243,7 +1430,9 @@ public sealed class CanvasView : Control
 
             using var paint = new SKPaint { IsAntialias = true };
             DrawPage(canvas, paint);
+            DrawGrid(canvas, paint);
             foreach (var it in items) SceneRenderer.DrawItem(canvas, paint, it);
+            DrawGuides(canvas, paint);
 
             DrawGesture(canvas, paint);
 
@@ -1289,6 +1478,100 @@ public sealed class CanvasView : Control
                 canvas.DrawRect(SKRect.Create((float)x0, (float)y0, (float)(x1 - x0), (float)(y1 - y0)), paint);
                 paint.PathEffect = null;
             }
+            canvas.Restore();
+            DrawRulers(canvas, paint);
+        }
+
+        // Area visibile in coordinate documento.
+        (float X0, float Y0, float X1, float Y1) Visible() =>
+            ((float)(-pan.X / zoom), (float)(-pan.Y / zoom), (float)((bounds.Width - pan.X) / zoom), (float)((bounds.Height - pan.Y) / zoom));
+
+        void DrawGrid(SKCanvas canvas, SKPaint paint)
+        {
+            if (overlay.Grid <= 0) return;
+            var g = overlay.Grid * Math.Max(1, Math.Ceiling(14 / (overlay.Grid * zoom))); // a zoom basso si disegna una linea ogni tante (l'aggancio usa comunque il passo vero)
+            var (x0, y0, x1, y1) = Visible();
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = (float)(1 / zoom);
+            paint.Color = dark ? new SKColor(255, 255, 255, 34) : new SKColor(0, 0, 0, 32);
+            for (var i = (long)Math.Ceiling(x0 / g); i * g <= x1; i++) canvas.DrawLine((float)(i * g), y0, (float)(i * g), y1, paint);
+            for (var i = (long)Math.Ceiling(y0 / g); i * g <= y1; i++) canvas.DrawLine(x0, (float)(i * g), x1, (float)(i * g), paint);
+        }
+
+        // Guide (ciano) e obiettivi agganciati dal gesto in corso (magenta).
+        void DrawGuides(SKCanvas canvas, SKPaint paint)
+        {
+            var (x0, y0, x1, y1) = Visible();
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = (float)(1 / zoom);
+            paint.Color = new SKColor(0x06, 0xB6, 0xD4);
+            foreach (var g in overlay.Guides)
+                if (g.Axis == "x") canvas.DrawLine((float)g.Position, y0, (float)g.Position, y1, paint);
+                else canvas.DrawLine(x0, (float)g.Position, x1, (float)g.Position, paint);
+            paint.Color = new SKColor(0xEC, 0x48, 0x99);
+            if (overlay.SnapX is { } sx) canvas.DrawLine((float)sx, y0, (float)sx, y1, paint);
+            if (overlay.SnapY is { } sy) canvas.DrawLine(x0, (float)sy, x1, (float)sy, paint);
+        }
+
+        // Righelli lungo i bordi alto e sinistro, nell'unità scelta; l'origine è l'angolo della pagina.
+        void DrawRulers(SKCanvas canvas, SKPaint paint)
+        {
+            var r = (float)RulerSize;
+            var w = (float)bounds.Width; var h = (float)bounds.Height;
+            paint.Style = SKPaintStyle.Fill;
+            paint.Color = dark ? new SKColor(0x2A, 0x2B, 0x30) : new SKColor(0xF7, 0xF8, 0xFA);
+            canvas.DrawRect(0, 0, w, r, paint);
+            canvas.DrawRect(0, 0, r, h, paint);
+            var fg = dark ? new SKColor(0xA0, 0xA6, 0xB0) : new SKColor(0x6B, 0x72, 0x80);
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = 1;
+            paint.Color = new SKColor(fg.Red, fg.Green, fg.Blue, 90);
+            canvas.DrawLine(0, r, w, r, paint);
+            canvas.DrawLine(r, 0, r, h, paint);
+
+            var pxPerUnit = Units.ToPx(1, overlay.Unit); // px di documento per unità
+            var raw = 60 / (zoom * pxPerUnit); // unità per almeno 60 px schermo tra due numeri
+            var pow = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+            var m = raw / pow;
+            var major = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * pow;
+            var minor = major / 5;
+            using var font = new SKFont(SKTypeface.Default, 10);
+            paint.Color = fg;
+            paint.StrokeWidth = 1;
+
+            void Axis(bool horizontal)
+            {
+                var origin = horizontal ? pan.X : pan.Y;
+                var length = horizontal ? w : h;
+                var from = (long)Math.Floor((-origin / zoom / pxPerUnit) / minor);
+                for (var i = from; ; i++)
+                {
+                    var pos = (float)(i * minor * pxPerUnit * zoom + origin);
+                    if (pos > length) break;
+                    if (pos < r) continue;
+                    var isMajor = i % 5 == 0;
+                    var len = isMajor ? r * 0.65f : r * 0.3f;
+                    if (horizontal) canvas.DrawLine(pos, r, pos, r - len, paint); else canvas.DrawLine(r, pos, r - len, pos, paint);
+                    if (!isMajor) continue;
+                    var label = (i * minor).ToString("0.###", CultureInfo.InvariantCulture);
+                    paint.Style = SKPaintStyle.Fill;
+                    if (horizontal) canvas.DrawText(label, pos + 3, 10, SKTextAlign.Left, font, paint);
+                    else
+                    {
+                        canvas.Save();
+                        canvas.Translate(10, pos - 3);
+                        canvas.RotateDegrees(-90);
+                        canvas.DrawText(label, 0, 0, SKTextAlign.Left, font, paint);
+                        canvas.Restore();
+                    }
+                    paint.Style = SKPaintStyle.Stroke;
+                }
+            }
+            canvas.Save();
+            canvas.ClipRect(new SKRect(r, 0, w, r)); Axis(true);
+            canvas.Restore();
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, r, r, h)); Axis(false);
             canvas.Restore();
         }
 

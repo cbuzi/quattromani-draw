@@ -73,9 +73,25 @@ public partial class MainWindow : Window
             if (UnitCombo.SelectedItem is not string u || u == _unit) return;
             _unit = u;
             Canvas.UnitLabel = u;
+            SetGridDefault();
             SyncPageBar();
             UpdateStatus();
+            Canvas.InvalidateVisual(); // i righelli cambiano unità
         };
+
+        // Griglia e aggancio.
+        GridToggle.IsCheckedChanged += (_, _) => Canvas.ShowGrid = GridToggle.IsChecked == true;
+        SnapToggle.IsCheckedChanged += (_, _) => Canvas.SnapOn = SnapToggle.IsChecked == true;
+        SnapGridCheck.IsCheckedChanged += (_, _) => Canvas.SnapToGrid = SnapGridCheck.IsChecked == true;
+        SnapGuidesCheck.IsCheckedChanged += (_, _) => Canvas.SnapToGuides = SnapGuidesCheck.IsChecked == true;
+        SnapObjectsCheck.IsCheckedChanged += (_, _) => Canvas.SnapToObjects = SnapObjectsCheck.IsChecked == true;
+        GridSizeBox.ValueChanged += (_, e) =>
+        {
+            if (e.NewValue is { } v && v > 0) { Canvas.GridSize = Units.ToPx((double)v, _unit); Canvas.InvalidateVisual(); }
+        };
+        Canvas.ShowGrid = GridToggle.IsChecked == true;
+        Canvas.SnapOn = SnapToggle.IsChecked == true;
+        SetGridDefault();
         PageViewCombo.ItemsSource = new[] { "Page: white", "Page: outline", "Page: hidden" };
         PageViewCombo.SelectedIndex = 1; // di default solo il contorno della pagina
         PageViewCombo.SelectionChanged += (_, _) => Canvas.PageViewMode = (PageView)Math.Max(0, PageViewCombo.SelectedIndex);
@@ -511,6 +527,10 @@ public partial class MainWindow : Window
         VScroll.Value = Math.Clamp(s.OffY, 0, VScroll.Maximum);
         _syncingScroll = false;
     }
+
+    // Passo della griglia di partenza per l'unità scelta.
+    void SetGridDefault() =>
+        GridSizeBox.Value = _unit switch { "mm" => 5, "cm" => 0.5m, "in" => 0.25m, _ => 10 };
 
     // ---- Rinomina nel pannello Objects ---------------------------------------------------------
 

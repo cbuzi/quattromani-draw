@@ -36,6 +36,9 @@ public static class Json
 [JsonDerivedType(typeof(OrderObjects), "object.order")]
 [JsonDerivedType(typeof(AlignObjects), "object.align")]
 [JsonDerivedType(typeof(DistributeObjects), "object.distribute")]
+[JsonDerivedType(typeof(AddGuide), "guide.add")]
+[JsonDerivedType(typeof(MoveGuide), "guide.move")]
+[JsonDerivedType(typeof(DeleteGuide), "guide.delete")]
 [JsonDerivedType(typeof(DocumentReset), "document.reset")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 public abstract class Command
