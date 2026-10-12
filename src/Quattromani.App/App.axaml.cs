@@ -68,6 +68,7 @@ public class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            MacApp.SetDockIcon();
             var window = new MainWindow();
             desktop.MainWindow = window;
             var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection);

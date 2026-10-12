@@ -3,6 +3,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 
 namespace Quattromani.App;
 
@@ -33,8 +35,23 @@ sealed class AboutWindow : Window
             Margin = new Thickness(28), Spacing = 12,
             Children =
             {
-                new TextBlock { Text = "Quattromani Draw", FontSize = 26, FontWeight = FontWeight.Bold },
-                new TextBlock { Text = $"Version {version}", Opacity = 0.6 },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 16,
+                    Children =
+                    {
+                        new Image { Source = new Bitmap(AssetLoader.Open(new Uri("avares://Quattromani.App/Assets/icon.png"))), Width = 72, Height = 72 },
+                        new StackPanel
+                        {
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Children =
+                            {
+                                new TextBlock { Text = "Quattromani Draw", FontSize = 26, FontWeight = FontWeight.Bold },
+                                new TextBlock { Text = $"Version {version}", Opacity = 0.6 },
+                            },
+                        },
+                    },
+                },
                 new TextBlock
                 {
                     Text = "A vector graphics editor you draw with together with an AI agent: you and the agent work on the same document, at the same time.",
