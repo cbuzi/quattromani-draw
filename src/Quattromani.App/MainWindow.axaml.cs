@@ -140,6 +140,7 @@ public partial class MainWindow : Window
 
         UndoButton.Click += (_, _) => _bus.Undo();
         RedoButton.Click += (_, _) => _bus.Redo();
+        LogoButton.Click += (_, _) => App.ShowAbout();
         ThemeButton.Click += (_, _) => Application.Current!.RequestedThemeVariant =
             ActualThemeVariant == ThemeVariant.Dark ? ThemeVariant.Light : ThemeVariant.Dark;
         void SyncThemeIcon()

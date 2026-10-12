@@ -234,6 +234,11 @@
         <Border DockPanel.Dock="Left" Width="60" Padding="0,10"
                 Background="{DynamicResource PanelBg}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
+            <DockPanel>
+            <Button x:Name="LogoButton" DockPanel.Dock="Bottom" Classes="bar" Width="40" Height="40" Padding="0" HorizontalAlignment="Center"
+                    ToolTip.Tip="About Quattromani Draw">
+                <Image Source="avares://Quattromani.App/Assets/icon.png" Width="32" Height="32" />
+            </Button>
             <StackPanel Spacing="6" HorizontalAlignment="Center">
                 <ToggleButton x:Name="SelectTool" Classes="tool" IsChecked="True" ToolTip.Tip="Select (V)">
                     <Path Data="M5,3 L5,19 L9.5,15 L12.5,21 L15,20 L12,14 L18,14 Z"
@@ -266,6 +271,7 @@
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
             </StackPanel>
+            </DockPanel>
         </Border>
 
         <!-- Tavolozza: una colonna di colori tondi lungo il bordo destro -->
