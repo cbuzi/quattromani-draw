@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Quattromani.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -27,9 +28,36 @@ public static class McpHost
         app.MapMcp("/mcp");
 
         // Se la porta è occupata l'app deve comunque partire.
-        app.StartAsync().ContinueWith(
+        var start = app.StartAsync();
+        start.ContinueWith(
             t => Console.Error.WriteLine($"MCP server non avviato su porta {Port}: {t.Exception?.GetBaseException().Message}"),
             TaskContinuationOptions.OnlyOnFaulted);
+        start.ContinueWith(_ => WriteDiscoveryFile(), TaskContinuationOptions.OnlyOnRanToCompletion);
         return app;
+    }
+
+    /// <summary>File di discovery per gli agenti: dice dove è il server anche se la porta non è quella di default.</summary>
+    public static string DiscoveryFile { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".quattromani", "server.json");
+
+    static void WriteDiscoveryFile()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DiscoveryFile)!);
+            var version = typeof(McpHost).Assembly.GetName().Version?.ToString(3);
+            File.WriteAllText(DiscoveryFile, JsonSerializer.Serialize(new { url = $"http://localhost:{Port}/mcp", port = Port, pid = Environment.ProcessId, version }));
+        }
+        catch (Exception e) { Console.Error.WriteLine($"File di discovery non scritto: {e.Message}"); }
+    }
+
+    /// <summary>Alla chiusura toglie il file, ma solo se è di questo processo (un'altra istanza potrebbe averlo riscritto).</summary>
+    public static void RemoveDiscoveryFile()
+    {
+        try
+        {
+            if (File.Exists(DiscoveryFile) && JsonDocument.Parse(File.ReadAllText(DiscoveryFile)).RootElement.GetProperty("pid").GetInt32() == Environment.ProcessId)
+                File.Delete(DiscoveryFile);
+        }
+        catch { }
     }
 }

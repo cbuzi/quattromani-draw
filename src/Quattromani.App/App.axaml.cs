@@ -72,7 +72,7 @@ public class App : Application
             var window = new MainWindow();
             desktop.MainWindow = window;
             var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection);
-            desktop.Exit += (_, _) => mcp.StopAsync().Wait(TimeSpan.FromSeconds(2));
+            desktop.Exit += (_, _) => { McpHost.RemoveDiscoveryFile(); _ = mcp.StopAsync(); }; // senza attendere: il server non ha nulla da salvare, e aspettare le connessioni aperte faceva "laggare" la chiusura
         }
 
         base.OnFrameworkInitializationCompleted();

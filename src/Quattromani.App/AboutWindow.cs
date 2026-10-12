@@ -1,6 +1,7 @@
 using Quattromani.Mcp;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -22,11 +23,21 @@ sealed class AboutWindow : Window
 
         var url = $"http://localhost:{McpHost.Port}/mcp";
         var version = typeof(AboutWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+        var snippets = new (string Agent, string Text)[]
+        {
+            ("Claude Code", $"claude mcp add --transport http quattromani {url}"),
+            ("Codex", $"codex mcp add quattromani --url {url}"),
+            ("Other (JSON: Claude Desktop, Cursor...)", $"{{\"mcpServers\":{{\"quattromani\":{{\"type\":\"http\",\"url\":\"{url}\"}}}}}}"),
+        };
         var command = new TextBox
         {
-            Text = $"claude mcp add --transport http quattromani {url}", IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+            Text = snippets[0].Text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
             FontFamily = new FontFamily("Menlo, Consolas, monospace"), FontSize = 12,
         };
+        var agent = new ComboBox { ItemsSource = snippets.Select(x => x.Agent).ToList(), SelectedIndex = 0, MinWidth = 220 };
+        agent.SelectionChanged += (_, _) => command.Text = snippets[Math.Max(agent.SelectedIndex, 0)].Text;
+        var copy = new Button { Content = "Copy" };
+        copy.Click += async (_, _) => { if (GetTopLevel(this)?.Clipboard is { } cb) await cb.SetTextAsync(command.Text); };
         var close = new Button { Content = "Close", IsDefault = true, IsCancel = true, MinWidth = 90, HorizontalAlignment = HorizontalAlignment.Right };
         close.Click += (_, _) => Close();
 
@@ -58,8 +69,10 @@ sealed class AboutWindow : Window
                     TextWrapping = TextWrapping.Wrap,
                 },
                 new TextBlock { Text = "CONNECT AN AGENT", FontSize = 11, FontWeight = FontWeight.SemiBold, Opacity = 0.55, Margin = new Thickness(0, 8, 0, 0) },
-                new TextBlock { Text = $"Quattromani Draw runs an MCP server at {url} while it is open. In Claude Code, register it once with:", TextWrapping = TextWrapping.Wrap, Opacity = 0.8 },
+                new TextBlock { Text = $"Quattromani Draw runs an MCP server at {url} while it is open. Pick your agent and register the server once with:", TextWrapping = TextWrapping.Wrap, Opacity = 0.8 },
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { agent, copy } },
                 command,
+                new TextBlock { Text = $"The running server's address is also written to {McpHost.DiscoveryFile}", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.55 },
                 close,
             },
         };
