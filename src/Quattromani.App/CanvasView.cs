@@ -189,6 +189,7 @@ public sealed class CanvasView : Control
         set
         {
             if (_tool == value) return;
+            if (_tool == Tool.Pen && _pen.Count >= 2) FinishPen(false, false); // cambiando strumento il path aperto si conserva
             _tool = value;
             if (value != Tool.Pen) _pen.Clear();
             _nodeSel.Clear();
@@ -593,7 +594,7 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
-    public void FinishPen(bool closed)
+    public void FinishPen(bool closed, bool select = true)
     {
         var nodes = _pen.ToList();
         _pen.Clear();
@@ -622,7 +623,7 @@ public sealed class CanvasView : Control
             Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
         }]);
         Select(r.CreatedIds[0]);
-        Tool = Tool.Select;
+        if (select) Tool = Tool.Select;
     }
 
     // ---- Strumento di riempimento -------------------------------------------------------------
