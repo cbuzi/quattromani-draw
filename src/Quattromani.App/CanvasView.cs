@@ -100,13 +100,24 @@ public sealed class CanvasView : Control
     bool _guideOut; // la guida è sopra un righello: al rilascio si elimina
 
     const long HighlightMs = 3000;
-    readonly Dictionary<string, long> _highlights = []; // id oggetto -> TickCount64 della modifica dell'agente
+    readonly Dictionary<string, (long Stamp, string Agent)> _highlights = []; // id oggetto -> TickCount64 e agente della modifica
     readonly DispatcherTimer _fade;
 
-    // Pill con il nome dell'agente sull'ultimo oggetto che ha toccato: resta fermo, poi sfuma.
+    // Un pill per agente, sull'ultimo oggetto che ha toccato: resta fermo, poi sfuma.
     const long PillHoldMs = 1500, PillFadeMs = 500;
-    string? _pillAgent, _pillId;
-    long _pillStamp;
+    const int MaxPills = 4;
+    readonly Dictionary<string, (string Id, long Stamp)> _pills = [];
+    readonly Dictionary<string, SKColor> _agentColors = []; // colore assegnato all'agente al suo primo intervento
+    static readonly SKColor[] AgentPalette =
+        [new(0xA8, 0x55, 0xF7), new(0x14, 0xB8, 0xA6), new(0xF9, 0x73, 0x16), new(0xEC, 0x48, 0x99), new(0x84, 0xCC, 0x16)];
+
+    SKColor ColorOf(string agent)
+    {
+        if (!_agentColors.TryGetValue(agent, out var c))
+            _agentColors[agent] = c = AgentPalette[_agentColors.Count % AgentPalette.Length];
+        return c;
+    }
+
     public bool ShowAgentPill { get => _showPill; set { _showPill = value; InvalidateVisual(); } }
     bool _showPill = true;
 
@@ -222,13 +233,13 @@ public sealed class CanvasView : Control
     }
 
     /// <summary>Evidenzia per qualche secondo gli oggetti creati o modificati dall'agente.</summary>
-    public void Highlight(IEnumerable<string> ids, string? agent = null)
+    public void Highlight(IEnumerable<string> ids, string agent)
     {
         var now = Environment.TickCount64;
         foreach (var id in ids)
         {
-            _highlights[id] = now;
-            if (agent != null) (_pillAgent, _pillId, _pillStamp) = (agent, id, now);
+            _highlights[id] = (now, agent);
+            _pills[agent] = (id, now);
         }
         if (_highlights.Count > 0) _fade.Start();
         InvalidateVisual();
@@ -237,7 +248,7 @@ public sealed class CanvasView : Control
     void FadeTick()
     {
         var now = Environment.TickCount64;
-        foreach (var id in _highlights.Where(h => now - h.Value > HighlightMs).Select(h => h.Key).ToList())
+        foreach (var id in _highlights.Where(h => now - h.Value.Stamp > HighlightMs).Select(h => h.Key).ToList())
             _highlights.Remove(id);
         if (_highlights.Count == 0) _fade.Stop();
         InvalidateVisual();
@@ -1358,20 +1369,28 @@ public sealed class CanvasView : Control
 
         // L'alone di un oggetto modificato dentro un gruppo si mostra sul gruppo.
         var now = Environment.TickCount64;
-        var glow = new Dictionary<string, float>();
+        var glow = new Dictionary<string, (float Alpha, SKColor Color)>();
         foreach (var it in items)
         {
-            var a = _highlights.Where(h => HasId(it, h.Key)).Select(h => (float)Math.Max(0, 1 - (now - h.Value) / (double)HighlightMs))
-                .DefaultIfEmpty(0).Max();
-            if (a > 0) glow[it.Id] = a;
+            var best = _highlights.Where(h => HasId(it, h.Key))
+                .Select(h => (Alpha: (float)Math.Max(0, 1 - (now - h.Value.Stamp) / (double)HighlightMs), h.Value.Agent))
+                .OrderByDescending(h => h.Alpha).FirstOrDefault();
+            if (best.Alpha > 0) glow[it.Id] = (best.Alpha, ColorOf(best.Agent));
         }
 
-        AgentPill? pill = null;
-        if (_showPill && _pillAgent != null && _pillId != null)
+        // Pill: al massimo MaxPills, i più recenti; sullo stesso oggetto si impilano.
+        var pills = new List<AgentPill>();
+        if (_showPill)
         {
-            var age = now - _pillStamp;
-            if (age < PillHoldMs + PillFadeMs && items.FirstOrDefault(i => HasId(i, _pillId)) is { } pi)
-                pill = new(_pillAgent, pi.Bounds, (float)Math.Min(1, 1 - (age - PillHoldMs) / (double)PillFadeMs));
+            var slots = new Dictionary<string, int>();
+            foreach (var (agent, (id, stamp)) in _pills.OrderByDescending(p => p.Value.Stamp).Take(MaxPills).ToList())
+            {
+                var age = now - stamp;
+                if (age >= PillHoldMs + PillFadeMs || items.FirstOrDefault(i => HasId(i, id)) is not { } target) continue;
+                slots[target.Id] = slots.GetValueOrDefault(target.Id);
+                pills.Add(new(agent, target.Bounds, (float)Math.Min(1, 1 - (age - PillHoldMs) / (double)PillFadeMs),
+                    ColorOf(agent), slots[target.Id]++));
+            }
         }
 
         var gesture = new Gesture(
@@ -1394,7 +1413,7 @@ public sealed class CanvasView : Control
         }
         var overlay = new Overlay(guides, _showGrid ? GridSize : 0, _snapLineX, _snapLineY, UnitLabel);
         context.Custom(new SceneOp(new Rect(Bounds.Size), items, new HashSet<string>(_selection), _pan, _zoom,
-            ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView, overlay, pill));
+            ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView, overlay, pills));
     }
 
     // Gesti in corso da disegnare come anteprima.
@@ -1404,7 +1423,7 @@ public sealed class CanvasView : Control
     sealed record Overlay(List<Guide> Guides, double Grid, double? SnapX, double? SnapY, string Unit);
 
     /// <summary>Etichetta dell'agente: nome, riquadro dell'oggetto (coordinate documento) e opacità.</summary>
-    sealed record AgentPill(string Name, Box Bounds, float Alpha);
+    sealed record AgentPill(string Name, Box Bounds, float Alpha, SKColor Color, int Slot);
 
     sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
 
@@ -1434,7 +1453,7 @@ public sealed class CanvasView : Control
     }
 
     sealed class SceneOp(Rect bounds, List<Item> items, HashSet<string> selection, Point pan, double zoom, bool dark,
-        Dictionary<string, float> glow, Gesture gesture, Box page, PageView pageView, Overlay overlay, AgentPill? pill)
+        Dictionary<string, (float Alpha, SKColor Color)> glow, Gesture gesture, Box page, PageView pageView, Overlay overlay, List<AgentPill> pills)
         : ICustomDrawOperation
     {
         static readonly SKColor Accent = new(0x3B, 0x82, 0xF6);
@@ -1454,7 +1473,7 @@ public sealed class CanvasView : Control
             var w = font.MeasureText(pill.Name) + 26;
             const float h = 20;
             var x = Math.Clamp((float)(pill.Bounds.X + pill.Bounds.Width) * z + (float)pan.X - w + 8, 4, (float)bounds.Width - w - 4);
-            var y = Math.Clamp((float)pill.Bounds.Y * z + (float)pan.Y - h - 6, 4, (float)bounds.Height - h - 4);
+            var y = Math.Clamp((float)pill.Bounds.Y * z + (float)pan.Y - h - 6 - pill.Slot * (h + 3), 4, (float)bounds.Height - h - 4);
             var a = pill.Alpha;
 
             canvas.Save();
@@ -1464,7 +1483,7 @@ public sealed class CanvasView : Control
             paint.Style = SKPaintStyle.Fill;
             paint.Color = new SKColor(0, 0, 0, (byte)(40 * a));
             canvas.DrawRoundRect(r with { Top = r.Top + 1.5f, Bottom = r.Bottom + 1.5f }, h / 2, h / 2, paint);
-            paint.Color = new SKColor(0xA8, 0x55, 0xF7, (byte)(255 * a));
+            paint.Color = pill.Color.WithAlpha((byte)(255 * a));
             canvas.DrawRoundRect(r, h / 2, h / 2, paint);
             paint.Color = new SKColor(255, 255, 255, (byte)(255 * a));
             canvas.DrawCircle(x + 11, y + h / 2, 3, paint);
@@ -1492,23 +1511,24 @@ public sealed class CanvasView : Control
 
             DrawGesture(canvas, paint);
 
-            // Oggetti toccati dall'agente: alone viola che sfuma.
+            // Oggetti toccati dagli agenti: alone nel colore dell'agente che sfuma.
             foreach (var it in items)
             {
-                if (!glow.TryGetValue(it.Id, out var a)) continue;
+                if (!glow.TryGetValue(it.Id, out var g)) continue;
+                var (a, color) = g;
                 var pad = 4 / zoom;
                 var r = SKRect.Create((float)(it.Bounds.X - pad), (float)(it.Bounds.Y - pad),
                     (float)(it.Bounds.Width + 2 * pad), (float)(it.Bounds.Height + 2 * pad));
                 paint.Style = SKPaintStyle.Fill;
-                paint.Color = new SKColor(0xA8, 0x55, 0xF7, (byte)(50 * a));
+                paint.Color = color.WithAlpha((byte)(50 * a));
                 canvas.DrawRect(r, paint);
                 paint.Style = SKPaintStyle.Stroke;
                 paint.StrokeWidth = (float)(2.5 / zoom);
-                paint.Color = new SKColor(0xA8, 0x55, 0xF7, (byte)(255 * a));
+                paint.Color = color.WithAlpha((byte)(255 * a));
                 canvas.DrawRect(r, paint);
             }
 
-            if (pill != null) DrawPill(canvas, paint, pill);
+            foreach (var pill in pills) DrawPill(canvas, paint, pill);
 
             // Selezione: un oggetto = contorno orientato e maniglie; più oggetti = contorni e riquadro complessivo.
             var sel = items.Where(i => selection.Contains(i.Id)).ToList();

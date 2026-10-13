@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     readonly HashSet<string> _aiTouched = []; // oggetti la cui ultima modifica è dell'agente
     readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     readonly DispatcherTimer _chipTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    readonly List<string> _activeAgents = []; // agenti intervenuti dall'ultima scadenza del chip
 
     /// <summary>Selezione del canvas per l'MCP.</summary>
     public Quattromani.Mcp.ISelectionService Selection { get; }
@@ -47,7 +48,7 @@ public partial class MainWindow : Window
         // Il bus può notificare da qualsiasi thread.
         _seenVersion = _bus.Version;
         _bus.Changed += () => Dispatcher.UIThread.Post(OnBusChanged);
-        _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; };
+        _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; _activeAgents.Clear(); };
         Canvas.SelectionChanged += Refresh;
         Canvas.ViewChanged += () => { ZoomText.Text = $"{Canvas.Zoom:P0}"; UpdateScrollBars(); };
         Canvas.SizeChanged += (_, _) => UpdateScrollBars();
@@ -1187,7 +1188,8 @@ public partial class MainWindow : Window
             }
             _aiTouched.UnionWith(ids);
             Canvas.Highlight(ids, change.Author[4..]);
-            AgentText.Text = $"{change.Author[4..]} is drawing";
+            if (!_activeAgents.Contains(change.Author[4..])) _activeAgents.Add(change.Author[4..]);
+            AgentText.Text = $"{string.Join(", ", _activeAgents)} {(_activeAgents.Count > 1 ? "are" : "is")} drawing";
             AgentChip.IsVisible = true;
             _chipTimer.Stop();
             _chipTimer.Start();
