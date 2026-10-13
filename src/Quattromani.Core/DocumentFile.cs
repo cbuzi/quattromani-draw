@@ -126,6 +126,39 @@ public static partial class DocumentFile
         return dto;
     }
 
+    // ---- Copia e incolla -----------------------------------------------------------------------
+
+    /// <summary>Serializza degli oggetti (figli compresi) per Copia/Duplica; si ricreano con <see cref="ImportObjects"/>.</summary>
+    public static string ExportObjects(IEnumerable<SceneObject> objects) => JsonSerializer.Serialize(objects.Select(ToDto).ToList(), Options);
+
+    /// <summary>Ricrea gli oggetti di <see cref="ExportObjects"/> con id nuovi; i nomi già in uso diventano "nome 2", "nome 3"... (devono restare univoci).</summary>
+    internal static List<SceneObject> ImportObjects(string json, Document doc)
+    {
+        List<ObjDto> dtos;
+        try { dtos = JsonSerializer.Deserialize<List<ObjDto>>(json, Options) ?? throw new JsonException("vuoto"); }
+        catch (JsonException ex) { throw new CommandException($"Dati degli oggetti non validi: {ex.Message}"); }
+
+        var ids = new HashSet<string>();
+        var objs = dtos.Select(d => FromDto(d, ids)).ToList();
+        var renamed = new Dictionary<string, string>();
+        var taken = doc.AllObjects.Select(o => o.Name).OfType<string>().ToHashSet();
+        foreach (var o in objs.SelectMany(Document.SelfAndDescendants))
+        {
+            var id = doc.NewId();
+            renamed[o.Id] = id;
+            o.Id = id;
+            if (o.Name is not { } name || taken.Add(name)) continue;
+            var stem = TrailingNumber().Replace(name, "");
+            var n = 2;
+            while (!taken.Add($"{stem} {n}")) n++;
+            o.Name = $"{stem} {n}";
+        }
+        // Un testo su tracciato che ha copiato anche il suo tracciato segue la copia.
+        foreach (var t in objs.SelectMany(Document.SelfAndDescendants).OfType<TextObject>())
+            if (t.OnPath is { } p && renamed.TryGetValue(p.PathId, out var newPath)) t.OnPath = p with { PathId = newPath };
+        return objs;
+    }
+
     // ---- Apertura ------------------------------------------------------------------------------
 
     /// <summary>Legge un documento; se il file non è valido solleva un errore che dice cosa non va.</summary>
@@ -177,6 +210,9 @@ public static partial class DocumentFile
             throw new CommandException($"Oggetto {label}: testo su tracciato non valido.");
         return p;
     }
+
+    [GeneratedRegex(@" \d+$")]
+    private static partial Regex TrailingNumber();
 
     [GeneratedRegex(@"^o(\d+)$")]
     private static partial Regex IdNumber();

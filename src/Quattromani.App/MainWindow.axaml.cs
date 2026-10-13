@@ -473,6 +473,9 @@ public partial class MainWindow : Window
             Canvas.ZoomActualSize();
             e.Handled = true;
         }
+        else if (cmd && e.Key == Key.D) { Duplicate(); e.Handled = true; }
+        else if (cmd && e.Key is Key.C or Key.X) { CopySelection(e.Key == Key.X); e.Handled = true; }
+        else if (cmd && e.Key == Key.V) { Paste(); e.Handled = true; }
         else if (cmd && e.Key == Key.G)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Ungroup(); else Group();
@@ -1151,6 +1154,34 @@ public partial class MainWindow : Window
             var r = _bus.Execute([new GroupObjects { Targets = ids }]);
             Canvas.Select(r.CreatedIds[0]);
         }
+        catch (CommandException) { }
+    }
+
+    string? _clipboard; // oggetti copiati (JSON di DocumentFile.ExportObjects); sopravvive alla cancellazione degli originali
+    int _pasteCount;    // ogni incolla successiva si sposta un po' di più, per non cadere sulla precedente
+
+    void Duplicate()
+    {
+        var ids = Canvas.SelectedIds.ToList();
+        if (ids.Count == 0) return;
+        try { Canvas.SetSelection(_bus.Execute([new DuplicateObjects { Targets = ids }]).CreatedIds); }
+        catch (CommandException) { }
+    }
+
+    void CopySelection(bool cut)
+    {
+        var ids = Canvas.SelectedIds.ToHashSet();
+        if (ids.Count == 0) return;
+        _clipboard = _bus.Read(d => DocumentFile.ExportObjects(d.Objects.Where(o => ids.Contains(o.Id))));
+        _pasteCount = cut ? 0 : 1; // dopo Copia l'originale c'è ancora; dopo Taglia la prima incolla va nello stesso punto
+        if (cut) _bus.Execute([new DeleteObjects { Targets = ids.ToList() }]);
+    }
+
+    void Paste()
+    {
+        if (_clipboard == null) return;
+        var offset = 20 * _pasteCount++;
+        try { Canvas.SetSelection(_bus.Execute([new PasteObjects { Data = _clipboard, Dx = offset, Dy = offset }]).CreatedIds); }
         catch (CommandException) { }
     }
 

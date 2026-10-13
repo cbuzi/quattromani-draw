@@ -65,7 +65,13 @@ public partial class MainWindow
         };
         var edit = new NativeMenuItem("Edit")
         {
-            Menu = new NativeMenu { Entry("Undo", () => _bus.Undo()), Entry("Redo", () => _bus.Redo()) },
+            Menu = new NativeMenu
+            {
+                Entry("Undo", () => _bus.Undo()), Entry("Redo", () => _bus.Redo()),
+                new NativeMenuItemSeparator(),
+                Entry("Cut", () => CopySelection(true)), Entry("Copy", () => CopySelection(false)), Entry("Paste", Paste),
+                Entry("Duplicate", Duplicate, Key.D),
+            },
         };
         // Menu Object: raggruppa, ordine di sovrapposizione, allinea e distribuisci (stessi comandi dei pulsanti in alto).
         var obj = new NativeMenuItem("Object")

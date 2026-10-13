@@ -67,6 +67,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"object.style","targets":["sun"],"fill":"#FF0000","stroke":"none","strokeWidth":1}   (omitted fields stay unchanged)
           {"cmd":"object.resize","targets":["sun"],"width":120,"height":120,"anchor":"center"}   (anchor = the point that stays fixed; default "top-left"; omit width or height to keep it)
           {"cmd":"object.rotate","targets":["sun"],"degrees":45}   (added to the current rotation, clockwise, around the object's center)
+          {"cmd":"object.duplicate","targets":["sun"],"dx":120,"dy":0}   (copies with new ids, right above the originals; dx/dy default 20; a name "logo" becomes "logo 2", "logo 3"...; returns the new ids in `created`)
           {"cmd":"object.group","targets":["roof","wall"],"name":"house"}   (same layer/group only; returns the group id in `created`)
           {"cmd":"object.ungroup","targets":["house"]}   (children keep their look and position)
           {"cmd":"shape.boolean","op":"weld","targets":["a","b"],"name":"merged"}   (op: weld = union; intersect; subtract = the lowest object minus all the others; trim = like subtract but the cutting objects stay)
@@ -123,7 +124,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, shape.boolean, path.set, shape.toPath, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

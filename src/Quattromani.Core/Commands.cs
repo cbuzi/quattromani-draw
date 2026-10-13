@@ -23,6 +23,8 @@ public static class Json
 [JsonDerivedType(typeof(MoveObjects), "object.move")]
 [JsonDerivedType(typeof(SetStyle), "object.style")]
 [JsonDerivedType(typeof(DeleteObjects), "object.delete")]
+[JsonDerivedType(typeof(DuplicateObjects), "object.duplicate")]
+[JsonDerivedType(typeof(PasteObjects), "object.paste")]
 [JsonDerivedType(typeof(ResizeObject), "object.resize")]
 [JsonDerivedType(typeof(RotateObjects), "object.rotate")]
 [JsonDerivedType(typeof(GroupObjects), "object.group")]
