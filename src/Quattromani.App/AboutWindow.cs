@@ -72,6 +72,7 @@ sealed class AboutWindow : Window
                 new TextBlock { Text = $"Quattromani Draw runs an MCP server at {url} while it is open. Pick your agent and register the server once with:", TextWrapping = TextWrapping.Wrap, Opacity = 0.8 },
                 new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { agent, copy } },
                 command,
+                new TextBlock { Text = "Working with several agents, or several sessions of the same one? Ask each to pass a distinct \"agent\" name in its execute calls: it labels and colors what it draws.", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.55 },
                 new TextBlock { Text = $"The running server's address is also written to {McpHost.DiscoveryFile}", TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.55 },
                 close,
             },
