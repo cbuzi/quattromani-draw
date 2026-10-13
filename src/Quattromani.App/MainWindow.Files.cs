@@ -94,8 +94,11 @@ public partial class MainWindow
                 Entry("Fit Text to Path", FitTextToPath),
             },
         };
+        var pillItem = new NativeMenuItem("Show Agent Label") { ToggleType = MenuItemToggleType.CheckBox, IsChecked = Canvas.ShowAgentPill };
+        pillItem.Click += (_, _) => Canvas.ShowAgentPill = pillItem.IsChecked;
+        var view = new NativeMenuItem("View") { Menu = new NativeMenu { pillItem } };
         var help = new NativeMenuItem("Help") { Menu = new NativeMenu { Entry("Connect an AI agent…", App.ShowAbout) } };
-        NativeMenu.SetMenu(this, new NativeMenu { file, edit, obj, help });
+        NativeMenu.SetMenu(this, new NativeMenu { file, edit, obj, view, help });
     }
 
     void UpdateTitle() =>

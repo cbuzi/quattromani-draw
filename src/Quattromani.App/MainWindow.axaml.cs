@@ -1186,7 +1186,7 @@ public partial class MainWindow : Window
                 continue;
             }
             _aiTouched.UnionWith(ids);
-            Canvas.Highlight(ids);
+            Canvas.Highlight(ids, change.Author[4..]);
             AgentText.Text = $"{change.Author[4..]} is drawing";
             AgentChip.IsVisible = true;
             _chipTimer.Stop();
