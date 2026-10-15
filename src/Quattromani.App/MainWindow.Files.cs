@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Quattromani.Core;
 using Avalonia.Input;
@@ -20,12 +21,22 @@ public partial class MainWindow
         MenuOpen.InputGesture = new KeyGesture(Key.O, mod);
         MenuSave.InputGesture = new KeyGesture(Key.S, mod);
         MenuSaveAs.InputGesture = new KeyGesture(Key.S, mod | KeyModifiers.Shift);
+        MenuImport.InputGesture = new KeyGesture(Key.I, mod);
         MenuExportPdf.InputGesture = new KeyGesture(Key.E, mod);
         MenuNew.Click += async (_, _) => await NewDocumentAsync();
         MenuOpen.Click += async (_, _) => await OpenAsync();
         MenuSave.Click += async (_, _) => await SaveAsync(false);
         MenuSaveAs.Click += async (_, _) => await SaveAsync(true);
+        MenuImport.Click += async (_, _) => await ImportImageAsync();
         MenuExportPdf.Click += async (_, _) => await ExportPdfAsync();
+        DragDrop.SetAllowDrop(Canvas, true);
+        Canvas.AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None);
+        Canvas.AddHandler(DragDrop.DropEvent, (_, e) =>
+        {
+            var at = Canvas.DocPoint(e.GetPosition(Canvas));
+            var paths = (e.DataTransfer.TryGetFiles() ?? []).Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+            for (var i = 0; i < paths.Count; i++) ImportImage(paths[i], new(at.X + 20 * i, at.Y + 20 * i));
+        });
         Closing += (_, e) =>
         {
             if (_closeConfirmed || !_files.IsDirty) return;
@@ -60,6 +71,7 @@ public partial class MainWindow
                 Entry("Save", () => _ = SaveAsync(false), Key.S),
                 Entry("Save As…", () => _ = SaveAsync(true), Key.S, KeyModifiers.Shift),
                 new NativeMenuItemSeparator(),
+                Entry("Import Image…", () => _ = ImportImageAsync(), Key.I),
                 Entry("Export PDF…", () => _ = ExportPdfAsync(), Key.E),
             },
         };
@@ -197,5 +209,33 @@ public partial class MainWindow
             ShowNotice($"Exported {Path.GetFileName(path)}", error: false);
         }
         catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    public async Task ImportImageAsync()
+    {
+        CommitTextEdit();
+        var picked = await GetTopLevel(this)!.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import image", AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp"] }],
+        });
+        var c = Canvas.ViewCenter;
+        var paths = picked.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
+        for (var i = 0; i < paths.Count; i++) ImportImage(paths[i], new(c.X + 20 * i, c.Y + 20 * i));
+    }
+
+    // Dimensione nativa, ridotta se non entra in 80% della pagina; centrata su `center` (punto del documento).
+    void ImportImage(string path, Point center)
+    {
+        try
+        {
+            var (size, page) = _bus.Read(d => (d.ImageProbe!(File.ReadAllBytes(path)), (d.Pages[0].Width, d.Pages[0].Height)));
+            if (size is not { } s) throw new CommandException("Not a readable image (PNG, JPEG, GIF, WebP or BMP).");
+            var k = Math.Min(1, Math.Min(0.8 * page.Width / s.Width, 0.8 * page.Height / s.Height));
+            double w = s.Width * k, h = s.Height * k;
+            var r = _bus.Execute([new CreateShape { Type = "image", Src = path, X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h, Name = Path.GetFileNameWithoutExtension(path) }]);
+            Canvas.SetSelection(r.CreatedIds);
+        }
+        catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
     }
 }

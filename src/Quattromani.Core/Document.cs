@@ -81,6 +81,15 @@ public abstract class SceneObject
 public sealed class RectangleObject : SceneObject { public override string Type => "rectangle"; }
 public sealed class EllipseObject : SceneObject { public override string Type => "ellipse"; }
 
+/// <summary>Immagine raster incorporata: i byte del file originale (PNG, JPEG, GIF, WebP, BMP). Geometria come il rettangolo; fill = sfondo, stroke = cornice.</summary>
+public sealed class ImageObject : SceneObject
+{
+    public override string Type => "image";
+    public byte[] Data { get; internal set; } = [];
+    public int PixelWidth { get; internal set; }
+    public int PixelHeight { get; internal set; }
+}
+
 /// <summary>
 /// Path bezier. I segmenti restano come creati (Source = loro riquadro); (X, Y, Width, Height) è il riquadro su cui
 /// vengono stirati, così ridimensionare un path cambia solo quei quattro numeri, come per le altre forme.
@@ -130,6 +139,9 @@ public sealed partial class Document
 
     /// <summary>Misura e contorni del testo, forniti dall'app; senza, i comandi sul testo danno un errore esplicito.</summary>
     public ITextEngine? TextEngine { get; set; }
+
+    /// <summary>Dimensioni in pixel di un'immagine (null se i byte non sono un'immagine leggibile); fornita dall'app.</summary>
+    public Func<byte[], (int Width, int Height)?>? ImageProbe { get; set; }
 
     /// <summary>Incrementata dal CommandBus per ogni comando applicato.</summary>
     public long Version { get; internal set; }

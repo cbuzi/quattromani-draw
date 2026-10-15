@@ -422,6 +422,10 @@ public sealed class CanvasView : Control
         _guideOut = InRuler(pos);
     }
 
+    /// <summary>Punto del documento sotto un punto dello schermo, e centro della vista.</summary>
+    public Point DocPoint(Point screen) => ToDoc(screen);
+    public Point ViewCenter => ToDoc(new(Bounds.Width / 2, Bounds.Height / 2));
+
     Point ToDoc(Point screen) => new((screen.X - _pan.X) / _zoom, (screen.Y - _pan.Y) / _zoom);
 
     string? HitTest(Point doc) =>

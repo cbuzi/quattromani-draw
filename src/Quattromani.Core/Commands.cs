@@ -81,6 +81,10 @@ public sealed class CreateShape : Command
     public bool? Italic { get; set; }
     public string? Align { get; set; }
     public double? LineHeight { get; set; }
+    /// <summary>Solo per type "image": percorso assoluto di un file o data URI base64. Dopo l'applicazione, un data URI viene accorciato.</summary>
+    public string? Src { get; set; }
+
+    const int MaxImageBytes = 30 * 1024 * 1024;
 
     SceneObject? _obj;
 
@@ -128,8 +132,11 @@ public sealed class CreateShape : Command
                     text.Relayout(doc);
                     obj = text;
                     break;
+                case "image":
+                    obj = CreateImage(doc);
+                    break;
                 default:
-                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\", \"text\".");
+                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\", \"text\", \"image\".");
             }
             if (Rel != null)
             {
@@ -154,6 +161,46 @@ public sealed class CreateShape : Command
     }
 
     public override void Undo(Document doc) => doc.Pages[0].Layers[0].Objects.Remove(_obj!);
+
+    ImageObject CreateImage(Document doc)
+    {
+        const string Example = "{\"cmd\":\"shape.create\",\"type\":\"image\",\"src\":\"/Users/me/foto.png\",\"width\":400}";
+        if (string.IsNullOrWhiteSpace(Src))
+            throw new CommandException($"shape.create: type 'image' richiede 'src' (percorso assoluto di un file o data URI base64), es. {Example}.");
+        if (Height < 0 || Width < 0)
+            throw new CommandException("shape.create: 'width' e 'height' devono essere > 0.");
+        var probe = doc.ImageProbe ?? throw new CommandException("Il decodificatore di immagini non e' disponibile: l'immagine non si puo' creare.");
+
+        byte[] data;
+        if (Src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            var comma = Src.IndexOf(',');
+            if (comma < 0 || !Src[..comma].EndsWith(";base64", StringComparison.OrdinalIgnoreCase))
+                throw new CommandException("shape.create: 'src' come data URI deve essere \"data:image/png;base64,...\".");
+            try { data = Convert.FromBase64String(Src[(comma + 1)..]); }
+            catch (FormatException) { throw new CommandException("shape.create: il base64 di 'src' non e' valido."); }
+            Src = $"data:image (base64, {data.Length / 1024} KB)"; // il redo riusa l'oggetto: il dato non serve piu' nel comando
+        }
+        else
+        {
+            if (!Path.IsPathFullyQualified(Src))
+                throw new CommandException($"shape.create: 'src' deve essere un percorso assoluto (es. \"/Users/me/foto.png\") oppure un data URI; ricevuto '{Src}'.");
+            if (!File.Exists(Src)) throw new CommandException($"shape.create: file non trovato: {Src}");
+            if (new FileInfo(Src).Length > MaxImageBytes) throw new CommandException($"shape.create: il file supera {MaxImageBytes / 1024 / 1024} MB.");
+            try { data = File.ReadAllBytes(Src); }
+            catch (IOException ex) { throw new CommandException($"shape.create: impossibile leggere {Src}: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { throw new CommandException($"shape.create: impossibile leggere {Src}: {ex.Message}"); }
+        }
+        if (data.Length > MaxImageBytes) throw new CommandException($"shape.create: l'immagine supera {MaxImageBytes / 1024 / 1024} MB.");
+        var size = probe(data) is { Width: > 0, Height: > 0 } sz ? sz : throw new CommandException("shape.create: 'src' non e' un'immagine leggibile. Formati: PNG, JPEG, GIF, WebP, BMP.");
+
+        // Dimensione nativa se non indicata; con una sola misura l'altra segue le proporzioni.
+        double w = Width, h = Height;
+        if (w <= 0 && h <= 0) (w, h) = (size.Width, size.Height);
+        else if (h <= 0) h = w * size.Height / size.Width;
+        else if (w <= 0) w = h * size.Width / size.Height;
+        return new ImageObject { Data = data, PixelWidth = size.Width, PixelHeight = size.Height, X = X, Y = Y, Width = w, Height = h };
+    }
 }
 
 public sealed class MoveObjects : Command
@@ -496,6 +543,8 @@ public sealed class ConvertToPath : Command
         var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is GroupObject) is { } g)
             throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' e' un gruppo: separalo prima con object.ungroup.");
+        if (objs.FirstOrDefault(o => o is ImageObject) is { } img)
+            throw new CommandException($"shape.toPath: '{img.Name ?? img.Id}' e' un'immagine: le immagini non si convertono in path.");
         var convertible = objs.Where(o => o is RectangleObject or EllipseObject or TextObject).ToList();
         if (convertible.Count == 0) throw new CommandException("shape.toPath: gli oggetti indicati sono gia' path.");
 

@@ -5,14 +5,14 @@ using SkiaSharp;
 
 namespace Quattromani.App;
 
-enum Kind { Rectangle, Ellipse, Path, Group, Text }
+enum Kind { Rectangle, Ellipse, Path, Group, Text, Image }
 
 sealed record TextInfo(List<TextLine> Lines, TextStyle Style);
 
 // Copia immutabile degli oggetti: il rendering gira su un altro thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
     string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
-    string? NodeKinds = null, TextInfo? Text = null)
+    string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null)
 {
     public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
     public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
@@ -28,6 +28,8 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
             t.Source, null, null, Text: new TextInfo(t.Lines, t.Style)),
         GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             g.Source, null, g.Children.Select(From).ToList()),
+        ImageObject im => new(o.Id, Kind.Image, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
+            default, null, null, Image: im.Data),
         _ => new(o.Id, o is EllipseObject ? Kind.Ellipse : Kind.Rectangle, o.X, o.Y, o.Width, o.Height, o.Transform,
             o.Fill, o.Stroke, o.StrokeWidth, default, null, null),
     };
@@ -83,6 +85,12 @@ static class SceneRenderer
             {
                 paint.Style = SKPaintStyle.Fill;
                 DrawShape(canvas, paint, it);
+            }
+            // Lo sfondo (fill) sta sotto l'immagine, la cornice (stroke) sopra.
+            if (it.Kind == Kind.Image && Decode(it.Image!) is { } img)
+            {
+                using var imgPaint = new SKPaint { IsAntialias = true };
+                canvas.DrawImage(img, SKRect.Create((float)it.X, (float)it.Y, (float)it.W, (float)it.H), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), imgPaint);
             }
             if (it.StrokeWidth > 0 && Prepare(paint, it.Stroke, box))
             {
@@ -248,7 +256,26 @@ static class SceneRenderer
             return;
         }
         var r = SKRect.Create((float)it.X, (float)it.Y, (float)it.W, (float)it.H);
-        if (it.Kind == Kind.Ellipse) canvas.DrawOval(r, paint); else canvas.DrawRect(r, paint);
+        if (it.Kind == Kind.Ellipse) canvas.DrawOval(r, paint);
+        else canvas.DrawRect(r, paint);
+    }
+
+    // Item.From gira a ogni frame: l'immagine si decodifica una volta sola per ogni array di byte.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<byte[], SKImage?> Decoded = new();
+
+    public static SKImage? Decode(byte[] data)
+    {
+        lock (Decoded)
+        {
+            if (!Decoded.TryGetValue(data, out var img)) Decoded.Add(data, img = SKImage.FromEncodedData(data));
+            return img;
+        }
+    }
+
+    public static (int Width, int Height)? Probe(byte[] data)
+    {
+        using var codec = SKCodec.Create(new SKMemoryStream(data));
+        return codec is null ? null : (codec.Info.Width, codec.Info.Height);
     }
 
     // Formato del documento: "#RRGGBB" o "#RRGGBBAA" (diverso da quello ARGB di Skia).

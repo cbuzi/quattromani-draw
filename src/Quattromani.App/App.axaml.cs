@@ -25,7 +25,7 @@ public class App : Application
     }
 
     /// <summary>Unico bus dell'app: UI (e in seguito MCP) modificano il documento solo da qui.</summary>
-    public static CommandBus Bus { get; } = new(new Document { TextEngine = new SkiaTextEngine() });
+    public static CommandBus Bus { get; } = new(new Document { TextEngine = new SkiaTextEngine(), ImageProbe = SceneRenderer.Probe });
     internal static FileSession Files { get; } = new(Bus);
 
     public override void Initialize()

@@ -37,6 +37,8 @@ internal static class PolyBoolean
                 break;
             case TextObject:
                 throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un testo: convertilo prima in curve con shape.toPath.");
+            case ImageObject:
+                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un'immagine: le immagini non si convertono in path e non entrano nelle operazioni booleane.");
             default:
                 throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un {o.Type}: le operazioni booleane funzionano su rettangoli, ellissi e path (separa prima i gruppi con object.ungroup).");
         }

@@ -76,6 +76,10 @@ public static partial class DocumentFile
         public double? LineHeight { get; set; }
         public double? WrapWidth { get; set; }
         public List<LineDto>? Lines { get; set; }
+        // immagine: file originale in base64 e dimensioni in pixel
+        public string? Image { get; set; }
+        public int? PixelWidth { get; set; }
+        public int? PixelHeight { get; set; }
     }
 
     static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
@@ -114,6 +118,9 @@ public static partial class DocumentFile
             case GroupObject g:
                 dto.Source = [g.Source.X, g.Source.Y, g.Source.Width, g.Source.Height];
                 dto.Children = g.Children.Select(ToDto).ToList();
+                break;
+            case ImageObject im:
+                (dto.Image, dto.PixelWidth, dto.PixelHeight) = (Convert.ToBase64String(im.Data), im.PixelWidth, im.PixelHeight);
                 break;
             case TextObject t:
                 (dto.Text, dto.FontFamily, dto.FontSize, dto.Bold, dto.Italic, dto.Align, dto.LineHeight, dto.WrapWidth) =
@@ -232,6 +239,14 @@ public static partial class DocumentFile
         {
             case "rectangle": obj = new RectangleObject(); break;
             case "ellipse": obj = new EllipseObject(); break;
+            case "image":
+            {
+                byte[] data;
+                try { data = Convert.FromBase64String(d.Image ?? throw new CommandException($"Oggetto {label}: manca 'image'.")); }
+                catch (FormatException) { throw new CommandException($"Oggetto {label}: 'image' non e' base64 valido."); }
+                obj = new ImageObject { Data = data, PixelWidth = d.PixelWidth ?? 0, PixelHeight = d.PixelHeight ?? 0 };
+                break;
+            }
             case "path":
             {
                 var segs = PathData.Parse(d.D ?? throw new CommandException($"Oggetto {label}: manca 'd'."));
@@ -254,7 +269,7 @@ public static partial class DocumentFile
                     OnPath = ValidOnPath(d.OnPath, label),
                 };
                 break;
-            default: throw new CommandException($"Oggetto {label}: tipo '{d.Type}' sconosciuto (rectangle, ellipse, path, group, text).");
+            default: throw new CommandException($"Oggetto {label}: tipo '{d.Type}' sconosciuto (rectangle, ellipse, image, path, group, text).");
         }
 
         obj.Id = d.Id;
