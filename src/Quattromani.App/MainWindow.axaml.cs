@@ -41,6 +41,16 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Opened += (_, _) =>
+        {
+            // Il layer Metal compare dopo il primo ridisegno: finché non c'è si controlla spesso, per ridurre il tempo con il colorspace sbagliato.
+            DispatcherTimer? t = null;
+            t = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Send, (_, _) =>
+            {
+                if (MacColorSpace.Apply(this)) t!.Interval = TimeSpan.FromSeconds(1);
+            });
+            t.Start();
+        };
         Selection = new CanvasSelection(Canvas);
         InitFiles();
         Canvas.Bus = _bus;
