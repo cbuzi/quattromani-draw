@@ -78,6 +78,17 @@ Here is the kind of command an agent sends:
 
 ## Quick start
 
+### Download
+
+Every [release](https://github.com/cbuzi/quattromani-draw/releases) has a self-contained package for **macOS** (Apple Silicon and Intel), **Windows** and **Linux** — no .NET install needed. Unzip and run.
+
+> **First launch.** The packages are not code-signed yet, so your system will ask for confirmation once:
+> - **macOS:** right-click `Quattromani Draw.app` → *Open* (or run `xattr -dr com.apple.quarantine "Quattromani Draw.app"`).
+> - **Windows:** SmartScreen → *More info* → *Run anyway*.
+> - **Linux:** `tar xzf Quattromani-Draw-*.tar.gz && ./Quattromani.App` (it needs the usual desktop libraries: X11 or Wayland, fontconfig).
+
+### Build from source
+
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). Then:
 
 ```bash
@@ -151,9 +162,9 @@ The server exposes a small set of rich tools — a few calls, lots of power, wit
 
 ## Status
 
-Quattromani Draw is in **beta**. It is developed and used daily on **macOS**. It is built on Avalonia and Skia, so Windows and Linux are expected to work, but they have not been verified yet — reports and fixes are very welcome.
+Quattromani Draw is in **beta**. It is developed and used daily on **macOS**. It is built on Avalonia and Skia, so Windows and Linux are expected to work: CI builds and tests the Core on all three, but the app itself has not been exercised there yet — reports and fixes are very welcome.
 
-Out of scope for now: CMYK and print workflows, advanced multi-page documents, AI / CDR import. On the roadmap: **Quattro-Clip**, a shape clipper that fits objects inside any shape, plus blends, contours and envelopes (all modeled as real objects, flattened on SVG export), an in-app chat panel for the agent, and packaged releases for the three platforms.
+Out of scope for now: CMYK and print workflows, advanced multi-page documents, AI / CDR import. On the roadmap: **Quattro-Clip**, a shape clipper that fits objects inside any shape, plus blends, contours and envelopes (all modeled as real objects, flattened on SVG export), an in-app chat panel for the agent, code-signed and notarized packages, and double-click opening of `.quattromani` files.
 
 ## Project layout
 
@@ -163,13 +174,16 @@ src/
 │                      No dependency on UI or MCP.
 ├── Quattromani.App    Avalonia UI: shell, Skia canvas, tools, panels.
 └── Quattromani.Mcp    MCP server (HTTP, on localhost), hosted inside the app process.
+tests/
+└── Quattromani.Core.Tests   xUnit tests of the Core: bus, undo, layers, booleans, file formats.
+scripts/package.sh           Builds the release package for one platform.
 ```
 
 Stack: C# · .NET 10 · [Avalonia](https://avaloniaui.net/) 12 · [SkiaSharp](https://github.com/mono/SkiaSharp) · the official [MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk).
 
 ## Contributing
 
-Ideas, bug reports and pull requests are welcome. A few ground rules that keep the project coherent:
+Ideas, bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run the tests with `dotnet test`. A few ground rules that keep the project coherent:
 
 - **Everything goes through the command bus.** The UI never edits the document directly.
 - Keep it simple. No premature abstractions, and no new dependency without a concrete reason.
@@ -177,7 +191,9 @@ Ideas, bug reports and pull requests are welcome. A few ground rules that keep t
 
 ## License
 
-[GNU General Public License v3.0](LICENSE).
+Copyright © 2026 Cristiano Buzi. Released under the [GNU General Public License v3.0](LICENSE): you are free to use, study, modify and share it, and modified versions you distribute must stay open source under the same license.
+
+Need to use Quattromani Draw under different terms — for example inside a product that cannot be GPL? A separate commercial license is possible: open an issue on GitHub to get in touch.
 
 ## Inspiration
 

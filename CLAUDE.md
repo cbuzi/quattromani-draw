@@ -18,6 +18,7 @@ Caratteristica distintiva: **disegno "a quattro mani" tra umano e LLM**. Un agen
 Quattromani.Core   → document model, geometria, comandi, undo/redo, versioning. NESSUNA dipendenza da UI o MCP.
 Quattromani.App    → Avalonia: shell, canvas Skia, strumenti, pannelli.
 Quattromani.Mcp    → server MCP HTTP su localhost, ospitato nel processo dell'app.
+tests/Quattromani.Core.Tests → test xUnit del Core.
 ```
 
 Import/export SVG vive in Core finché è piccolo.
@@ -99,6 +100,7 @@ Criterio di successo: Claude Code crea un rettangolo via MCP, l'umano lo sposta 
 ## Convenzioni
 
 - Privilegiare sempre la soluzione più semplice e breve. Niente astrazioni premature.
-- **Non creare** file .md, progetti o classi di test, a meno che non venga chiesto esplicitamente.
+- **Non creare** file .md né nuovi progetti, a meno che non venga chiesto esplicitamente.
+- I test automatici del Core stanno in `tests/Quattromani.Core.Tests` (xUnit): quando cambia il comportamento del Core si aggiungono o aggiornano i test lì, e `dotnet test` deve passare.
 - Nessuna dipendenza nuova senza un motivo concreto.
 - **Non copiare codice GPL** (es. Inkscape, lib2geom). Si può leggere per capire gli algoritmi, poi si riscrive da zero. Codice MIT/Apache (es. Graphite) è utilizzabile come riferimento.
