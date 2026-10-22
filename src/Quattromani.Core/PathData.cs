@@ -26,18 +26,18 @@ public static class PathData
                 cmd = s.ReadLetter();
                 if (cmd is 'Z' or 'z')
                 {
-                    if (segs.Count == 0) throw s.Error("il path deve iniziare con M");
+                    if (segs.Count == 0) throw s.Error("the path must start with M");
                     segs.Add(new('Z'));
                     cx = sx; cy = sy; prev = 'Z';
                     continue;
                 }
             }
-            else if (cmd == '\0') throw s.Error("il path deve iniziare con M, es. \"M 0 0 L 100 0 L 50 80 Z\"");
-            else if (cmd is 'Z' or 'z') throw s.Error("numeri inattesi dopo Z");
+            else if (cmd == '\0') throw s.Error("the path must start with M, e.g. \"M 0 0 L 100 0 L 50 80 Z\"");
+            else if (cmd is 'Z' or 'z') throw s.Error("unexpected numbers after Z");
 
             var rel = char.IsLower(cmd);
             var u = char.ToUpperInvariant(cmd);
-            if (segs.Count == 0 && u != 'M') throw s.Error("il path deve iniziare con M, es. \"M 0 0 L 100 0 L 50 80 Z\"");
+            if (segs.Count == 0 && u != 'M') throw s.Error("the path must start with M, e.g. \"M 0 0 L 100 0 L 50 80 Z\"");
             if (prev == 'Z' && u != 'M') segs.Add(new('M', X: sx, Y: sy)); // dopo Z si riparte dall'inizio del subpath
             double ox = rel ? cx : 0, oy = rel ? cy : 0;
             double x = 0, y = 0;
@@ -105,13 +105,13 @@ public static class PathData
                     break;
                 }
                 default:
-                    throw s.Error($"comando '{cmd}' non supportato (usa M L H V C S Q T A Z)");
+                    throw s.Error($"command '{cmd}' is not supported (use M L H V C S Q T A Z)");
             }
             cx = x; cy = y; prev = u;
         }
 
         if (!segs.Any(g => g.Op is 'L' or 'C'))
-            throw new CommandException("path 'd': serve almeno un segmento oltre a M, es. \"M 0 0 L 100 0 L 50 80 Z\".");
+            throw new CommandException("path 'd': at least one segment besides M is needed, e.g. \"M 0 0 L 100 0 L 50 80 Z\".");
         return segs;
     }
 
@@ -313,7 +313,7 @@ public static class PathData
                 _i++;
                 while (_i < d.Length && char.IsAsciiDigit(d[_i])) { _i++; digits = true; }
             }
-            if (!digits) { _i = start; throw Error("numero atteso"); }
+            if (!digits) { _i = start; throw Error("number expected"); }
             if (_i < d.Length && d[_i] is 'e' or 'E')
             {
                 var save = _i++;
@@ -330,7 +330,7 @@ public static class PathData
         {
             SkipSeparators();
             if (_i < d.Length && d[_i] is '0' or '1') return d[_i++] == '1';
-            throw Error("flag dell'arco atteso (0 o 1)");
+            throw Error("arc flag expected (0 or 1)");
         }
     }
 }

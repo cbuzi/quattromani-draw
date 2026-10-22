@@ -224,22 +224,22 @@ public sealed class SetTextOnPath : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("text.onPath: 'targets' e' vuoto. Passa id o nomi di testi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("text.onPath: 'targets' is empty. Pass the ids or names of texts, e.g. [\"o1\"].");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not TextObject) is { } other)
-            throw new CommandException($"text.onPath: '{other.Name ?? other.Id}' e' un {other.Type}, non un testo.");
+            throw new CommandException($"text.onPath: '{other.Name ?? other.Id}' is a {other.Type}, not a text.");
         if (Align is not (null or "start" or "center" or "end"))
-            throw new CommandException($"text.onPath: align '{Align}' non valido. Valori: \"start\", \"center\", \"end\".");
+            throw new CommandException($"text.onPath: align '{Align}' is not valid. Values: \"start\", \"center\", \"end\".");
         foreach (var v in new[] { Offset, Distance })
-            if (v is { } d && (!double.IsFinite(d) || Math.Abs(d) > 1e6)) throw new CommandException($"text.onPath: valore non valido ({d}).");
+            if (v is { } d && (!double.IsFinite(d) || Math.Abs(d) > 1e6)) throw new CommandException($"text.onPath: invalid value ({d}).");
 
         SceneObject? path = null;
         if (!Detach && Path != null)
         {
             path = doc.Find(Path);
             if (TextOnPathLayout.PageSegments(doc, path) is null)
-                throw new CommandException($"text.onPath: '{path.Name ?? path.Id}' e' un {path.Type}: il tracciato deve essere un path, un rettangolo o un'ellisse.");
-            if (objs.Contains(path)) throw new CommandException("text.onPath: un testo non puo' stare sul proprio tracciato.");
+                throw new CommandException($"text.onPath: '{path.Name ?? path.Id}' is a {path.Type}: the path must be a path, a rectangle or an ellipse.");
+            if (objs.Contains(path)) throw new CommandException("text.onPath: a text cannot sit on its own path.");
         }
 
         _old = objs.Cast<TextObject>().Select(t => new Snapshot(t, t.OnPath, t.PathGlyphs, t.PathKey, t.Lines, t.Source, new Box(t.X, t.Y, t.Width, t.Height))).ToList();
@@ -254,7 +254,7 @@ public sealed class SetTextOnPath : Command
             }
             var cur = t.OnPath;
             if (path == null && cur == null)
-                throw new CommandException($"text.onPath: indica 'path' (id o nome del tracciato) per '{t.Name ?? t.Id}', oppure \"detach\":true per staccarlo. Esempio: {{\"cmd\":\"text.onPath\",\"targets\":[\"titolo\"],\"path\":\"arco\"}}.");
+                throw new CommandException($"text.onPath: give 'path' (id or name of the path) for '{t.Name ?? t.Id}', or \"detach\":true to detach it. Example: {{\"cmd\":\"text.onPath\",\"targets\":[\"titolo\"],\"path\":\"arco\"}}.");
             t.OnPath = new TextOnPath(path?.Id ?? cur!.PathId, Offset ?? cur?.Offset ?? 0, Align ?? cur?.Align ?? "start",
                 Distance ?? cur?.Distance ?? 0, Reverse ?? cur?.Reverse ?? false);
             t.PathKey = null;

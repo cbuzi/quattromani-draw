@@ -40,9 +40,9 @@ public static partial class Gradient
     private static partial Regex LinearPointsRegex();
 
     const string Syntax =
-        "Gradienti: \"linear-gradient(90deg, #FF0000, #0000FF)\" (angolo in gradi: 0 = verso l'alto, 90 = destra, 180 = basso; oppure \"to right\", \"to bottom\"...) " +
-        "e \"radial-gradient(#FFFFFF, #000000)\" (opzionale \"circle\" o \"ellipse\", raggi \"60% 40%\" e centro \"at 30% 40%\"); i colori possono avere una posizione, es. \"#FF0000 25%\". " +
-        "Per punti espliciti: \"linear-gradient(from 10% 20% to 90% 80%, ...)\" (percentuali del riquadro dell'oggetto).";
+        "Gradients: \"linear-gradient(90deg, #FF0000, #0000FF)\" (angle in degrees: 0 = upwards, 90 = to the right, 180 = downwards; or \"to right\", \"to bottom\"...) " +
+        "and \"radial-gradient(#FFFFFF, #000000)\" (optional \"circle\" or \"ellipse\", radii \"60% 40%\" and center \"at 30% 40%\"); colors may have a position, e.g. \"#FF0000 25%\". " +
+        "For explicit points: \"linear-gradient(from 10% 20% to 90% 80%, ...)\" (percentages of the object's box).";
 
     static CommandException Error(string field, string message) => new($"'{field}': {message} {Syntax}");
 
@@ -51,7 +51,7 @@ public static partial class Gradient
     {
         var s = value.Trim();
         var radial = s.StartsWith("radial-gradient(", StringComparison.Ordinal);
-        if (!IsGradient(s) || !s.EndsWith(')')) throw Error(field, $"gradiente '{value}' non valido.");
+        if (!IsGradient(s) || !s.EndsWith(')')) throw Error(field, $"gradient '{value}' is not valid.");
         var inner = s[(s.IndexOf('(') + 1)..^1];
         var parts = inner.Split(',').Select(p => p.Trim()).ToList();
 
@@ -66,32 +66,32 @@ public static partial class Gradient
             if (LinearPointsRegex().Match(head) is { Success: true } pts)
                 (x1, y1, x2, y2) = (P(pts, 1), P(pts, 2), P(pts, 3), P(pts, 4));
             else if (AngleRegex().Match(head) is { Success: true } a) angle = double.Parse(a.Groups[1].Value, CultureInfo.InvariantCulture);
-            else if (head.StartsWith("to ")) angle = DirectionAngle(head[3..].Trim()) ?? throw Error(field, $"direzione '{parts[0]}' non valida (usa to top, to right, to bottom, to left, o con due lati: to top right).");
-            else throw Error(field, $"'{parts[0]}' non e' un angolo (es. 90deg) ne' una direzione (es. to right).");
+            else if (head.StartsWith("to ")) angle = DirectionAngle(head[3..].Trim()) ?? throw Error(field, $"direction '{parts[0]}' is not valid (use to top, to right, to bottom, to left, or two sides: to top right).");
+            else throw Error(field, $"'{parts[0]}' is neither an angle (e.g. 90deg) nor a direction (e.g. to right).");
             parts.RemoveAt(0);
         }
         else if (radial && parts.Count > 0 && !parts[0].StartsWith('#'))
         {
             var m = RadialHeadRegex().Match(parts[0].ToLowerInvariant());
-            if (!m.Success) throw Error(field, $"'{parts[0]}' non e' valido: dopo 'radial-gradient(' vanno forma e centro (es. \"circle at 30% 40%\") oppure subito i colori.");
+            if (!m.Success) throw Error(field, $"'{parts[0]}' is not valid: after 'radial-gradient(' comes the shape and center (e.g. \"circle at 30% 40%\") or the colors right away.");
             circle = m.Groups[1].Value == "circle";
             if (m.Groups[2].Success)
             {
-                if (circle) throw Error(field, "un cerchio non ha due raggi: usa \"ellipse 60% 40% at ...\" oppure togli i raggi.");
+                if (circle) throw Error(field, "a circle does not have two radii: use \"ellipse 60% 40% at ...\" or remove the radii.");
                 rx = P(m, 2) ; ry = P(m, 3);
-                if (rx <= 0 || ry <= 0) throw Error(field, "i raggi devono essere maggiori di 0.");
+                if (rx <= 0 || ry <= 0) throw Error(field, "the radii must be greater than 0.");
             }
             if (m.Groups[4].Success) { cx = P(m, 4); cy = P(m, 5); }
             parts.RemoveAt(0);
         }
 
-        if (parts.Count < 2) throw Error(field, "servono almeno due colori.");
+        if (parts.Count < 2) throw Error(field, "at least two colors are needed.");
         var colors = new List<string>();
         var positions = new List<double?>();
         foreach (var p in parts)
         {
             var m = StopRegex().Match(p);
-            if (!m.Success) throw Error(field, $"colore '{p}' non valido: usa #RRGGBB (o #RRGGBBAA) seguito da una posizione opzionale in %.");
+            if (!m.Success) throw Error(field, $"color '{p}' is not valid: use #RRGGBB (or #RRGGBBAA) followed by an optional position in %.");
             colors.Add(m.Groups[1].Value.ToUpperInvariant());
             positions.Add(m.Groups[2].Success ? Math.Clamp(double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) / 100, 0, 1) : null);
         }

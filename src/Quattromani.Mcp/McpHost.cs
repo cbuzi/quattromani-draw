@@ -30,7 +30,7 @@ public static class McpHost
         // Se la porta è occupata l'app deve comunque partire.
         var start = app.StartAsync();
         start.ContinueWith(
-            t => Console.Error.WriteLine($"MCP server non avviato su porta {Port}: {t.Exception?.GetBaseException().Message}"),
+            t => Console.Error.WriteLine($"MCP server not started on port {Port}: {t.Exception?.GetBaseException().Message}"),
             TaskContinuationOptions.OnlyOnFaulted);
         start.ContinueWith(_ => WriteDiscoveryFile(), TaskContinuationOptions.OnlyOnRanToCompletion);
         return app;
@@ -47,7 +47,7 @@ public static class McpHost
             var version = typeof(McpHost).Assembly.GetName().Version?.ToString(3);
             File.WriteAllText(DiscoveryFile, JsonSerializer.Serialize(new { url = $"http://localhost:{Port}/mcp", port = Port, pid = Environment.ProcessId, version }));
         }
-        catch (Exception e) { Console.Error.WriteLine($"File di discovery non scritto: {e.Message}"); }
+        catch (Exception e) { Console.Error.WriteLine($"Discovery file not written: {e.Message}"); }
     }
 
     /// <summary>Alla chiusura toglie il file, ma solo se è di questo processo (un'altra istanza potrebbe averlo riscritto).</summary>

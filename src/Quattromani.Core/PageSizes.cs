@@ -14,7 +14,7 @@ public static class Units
         "cm" => 96 / 2.54,
         "in" => 96,
         "pt" => 96.0 / 72,
-        _ => throw new CommandException($"unit '{unit}' non valida. Valori: {string.Join(", ", All.Select(u => $"\"{u}\""))}."),
+        _ => throw new CommandException($"unit '{unit}' is not valid. Values: {string.Join(", ", All.Select(u => $"\"{u}\""))}."),
     };
 
     /// <summary>Da un valore nell'unità indicata a px.</summary>
@@ -72,9 +72,9 @@ public sealed class SetPage : Command
         if (Preset != null)
         {
             if (Width != null || Height != null)
-                throw new CommandException("page.set: usa 'preset' oppure 'width'/'height', non entrambi.");
+                throw new CommandException("page.set: use either 'preset' or 'width'/'height', not both.");
             var p = PageSizes.Find(Preset) ?? throw new CommandException(
-                $"page.set: formato '{Preset}' sconosciuto. Valori: {string.Join(", ", PageSizes.All.Select(x => x.Name))}.");
+                $"page.set: unknown format '{Preset}'. Values: {string.Join(", ", PageSizes.All.Select(x => x.Name))}.");
             (w, h) = (p.WidthPx, p.HeightPx);
         }
         else if (Width != null || Height != null)
@@ -84,17 +84,17 @@ public sealed class SetPage : Command
             if (Height is { } nh) h = Units.ToPx(nh, unit);
         }
         else if (Orientation == null)
-            throw new CommandException("page.set: indica 'preset', oppure 'width' e/o 'height', oppure 'orientation'. Esempi: {\"cmd\":\"page.set\",\"preset\":\"A4\",\"orientation\":\"landscape\"} oppure {\"cmd\":\"page.set\",\"width\":210,\"height\":297,\"unit\":\"mm\"}.");
+            throw new CommandException("page.set: give 'preset', or 'width' and/or 'height', or 'orientation'. Examples: {\"cmd\":\"page.set\",\"preset\":\"A4\",\"orientation\":\"landscape\"} oppure {\"cmd\":\"page.set\",\"width\":210,\"height\":297,\"unit\":\"mm\"}.");
 
         switch (Orientation)
         {
             case null: break;
             case "portrait": if (w > h) (w, h) = (h, w); break;
             case "landscape": if (h > w) (w, h) = (h, w); break;
-            default: throw new CommandException($"page.set: orientation '{Orientation}' non valida. Valori: \"portrait\", \"landscape\".");
+            default: throw new CommandException($"page.set: orientation '{Orientation}' is not valid. Values: \"portrait\", \"landscape\".");
         }
         if (w < 1 || h < 1 || w > 100000 || h > 100000 || double.IsNaN(w) || double.IsNaN(h))
-            throw new CommandException("page.set: le dimensioni della pagina devono stare tra 1 e 100000 px.");
+            throw new CommandException("page.set: the page size must be between 1 and 100000 px.");
 
         _old = (page.Width, page.Height);
         (page.Width, page.Height) = (w, h);

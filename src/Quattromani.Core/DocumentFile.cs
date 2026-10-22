@@ -150,8 +150,8 @@ public static partial class DocumentFile
     internal static List<SceneObject> ImportObjects(string json, Document doc)
     {
         List<ObjDto> dtos;
-        try { dtos = JsonSerializer.Deserialize<List<ObjDto>>(json, Options) ?? throw new JsonException("vuoto"); }
-        catch (JsonException ex) { throw new CommandException($"Dati degli oggetti non validi: {ex.Message}"); }
+        try { dtos = JsonSerializer.Deserialize<List<ObjDto>>(json, Options) ?? throw new JsonException("empty"); }
+        catch (JsonException ex) { throw new CommandException($"Invalid object data: {ex.Message}"); }
 
         var ids = new HashSet<string>();
         var objs = dtos.Select(d => FromDto(d, ids)).ToList();
@@ -180,13 +180,13 @@ public static partial class DocumentFile
     public static Document Load(string json)
     {
         FileDto dto;
-        try { dto = JsonSerializer.Deserialize<FileDto>(json, Options) ?? throw new JsonException("file vuoto"); }
-        catch (JsonException ex) { throw new CommandException($"Il file non e' un documento Quattromani Draw valido: {ex.Message}"); }
+        try { dto = JsonSerializer.Deserialize<FileDto>(json, Options) ?? throw new JsonException("empty file"); }
+        catch (JsonException ex) { throw new CommandException($"The file is not a valid Quattromani Draw document: {ex.Message}"); }
 
-        if (dto.Format != "quattromani") throw new CommandException("Il file non e' un documento Quattromani Draw (manca \"format\": \"quattromani\").");
+        if (dto.Format != "quattromani") throw new CommandException("The file is not a Quattromani Draw document (missing \"format\": \"quattromani\").");
         if (dto.Version > CurrentVersion)
-            throw new CommandException($"Il file e' stato creato da una versione piu' recente di Quattromani Draw (formato {dto.Version}, questa legge fino al {CurrentVersion}).");
-        if (dto.Pages.Count == 0) throw new CommandException("Il file non contiene nessuna pagina.");
+            throw new CommandException($"The file was created by a newer version of Quattromani Draw (format {dto.Version}, this one reads up to {CurrentVersion}).");
+        if (dto.Pages.Count == 0) throw new CommandException("The file contains no pages.");
 
         var doc = new Document();
         doc.Pages.Clear();
@@ -194,11 +194,11 @@ public static partial class DocumentFile
         foreach (var pd in dto.Pages)
         {
             if (!(pd.Width >= 1 && pd.Height >= 1 && pd.Width <= 100000 && pd.Height <= 100000))
-                throw new CommandException($"Pagina '{pd.Name}': dimensioni non valide ({pd.Width} x {pd.Height}).");
+                throw new CommandException($"Page '{pd.Name}': invalid size ({pd.Width} x {pd.Height}).");
             var page = new Page { Name = pd.Name, Width = pd.Width, Height = pd.Height };
             foreach (var g in pd.Guides ?? [])
             {
-                if (g.Axis is not ("x" or "y") || !double.IsFinite(g.Position)) throw new CommandException($"Guida non valida ({g.Axis} = {g.Position}).");
+                if (g.Axis is not ("x" or "y") || !double.IsFinite(g.Position)) throw new CommandException($"Invalid guide ({g.Axis} = {g.Position}).");
                 page.Guides.Add(g);
             }
             page.Layers.Clear();
@@ -206,7 +206,7 @@ public static partial class DocumentFile
             {
                 var layer = new Layer(ld.Name) { Visible = ld.Hidden != true, Locked = ld.Locked == true };
                 if (page.Layers.Any(l => l.Name.Equals(layer.Name, StringComparison.OrdinalIgnoreCase)))
-                    throw new CommandException($"Il file ha due layer con lo stesso nome ('{layer.Name}').");
+                    throw new CommandException($"The file has two layers with the same name ('{layer.Name}').");
                 foreach (var od in ld.Objects) layer.Objects.Add(FromDto(od, ids));
                 page.Layers.Add(layer);
             }
@@ -225,7 +225,7 @@ public static partial class DocumentFile
     {
         if (p == null) return null;
         if (string.IsNullOrEmpty(p.PathId) || p.Align is not ("start" or "center" or "end") || !double.IsFinite(p.Offset) || !double.IsFinite(p.Distance))
-            throw new CommandException($"Oggetto {label}: testo su tracciato non valido.");
+            throw new CommandException($"Object {label}: invalid text on path.");
         return p;
     }
 
@@ -238,12 +238,12 @@ public static partial class DocumentFile
     static SceneObject FromDto(ObjDto d, HashSet<string> ids)
     {
         var label = string.IsNullOrEmpty(d.Id) ? $"({d.Type})" : d.Id;
-        if (string.IsNullOrEmpty(d.Id) || !ids.Add(d.Id)) throw new CommandException($"Oggetto {label}: id mancante o duplicato.");
-        if (!new[] { d.X, d.Y, d.Width, d.Height }.All(double.IsFinite)) throw new CommandException($"Oggetto {label}: geometria non valida.");
+        if (string.IsNullOrEmpty(d.Id) || !ids.Add(d.Id)) throw new CommandException($"Object {label}: missing or duplicate id.");
+        if (!new[] { d.X, d.Y, d.Width, d.Height }.All(double.IsFinite)) throw new CommandException($"Object {label}: invalid geometry.");
 
         Box Src() => d.Source is { Length: 4 } s && s.All(double.IsFinite)
             ? new Box(s[0], s[1], s[2], s[3])
-            : throw new CommandException($"Oggetto {label}: manca il riquadro 'source'.");
+            : throw new CommandException($"Object {label}: missing 'source' box.");
 
         SceneObject obj;
         switch (d.Type)
@@ -253,14 +253,14 @@ public static partial class DocumentFile
             case "image":
             {
                 byte[] data;
-                try { data = Convert.FromBase64String(d.Image ?? throw new CommandException($"Oggetto {label}: manca 'image'.")); }
-                catch (FormatException) { throw new CommandException($"Oggetto {label}: 'image' non e' base64 valido."); }
+                try { data = Convert.FromBase64String(d.Image ?? throw new CommandException($"Object {label}: missing 'image'.")); }
+                catch (FormatException) { throw new CommandException($"Object {label}: 'image' is not valid base64."); }
                 obj = new ImageObject { Data = data, PixelWidth = d.PixelWidth ?? 0, PixelHeight = d.PixelHeight ?? 0 };
                 break;
             }
             case "path":
             {
-                var segs = PathData.Parse(d.D ?? throw new CommandException($"Oggetto {label}: manca 'd'."));
+                var segs = PathData.Parse(d.D ?? throw new CommandException($"Object {label}: missing 'd'."));
                 obj = new PathObject { Segments = segs, Source = d.Source is { Length: 4 } ? Src() : PathData.Bounds(segs)!.Value, NodeKinds = d.NodeKinds };
                 break;
             }
@@ -280,7 +280,7 @@ public static partial class DocumentFile
                     OnPath = ValidOnPath(d.OnPath, label),
                 };
                 break;
-            default: throw new CommandException($"Oggetto {label}: tipo '{d.Type}' sconosciuto (rectangle, ellipse, image, path, group, text).");
+            default: throw new CommandException($"Object {label}: unknown type '{d.Type}' (rectangle, ellipse, image, path, group, text).");
         }
 
         obj.Id = d.Id;
@@ -292,7 +292,7 @@ public static partial class DocumentFile
         (obj.Hidden, obj.Locked) = (d.Hidden == true, d.Locked == true);
         if (d.Transform is { } t)
         {
-            if (t.Length != 6 || !t.All(float.IsFinite)) throw new CommandException($"Oggetto {label}: 'transform' deve avere 6 numeri.");
+            if (t.Length != 6 || !t.All(float.IsFinite)) throw new CommandException($"Object {label}: 'transform' must have 6 numbers.");
             obj.Transform = new Matrix3x2(t[0], t[1], t[2], t[3], t[4], t[5]);
         }
         return obj;

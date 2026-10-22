@@ -16,10 +16,10 @@ static class LayerNames
     public static string Check(Page page, string? name, Layer? except = null)
     {
         name = name?.Trim();
-        if (string.IsNullOrEmpty(name)) throw new CommandException("Il nome del layer non puo' essere vuoto.");
-        if (name.Length > 60) throw new CommandException("Il nome del layer puo' avere al massimo 60 caratteri.");
+        if (string.IsNullOrEmpty(name)) throw new CommandException("The layer name cannot be empty.");
+        if (name.Length > 60) throw new CommandException("The layer name can have at most 60 characters.");
         if (page.Layers.Any(l => l != except && l.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-            throw new CommandException($"Esiste gia' un layer chiamato '{name}': scegli un altro nome (layer presenti: {string.Join(", ", page.Layers.Select(l => $"\"{l.Name}\""))}).");
+            throw new CommandException($"A layer named '{name}' already exists: choose another name (layers: {string.Join(", ", page.Layers.Select(l => $"\"{l.Name}\""))}).");
         return name;
     }
 }
@@ -70,7 +70,7 @@ public sealed class SetLayer : Command
     {
         var layer = doc.FindLayer(Layer);
         if (Name == null && Visible == null && Locked == null && Active == null)
-            throw new CommandException("layer.set: indica almeno un campo da cambiare tra name, visible, locked, active. Esempio: {\"cmd\":\"layer.set\",\"layer\":\"sketch\",\"locked\":true}.");
+            throw new CommandException("layer.set: give at least one field to change among name, visible, locked, active. Example: {\"cmd\":\"layer.set\",\"layer\":\"sketch\",\"locked\":true}.");
         var page = doc.Pages[0];
         var name = Name is null ? layer.Name : LayerNames.Check(page, Name, layer);
         _old = (layer, layer.Name, layer.Visible, layer.Locked, page.ActiveLayer);
@@ -100,8 +100,8 @@ public sealed class DeleteLayer : Command
     {
         var page = doc.Pages[0];
         var layer = doc.FindLayer(Layer);
-        if (page.Layers.Count == 1) throw new CommandException("layer.delete: e' l'unico layer, non si puo' eliminare. Per svuotarlo usa object.delete.");
-        if (layer.Locked) throw new CommandException($"layer.delete: il layer '{layer.Name}' e' bloccato: sbloccalo con layer.set prima di eliminarlo.");
+        if (page.Layers.Count == 1) throw new CommandException("layer.delete: it is the only layer and cannot be deleted. To empty it use object.delete.");
+        if (layer.Locked) throw new CommandException($"layer.delete: layer '{layer.Name}' is locked: unlock it with layer.set before deleting it.");
         _layer = layer;
         _index = page.Layers.IndexOf(layer);
         page.Layers.RemoveAt(_index);
@@ -131,7 +131,7 @@ public sealed class OrderLayer : Command
             "back" => 0,
             "up" => Math.Min(from + 1, layers.Count - 1),
             "down" => Math.Max(from - 1, 0),
-            _ => throw new CommandException($"layer.order: action '{Action}' non valida. Valori: \"front\", \"back\", \"up\", \"down\"."),
+            _ => throw new CommandException($"layer.order: action '{Action}' is not valid. Values: \"front\", \"back\", \"up\", \"down\"."),
         };
         (_layer, _old) = (layer, from);
         layers.RemoveAt(from);
@@ -159,8 +159,8 @@ public sealed class MoveToLayer : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.toLayer: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        if (string.IsNullOrWhiteSpace(Layer)) throw new CommandException("object.toLayer: manca 'layer'. Esempio: {\"cmd\":\"object.toLayer\",\"targets\":[\"o1\"],\"layer\":\"sketch\"}.");
+        if (Targets.Count == 0) throw new CommandException("object.toLayer: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
+        if (string.IsNullOrWhiteSpace(Layer)) throw new CommandException("object.toLayer: missing 'layer'. Example: {\"cmd\":\"object.toLayer\",\"targets\":[\"o1\"],\"layer\":\"sketch\"}.");
         var dest = doc.FindLayer(Layer);
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         // Se un gruppo e un suo figlio sono entrambi indicati, basta spostare il gruppo.
@@ -205,9 +205,9 @@ public sealed class SetObjectState : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.state: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.state: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         if (Hidden == null && Locked == null)
-            throw new CommandException("object.state: indica hidden e/o locked. Esempio: {\"cmd\":\"object.state\",\"targets\":[\"o1\"],\"locked\":true}.");
+            throw new CommandException("object.state: give hidden and/or locked. Example: {\"cmd\":\"object.state\",\"targets\":[\"o1\"],\"locked\":true}.");
         _old = Targets.Select(t => doc.Find(t)).Distinct().Select(o => (o, o.Hidden, o.Locked)).ToList();
         foreach (var (o, _, _) in _old)
         {

@@ -33,13 +33,13 @@ sealed class FileSession(CommandBus bus) : IFileService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             try { File.Delete(tmp); } catch { /* il file temporaneo non è importante */ }
-            throw new CommandException($"Non riesco a scrivere '{path}': {ex.Message}");
+            throw new CommandException($"Cannot write '{path}': {ex.Message}");
         }
     }
 
     public string Save(string? path)
     {
-        path ??= CurrentPath ?? throw new CommandException("Il documento non e' ancora stato salvato: indica un percorso.");
+        path ??= CurrentPath ?? throw new CommandException("The document has not been saved yet: give a path.");
         var (json, version) = bus.Read(d => (DocumentFile.Save(d), d.Version));
         WriteAtomic(path, tmp => File.WriteAllText(tmp, json));
         CurrentPath = path;
@@ -55,7 +55,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         try { text = File.ReadAllText(path); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new CommandException($"Non riesco a leggere '{path}': {ex.Message}");
+            throw new CommandException($"Cannot read '{path}': {ex.Message}");
         }
         var doc = DocumentFile.Load(text); // se il file non è valido, il documento attuale non viene toccato
         bus.Replace(doc, "open", path);
@@ -96,10 +96,10 @@ sealed class FileSession(CommandBus bus) : IFileService
     public (int Width, int Height) ExportPng(string path, double scale, string? background)
     {
         var (w, h) = bus.Read(d => (d.Pages[0].Width, d.Pages[0].Height));
-        if (!(scale > 0 && double.IsFinite(scale))) throw new CommandException("scale deve essere un numero maggiore di 0.");
+        if (!(scale > 0 && double.IsFinite(scale))) throw new CommandException("scale must be a number greater than 0.");
         var side = Math.Max(w, h) * scale;
         if (side > MaxPngSide)
-            throw new CommandException($"L'immagine risulterebbe di {Math.Round(w * scale)} x {Math.Round(h * scale)} pixel: il lato massimo e' {MaxPngSide}. Usa una scala piu' bassa (al massimo {Math.Round(MaxPngSide / Math.Max(w, h), 2)} per questa pagina).");
+            throw new CommandException($"The image would be {Math.Round(w * scale)} x {Math.Round(h * scale)} pixels: the longest side may not exceed {MaxPngSide}. Use a lower scale (at most {Math.Round(MaxPngSide / Math.Max(w, h), 2)} for this page).");
         // La pagina e nient'altro: quello che esce dai bordi non entra nell'immagine.
         var img = new SkiaDocumentRenderer(bus).Render(new Box(0, 0, w, h), (int)Math.Max(1, Math.Round(side)), background ?? "transparent", labels: false, showPage: false);
         WriteAtomic(path, tmp => File.WriteAllBytes(tmp, img.Png));

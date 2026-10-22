@@ -20,7 +20,7 @@ public static class Anchor
     public static (double X, double Y) Parse(string name)
     {
         foreach (var a in All) if (a.Name == name) return (a.X, a.Y);
-        throw new CommandException($"anchor '{name}' non valido. Valori: {string.Join(", ", All.Select(a => $"\"{a.Name}\""))}.");
+        throw new CommandException($"anchor '{name}' is not valid. Values: {string.Join(", ", All.Select(a => $"\"{a.Name}\""))}.");
     }
 
     public static string NameOf(double x, double y) => All.First(a => a.X == x && a.Y == y).Name;
@@ -201,7 +201,7 @@ public sealed partial class Document
     {
         var obj = Find(idOrName);
         if (IsLocked(obj))
-            throw new CommandException($"L'oggetto '{obj.Name ?? obj.Id}' e' bloccato (lui, un gruppo che lo contiene o il suo layer). Sbloccalo con object.state {{\"targets\":[\"{obj.Id}\"],\"locked\":false}} o layer.set, oppure chiedi all'utente.");
+            throw new CommandException($"Object '{obj.Name ?? obj.Id}' is locked (itself, a group containing it, or its layer). Unlock it with object.state {{\"targets\":[\"{obj.Id}\"],\"locked\":false}} or layer.set, or ask the user.");
         return obj;
     }
 
@@ -210,7 +210,7 @@ public sealed partial class Document
     {
         var layers = Pages[0].Layers;
         return layers.FirstOrDefault(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new CommandException($"Layer '{name}' non trovato. Layer presenti (dal fondo): {string.Join(", ", layers.Select(l => $"\"{l.Name}\""))}.");
+            ?? throw new CommandException($"Layer '{name}' not found. Layers (bottom to top): {string.Join(", ", layers.Select(l => $"\"{l.Name}\""))}.");
     }
 
     /// <summary>Il layer dove un comando crea oggetti nuovi: quello indicato o l'attivo; deve essere visibile e non bloccato.</summary>
@@ -218,7 +218,7 @@ public sealed partial class Document
     {
         var layer = name is null ? Pages[0].ActiveLayer : FindLayer(name);
         if (layer.Locked || !layer.Visible)
-            throw new CommandException($"Il layer '{layer.Name}' e' {(layer.Locked ? "bloccato" : "nascosto")}: non ci si puo' aggiungere nulla. Indica un altro layer (\"layer\":\"nome\"), crea un layer con layer.add o {(layer.Locked ? "sblocca" : "mostra")} questo con layer.set.");
+            throw new CommandException($"Layer '{layer.Name}' is {(layer.Locked ? "locked" : "hidden")}: nothing can be added to it. Give another layer (\"layer\":\"name\"), create one with layer.add, or {(layer.Locked ? "unlock" : "show")} this one with layer.set.");
         return layer;
     }
 
@@ -292,11 +292,11 @@ public sealed partial class Document
         if (byName.Count == 1) return byName[0];
         if (byName.Count > 1)
             throw new CommandException(
-                $"Il nome '{idOrName}' e' ambiguo (id: {string.Join(", ", byName.Select(o => o.Id))}). Usa l'id.");
+                $"The name '{idOrName}' is ambiguous (ids: {string.Join(", ", byName.Select(o => o.Id))}). Use the id.");
 
         var known = string.Join(", ", AllObjects.Take(20).Select(o => o.Name is null ? o.Id : $"{o.Id}/{o.Name}"));
         throw new CommandException(
-            $"Oggetto '{idOrName}' non trovato. Oggetti presenti: {(known.Length == 0 ? "nessuno" : known)}. Usa get_document per l'elenco.");
+            $"Object '{idOrName}' not found. Existing objects: {(known.Length == 0 ? "none" : known)}. Use get_document for the list.");
     }
 
     [GeneratedRegex("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")]
@@ -310,6 +310,6 @@ public sealed partial class Document
         if (Pattern.IsPattern(value)) return Pattern.Format(Pattern.Parse(value, field));
         if (ColorRegex().IsMatch(value)) return value;
         throw new CommandException(
-            $"'{field}': colore '{value}' non valido. Usa \"#RRGGBB\", \"#RRGGBBAA\", \"none\", un gradiente come \"linear-gradient(90deg, #FF0000, #0000FF)\" o \"radial-gradient(#FFFFFF, #000000)\", oppure un motivo come \"pattern(stripes, #FF0000, #FFFFFF, 8)\".");
+            $"'{field}': color '{value}' is not valid. Use \"#RRGGBB\", \"#RRGGBBAA\", \"none\", a gradient like \"linear-gradient(90deg, #FF0000, #0000FF)\" or \"radial-gradient(#FFFFFF, #000000)\", or a pattern like \"pattern(stripes, #FF0000, #FFFFFF, 8)\".");
     }
 }

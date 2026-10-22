@@ -35,22 +35,22 @@ public sealed class OrderObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.order: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.order: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var given = new[] { Action, Above, Below }.Count(x => x != null);
         if (given != 1)
-            throw new CommandException("object.order: indica esattamente uno tra 'action' (front, back, forward, backward), 'above' e 'below'. Esempio: {\"cmd\":\"object.order\",\"targets\":[\"o3\"],\"action\":\"front\"}.");
+            throw new CommandException("object.order: give exactly one of 'action' (front, back, forward, backward), 'above' and 'below'. Example: {\"cmd\":\"object.order\",\"targets\":[\"o3\"],\"action\":\"front\"}.");
         if (Action is not (null or "front" or "back" or "forward" or "backward"))
-            throw new CommandException($"object.order: action '{Action}' non valida. Valori: \"front\", \"back\", \"forward\", \"backward\".");
+            throw new CommandException($"object.order: action '{Action}' is not valid. Values: \"front\", \"back\", \"forward\", \"backward\".");
 
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         _ids = objs.Select(o => o.Id).ToList();
         SceneObject? reference = Above != null ? doc.Find(Above) : Below != null ? doc.Find(Below) : null;
         if (reference != null && objs.Contains(reference))
-            throw new CommandException($"object.order: '{reference.Name ?? reference.Id}' e' tra gli oggetti da spostare: non puo' essere il proprio riferimento.");
+            throw new CommandException($"object.order: '{reference.Name ?? reference.Id}' is among the objects to move: it cannot be its own reference.");
 
         var byContainer = objs.GroupBy(o => doc.ContainerOf(o)!).ToList();
         if (reference != null && byContainer.Any(g => !ReferenceEquals(g.Key, doc.ContainerOf(reference))))
-            throw new CommandException("object.order: con 'above' e 'below' gli oggetti devono stare allo stesso livello del riferimento (stesso layer o stesso gruppo).");
+            throw new CommandException("object.order: with 'above' and 'below' the objects must be at the same level as the reference (same layer or same group).");
 
         _old = byContainer.Select(g => (g.Key, g.Key.ToList())).ToList();
         foreach (var g in byContainer)
@@ -112,11 +112,11 @@ public sealed class AlignObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.align: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\",\"o2\"].");
+        if (Targets.Count == 0) throw new CommandException("object.align: 'targets' is empty. Pass ids or names, e.g. [\"o1\",\"o2\"].");
         if (X is null && Y is null)
-            throw new CommandException("object.align: indica 'x' (left, center, right) e/o 'y' (top, middle, bottom). Esempio: {\"cmd\":\"object.align\",\"targets\":[\"a\",\"b\"],\"x\":\"center\"}.");
-        if (X is not (null or "left" or "center" or "right")) throw new CommandException($"object.align: x '{X}' non valido. Valori: \"left\", \"center\", \"right\".");
-        if (Y is not (null or "top" or "middle" or "bottom")) throw new CommandException($"object.align: y '{Y}' non valido. Valori: \"top\", \"middle\", \"bottom\".");
+            throw new CommandException("object.align: give 'x' (left, center, right) and/or 'y' (top, middle, bottom). Example: {\"cmd\":\"object.align\",\"targets\":[\"a\",\"b\"],\"x\":\"center\"}.");
+        if (X is not (null or "left" or "center" or "right")) throw new CommandException($"object.align: x '{X}' is not valid. Values: \"left\", \"center\", \"right\".");
+        if (Y is not (null or "top" or "middle" or "bottom")) throw new CommandException($"object.align: y '{Y}' is not valid. Values: \"top\", \"middle\", \"bottom\".");
 
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         var boxes = objs.Select(doc.PageBounds).ToList();
@@ -132,7 +132,7 @@ public sealed class AlignObjects : Command
         else
         {
             var r = doc.Find(to);
-            if (objs.Contains(r)) throw new CommandException($"object.align: '{to}' e' tra gli oggetti da allineare: non puo' essere il proprio riferimento.");
+            if (objs.Contains(r)) throw new CommandException($"object.align: '{to}' is among the objects to align: it cannot be its own reference.");
             reference = doc.PageBounds(r);
         }
 
@@ -182,18 +182,18 @@ public sealed class DistributeObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.distribute: 'targets' e' vuoto. Passa id o nomi di almeno 3 oggetti.");
+        if (Targets.Count == 0) throw new CommandException("object.distribute: 'targets' is empty. Pass the ids or names of at least 3 objects.");
         if (Axis is not ("x" or "y"))
-            throw new CommandException("object.distribute: 'axis' deve essere \"x\" (in orizzontale) o \"y\" (in verticale). Esempio: {\"cmd\":\"object.distribute\",\"targets\":[\"a\",\"b\",\"c\"],\"axis\":\"x\"}.");
+            throw new CommandException("object.distribute: 'axis' must be \"x\" (horizontal) or \"y\" (vertical). Example: {\"cmd\":\"object.distribute\",\"targets\":[\"a\",\"b\",\"c\"],\"axis\":\"x\"}.");
         var mode = Mode ?? "gaps";
-        if (mode is not ("gaps" or "centers")) throw new CommandException($"object.distribute: mode '{Mode}' non valido. Valori: \"gaps\", \"centers\".");
-        if (Gap != null && mode != "gaps") throw new CommandException("object.distribute: 'gap' si usa solo con mode \"gaps\".");
+        if (mode is not ("gaps" or "centers")) throw new CommandException($"object.distribute: mode '{Mode}' is not valid. Values: \"gaps\", \"centers\".");
+        if (Gap != null && mode != "gaps") throw new CommandException("object.distribute: 'gap' is only used with mode \"gaps\".");
 
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.Count < (Gap != null ? 2 : 3))
             throw new CommandException(Gap != null
-                ? "object.distribute: servono almeno 2 oggetti."
-                : "object.distribute: servono almeno 3 oggetti (con 'gap' esplicito bastano 2).");
+                ? "object.distribute: at least 2 objects are needed."
+                : "object.distribute: at least 3 objects are needed (2 are enough with an explicit 'gap').");
 
         bool horizontal = Axis == "x";
         // (inizio, fine) di ogni oggetto sull'asse, in ordine di posizione

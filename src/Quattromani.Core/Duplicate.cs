@@ -18,7 +18,7 @@ public sealed class DuplicateObjects : Command
         var fresh = _placed.Count == 0;
         if (fresh)
         {
-            if (Targets.Count == 0) throw new CommandException("object.duplicate: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+            if (Targets.Count == 0) throw new CommandException("object.duplicate: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
             var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
             // Se un gruppo e un suo figlio sono entrambi indicati, basta duplicare il gruppo.
             objs = objs.Where(o => !objs.Any(p => p != o && Document.SelfAndDescendants(p).Contains(o))).ToList();
@@ -55,7 +55,7 @@ public sealed class PasteObjects : Command
         var fresh = _pasted.Count == 0;
         if (fresh)
         {
-            if (string.IsNullOrWhiteSpace(Data)) throw new CommandException("object.paste: 'data' e' vuoto.");
+            if (string.IsNullOrWhiteSpace(Data)) throw new CommandException("object.paste: 'data' is empty.");
             _pasted = DocumentFile.ImportObjects(Data, doc);
         }
 

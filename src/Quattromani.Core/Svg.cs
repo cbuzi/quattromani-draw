@@ -267,9 +267,9 @@ public static class SvgFile
             using var reader = XmlReader.Create(new StringReader(svg), new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null });
             xml = XDocument.Load(reader);
         }
-        catch (XmlException ex) { throw new CommandException($"svg.import: il file non e' un XML/SVG valido ({ex.Message})."); }
+        catch (XmlException ex) { throw new CommandException($"svg.import: the file is not valid XML/SVG ({ex.Message})."); }
         if (xml.Root is not { } root || root.Name.LocalName != "svg")
-            throw new CommandException("svg.import: l'elemento radice deve essere <svg>.");
+            throw new CommandException("svg.import: the root element must be <svg>.");
 
         var importer = new Importer(doc);
         var group = importer.Run(root, name);
@@ -336,7 +336,7 @@ public static class SvgFile
             var st = Inherit(new St(), Props(root));
             foreach (var e in root.Elements()) Visit(e, st, kids);
             if (kids.Count == 0)
-                throw new CommandException("svg.import: nessuna forma da importare (l'SVG e' vuoto o usa solo elementi non supportati come clip, maschere o filtri).");
+                throw new CommandException("svg.import: nothing to import (the SVG is empty or uses only unsupported elements such as clips, masks or filters).");
 
             var rootTransform = ParseTransform(root.Attribute("transform")?.Value) * m;
             foreach (var k in kids) k.Transform *= rootTransform;
@@ -400,11 +400,11 @@ public static class SvgFile
             if (V("font-weight") is { } fw) s = s with { Bold = fw is "bold" or "bolder" || int.TryParse(fw, out var n) && n >= 600 };
             if (V("font-style") is { } fst) s = s with { Italic = fst is "italic" or "oblique" };
             if (V("text-anchor") is { } ta) s = s with { Anchor = ta };
-            if (V("fill-rule") == "evenodd" || V("clip-rule") == "evenodd") Note("fill-rule evenodd non e' supportato: i buchi possono risultare riempiti");
-            if (V("stroke-dasharray") is { } da && da != "none") Note("tratteggi (stroke-dasharray) ignorati");
-            if (V("stroke-linecap") is "round" or "square" || V("stroke-linejoin") is "round" or "bevel") Note("estremita' e giunzioni del tratto (linecap, linejoin) ignorate");
+            if (V("fill-rule") == "evenodd" || V("clip-rule") == "evenodd") Note("fill-rule evenodd is not supported: holes may come out filled");
+            if (V("stroke-dasharray") is { } da && da != "none") Note("dashes (stroke-dasharray) ignored");
+            if (V("stroke-linecap") is "round" or "square" || V("stroke-linejoin") is "round" or "bevel") Note("stroke caps and joins (linecap, linejoin) ignored");
             foreach (var unsupported in new[] { "clip-path", "mask", "filter" })
-                if (V(unsupported) is { } v && v != "none") Note($"{unsupported} ignorato");
+                if (V(unsupported) is { } v && v != "none") Note($"{unsupported} ignored");
             return s;
         }
 
@@ -487,7 +487,7 @@ public static class SvgFile
             }
             catch (Exception ex) when (ex is FormatException or ArgumentOutOfRangeException or IndexOutOfRangeException or OverflowException)
             {
-                Note($"colore '{raw}' non riconosciuto, ignorato");
+                Note($"color '{raw}' not recognized, ignored");
                 return null;
             }
             int R(double v) => (int)Math.Round(Math.Clamp(v, 0, 255));
@@ -508,10 +508,10 @@ public static class SvgFile
                     // Un motivo si approssima col suo colore in primo piano (l'ultimo elemento disegnato).
                     if (el.Name.LocalName == "pattern" && el.Elements().LastOrDefault() is { } fg && Props(fg).GetValueOrDefault("fill") is { } fgFill)
                     {
-                        Note("riempimenti a motivo (<pattern>) approssimati con un colore pieno");
+                        Note("pattern fills (<pattern>) approximated with a solid color");
                         return Color(fgFill, alpha);
                     }
-                    Note($"riempimenti con <{el.Name.LocalName}> non supportati, ignorati");
+                    Note($"fills with <{el.Name.LocalName}> are not supported and were ignored");
                 }
                 raw = m.Success ? m.Groups[2].Value : "none"; // colore di riserva dopo url(...)
             }
@@ -702,7 +702,7 @@ public static class SvgFile
             }
             catch (CommandException)
             {
-                Note("un path con dati non validi e' stato saltato");
+                Note("a path with invalid data was skipped");
                 return null;
             }
         }
@@ -718,7 +718,7 @@ public static class SvgFile
 
         SceneObject? MakeText(XElement e, Dictionary<string, string> p, St st)
         {
-            if (doc.TextEngine is not { } engine) { Note("testi saltati: il motore dei font non e' disponibile"); return null; }
+            if (doc.TextEngine is not { } engine) { Note("texts skipped: the font engine is not available"); return null; }
 
             var lines = new List<string>();
             var cur = new StringBuilder();
@@ -766,7 +766,7 @@ public static class SvgFile
             var href = p.GetValueOrDefault("href");
             if (href is null || !href.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
-                Note("immagini esterne (non incorporate come data URI) non importate");
+                Note("external images (not embedded as data URIs) were not imported");
                 return null;
             }
             var comma = href.IndexOf(',');
@@ -774,7 +774,7 @@ public static class SvgFile
             byte[] data;
             try { data = Convert.FromBase64String(href[(comma + 1)..].Trim()); }
             catch (FormatException) { return null; }
-            if (probe(data) is not { Width: > 0, Height: > 0 } size) { Note("un'immagine incorporata non e' leggibile ed e' stata saltata"); return null; }
+            if (probe(data) is not { Width: > 0, Height: > 0 } size) { Note("an embedded image is not readable and was skipped"); return null; }
 
             double w = Len(p.GetValueOrDefault("width"), _vw) ?? 0, h = Len(p.GetValueOrDefault("height"), _vh) ?? 0;
             if (w <= 0 && h <= 0) (w, h) = (size.Width, size.Height);
@@ -828,25 +828,25 @@ public sealed class ImportSvg : Command
         {
             const string Example = "{\"cmd\":\"svg.import\",\"src\":\"/Users/me/logo.svg\",\"name\":\"logo\",\"x\":20,\"y\":20,\"width\":200}";
             if (string.IsNullOrWhiteSpace(Src) == string.IsNullOrWhiteSpace(Svg))
-                throw new CommandException($"svg.import: indica 'src' (percorso assoluto di un file .svg) oppure 'svg' (il testo SVG), non entrambi ne' nessuno. Esempio: {Example}.");
+                throw new CommandException($"svg.import: give either 'src' (absolute path of an .svg file) or 'svg' (the SVG text), not both and not neither. Example: {Example}.");
             string text;
             if (!string.IsNullOrWhiteSpace(Src))
             {
                 if (!Path.IsPathFullyQualified(Src))
-                    throw new CommandException($"svg.import: 'src' deve essere un percorso assoluto (es. \"/Users/me/logo.svg\"); ricevuto '{Src}'.");
-                if (!File.Exists(Src)) throw new CommandException($"svg.import: file non trovato: {Src}");
-                if (new FileInfo(Src).Length > MaxBytes) throw new CommandException($"svg.import: il file supera {MaxBytes / 1024 / 1024} MB.");
+                    throw new CommandException($"svg.import: 'src' must be an absolute path (e.g. \"/Users/me/logo.svg\"); got '{Src}'.");
+                if (!File.Exists(Src)) throw new CommandException($"svg.import: file not found: {Src}");
+                if (new FileInfo(Src).Length > MaxBytes) throw new CommandException($"svg.import: the file exceeds {MaxBytes / 1024 / 1024} MB.");
                 try { text = File.ReadAllText(Src); }
-                catch (IOException ex) { throw new CommandException($"svg.import: impossibile leggere {Src}: {ex.Message}"); }
-                catch (UnauthorizedAccessException ex) { throw new CommandException($"svg.import: impossibile leggere {Src}: {ex.Message}"); }
+                catch (IOException ex) { throw new CommandException($"svg.import: cannot read {Src}: {ex.Message}"); }
+                catch (UnauthorizedAccessException ex) { throw new CommandException($"svg.import: cannot read {Src}: {ex.Message}"); }
             }
             else
             {
-                if (Svg!.Length > MaxBytes) throw new CommandException($"svg.import: il testo SVG supera {MaxBytes / 1024 / 1024} MB.");
+                if (Svg!.Length > MaxBytes) throw new CommandException($"svg.import: the SVG text exceeds {MaxBytes / 1024 / 1024} MB.");
                 text = Svg;
             }
-            if (Width is <= 0 || Height is <= 0) throw new CommandException("svg.import: 'width' e 'height' devono essere > 0.");
-            if (Rel != null && (X != null || Y != null)) throw new CommandException("svg.import: con 'rel' la posizione viene calcolata: togli x e y.");
+            if (Width is <= 0 || Height is <= 0) throw new CommandException("svg.import: 'width' and 'height' must be > 0.");
+            if (Rel != null && (X != null || Y != null)) throw new CommandException("svg.import: with 'rel' the position is computed: remove x and y.");
 
             var (group, notes) = SvgFile.Build(doc, text, Name ?? (Src is null ? null : Path.GetFileNameWithoutExtension(Src)));
             var box = group.Source;

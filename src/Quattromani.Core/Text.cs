@@ -61,7 +61,7 @@ public sealed class TextObject : SceneObject
     /// <summary>Reimpagina il testo tenendo fermo l'angolo in alto a sinistra; un eventuale stiramento viene azzerato.</summary>
     internal void Relayout(Document doc)
     {
-        var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile: il testo non si puo' impaginare.");
+        var engine = doc.TextEngine ?? throw new CommandException("The font engine is not available: the text cannot be laid out.");
         var layout = engine.Layout(Style, Text, WrapWidth);
         Lines = layout.Lines;
         Source = new Box(X, Y, layout.Width, layout.Height);
@@ -76,12 +76,12 @@ public sealed class TextObject : SceneObject
             var engine = doc.TextEngine;
             if (engine != null && !engine.Families.Contains(family, StringComparer.OrdinalIgnoreCase))
                 throw new CommandException(
-                    $"Il font '{family}' non e' disponibile su questo computer. Chiama list_fonts per l'elenco (es. {string.Join(", ", engine.Families.Take(5))}).");
+                    $"The font '{family}' is not available on this computer. Call list_fonts for the list (e.g. {string.Join(", ", engine.Families.Take(5))}).");
         }
-        if (size is { } s && (s <= 0 || s > 2000 || double.IsNaN(s))) throw new CommandException("fontSize deve essere tra 0 e 2000.");
-        if (align is not (null or "left" or "center" or "right")) throw new CommandException($"align '{align}' non valido. Valori: \"left\", \"center\", \"right\".");
-        if (lineHeight is { } l && (l < 0.3 || l > 5)) throw new CommandException("lineHeight (moltiplicatore dell'interlinea) deve essere tra 0.3 e 5.");
-        if (wrap is { } w && (w < 0 || double.IsNaN(w))) throw new CommandException("width (larghezza per l'a capo) non puo' essere negativa.");
+        if (size is { } s && (s <= 0 || s > 2000 || double.IsNaN(s))) throw new CommandException("fontSize must be between 0 and 2000.");
+        if (align is not (null or "left" or "center" or "right")) throw new CommandException($"align '{align}' is not valid. Values: \"left\", \"center\", \"right\".");
+        if (lineHeight is { } l && (l < 0.3 || l > 5)) throw new CommandException("lineHeight (line spacing multiplier) must be between 0.3 and 5.");
+        if (wrap is { } w && (w < 0 || double.IsNaN(w))) throw new CommandException("width (wrapping width) cannot be negative.");
     }
 }
 
@@ -108,11 +108,11 @@ public sealed class SetText : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("text.set: 'targets' e' vuoto. Passa id o nomi di testi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("text.set: 'targets' is empty. Pass the ids or names of texts, e.g. [\"o1\"].");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not TextObject) is { } other)
-            throw new CommandException($"text.set: '{other.Name ?? other.Id}' e' un {other.Type}, non un testo.");
-        if (Text is { Length: 0 }) throw new CommandException("text.set: 'text' non puo' essere vuoto (per eliminare il testo usa object.delete).");
+            throw new CommandException($"text.set: '{other.Name ?? other.Id}' is a {other.Type}, not a text.");
+        if (Text is { Length: 0 }) throw new CommandException("text.set: 'text' cannot be empty (to remove the text use object.delete).");
         TextObject.Validate(doc, FontFamily, FontSize, Align, LineHeight, Width);
 
         _old = objs.Cast<TextObject>().Select(t => new Snapshot(t, t.Text, t.FontFamily, t.FontSize, t.Bold, t.Italic, t.Align,

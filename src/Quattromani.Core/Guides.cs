@@ -16,11 +16,11 @@ public abstract class GuideCommand : Command
     [JsonIgnore] public override IEnumerable<string> AffectedIds => [];
 
     protected static string CheckAxis(string cmd, string axis) =>
-        axis is "x" or "y" ? axis : throw new CommandException($"{cmd}: 'axis' deve essere \"x\" (linea verticale) o \"y\" (linea orizzontale), non '{axis}'.");
+        axis is "x" or "y" ? axis : throw new CommandException($"{cmd}: 'axis' must be \"x\" (vertical line) or \"y\" (horizontal line), not '{axis}'.");
 
     protected static void CheckPosition(string cmd, string name, double v)
     {
-        if (!double.IsFinite(v) || Math.Abs(v) > 1e6) throw new CommandException($"{cmd}: '{name}' non valida ({v}).");
+        if (!double.IsFinite(v) || Math.Abs(v) > 1e6) throw new CommandException($"{cmd}: '{name}' is not valid ({v}).");
     }
 
     protected abstract void Change(string cmd, List<Guide> guides);
@@ -53,7 +53,7 @@ public sealed class AddGuide : GuideCommand
     {
         var axis = CheckAxis(cmd, Axis);
         CheckPosition(cmd, "position", Position);
-        if (guides.Any(g => g.Is(axis, Position))) throw new CommandException($"{cmd}: esiste gia' una guida {axis} = {Position}.");
+        if (guides.Any(g => g.Is(axis, Position))) throw new CommandException($"{cmd}: a guide {axis} = {Position} already exists.");
         guides.Add(new Guide(axis, Position));
     }
 }
@@ -71,8 +71,8 @@ public sealed class MoveGuide : GuideCommand
         var axis = CheckAxis(cmd, Axis);
         CheckPosition(cmd, "to", To);
         var i = guides.FindIndex(g => g.Is(axis, From));
-        if (i < 0) throw new CommandException($"{cmd}: non c'e' nessuna guida {axis} = {From}. Guide presenti: {Describe(guides)}.");
-        if (guides.Any(g => g.Is(axis, To)) && Math.Abs(From - To) >= 1e-6) throw new CommandException($"{cmd}: esiste gia' una guida {axis} = {To}.");
+        if (i < 0) throw new CommandException($"{cmd}: there is no guide {axis} = {From}. Guides: {Describe(guides)}.");
+        if (guides.Any(g => g.Is(axis, To)) && Math.Abs(From - To) >= 1e-6) throw new CommandException($"{cmd}: a guide {axis} = {To} already exists.");
         guides[i] = new Guide(axis, To);
     }
 
@@ -91,6 +91,6 @@ public sealed class DeleteGuide : GuideCommand
         if (Axis == null) { guides.Clear(); return; }
         var axis = CheckAxis(cmd, Axis);
         if (guides.RemoveAll(g => g.Is(axis, Position)) == 0)
-            throw new CommandException($"{cmd}: non c'e' nessuna guida {axis} = {Position}. Guide presenti: {MoveGuide.Describe(guides)}.");
+            throw new CommandException($"{cmd}: there is no guide {axis} = {Position}. Guides: {MoveGuide.Describe(guides)}.");
     }
 }

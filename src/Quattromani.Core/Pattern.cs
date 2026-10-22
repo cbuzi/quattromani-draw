@@ -20,27 +20,27 @@ public static partial class Pattern
     private static partial Regex ColorRegex();
 
     const string Syntax =
-        "Motivi: \"pattern(stripes, #FF0000, #FFFFFF, 8)\" = tipo (stripes, dots, checker, grid), colore del motivo, colore dello sfondo, " +
-        "passo in unita' documento e angolo opzionale in gradi (es. \"pattern(dots, #1E3A8A, #DBEAFE, 12, 30)\").";
+        "Patterns: \"pattern(stripes, #FF0000, #FFFFFF, 8)\" = kind (stripes, dots, checker, grid), pattern color, background color, " +
+        "step in document units and optional angle in degrees (e.g. \"pattern(dots, #1E3A8A, #DBEAFE, 12, 30)\").";
 
     static CommandException Error(string field, string message) => new($"'{field}': {message} {Syntax}");
 
     public static PatternSpec Parse(string value, string field)
     {
         var s = value.Trim();
-        if (!IsPattern(s) || !s.EndsWith(')')) throw Error(field, $"motivo '{value}' non valido.");
+        if (!IsPattern(s) || !s.EndsWith(')')) throw Error(field, $"pattern '{value}' is not valid.");
         var parts = s[(s.IndexOf('(') + 1)..^1].Split(',').Select(p => p.Trim()).ToList();
-        if (parts.Count is < 4 or > 5) throw Error(field, $"servono 4 o 5 valori (trovati {parts.Count}).");
+        if (parts.Count is < 4 or > 5) throw Error(field, $"4 or 5 values are needed (found {parts.Count}).");
 
         var kind = parts[0].ToLowerInvariant();
-        if (!Kinds.Contains(kind)) throw Error(field, $"tipo '{parts[0]}' sconosciuto (valori: {string.Join(", ", Kinds)}).");
+        if (!Kinds.Contains(kind)) throw Error(field, $"unknown type '{parts[0]}' (values: {string.Join(", ", Kinds)}).");
         foreach (var c in parts.Skip(1).Take(2))
-            if (!ColorRegex().IsMatch(c)) throw Error(field, $"colore '{c}' non valido: usa #RRGGBB o #RRGGBBAA (con alfa 00 lo sfondo e' trasparente).");
+            if (!ColorRegex().IsMatch(c)) throw Error(field, $"color '{c}' is not valid: use #RRGGBB or #RRGGBBAA (with alpha 00 the background is transparent).");
         if (!double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var size) || size <= 0 || size > 1000)
-            throw Error(field, $"passo '{parts[3]}' non valido: un numero tra 0 e 1000.");
+            throw Error(field, $"step '{parts[3]}' is not valid: a number between 0 and 1000.");
         var angle = 0.0;
         if (parts.Count == 5 && (!double.TryParse(parts[4].Replace("deg", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out angle) || double.IsNaN(angle)))
-            throw Error(field, $"angolo '{parts[4]}' non valido.");
+            throw Error(field, $"angle '{parts[4]}' is not valid.");
         return new PatternSpec(kind, parts[1].ToUpperInvariant(), parts[2].ToUpperInvariant(), size, angle);
     }
 

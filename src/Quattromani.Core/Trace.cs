@@ -249,14 +249,14 @@ public sealed class TraceImage : Command
         if (_obj == null)
         {
             if ((KeepOriginal ? doc.Find(Target) : doc.FindEditable(Target)) is not ImageObject img)
-                throw new CommandException($"image.trace: '{Target}' non e' un'immagine. Passa l'id o il nome di un'immagine importata.");
-            if (Threshold is < 1 or > 255) throw new CommandException("image.trace: 'threshold' deve essere tra 1 e 255.");
-            if (MinArea < 0 || !double.IsFinite(MinArea)) throw new CommandException("image.trace: 'minArea' deve essere >= 0.");
-            if (!(Smooth >= 0.2 && Smooth <= 5)) throw new CommandException("image.trace: 'smooth' deve essere tra 0.2 e 5.");
+                throw new CommandException($"image.trace: '{Target}' is not an image. Pass the id or name of an imported image.");
+            if (Threshold is < 1 or > 255) throw new CommandException("image.trace: 'threshold' must be between 1 and 255.");
+            if (MinArea < 0 || !double.IsFinite(MinArea)) throw new CommandException("image.trace: 'minArea' must be >= 0.");
+            if (!(Smooth >= 0.2 && Smooth <= 5)) throw new CommandException("image.trace: 'smooth' must be between 0.2 and 5.");
             var fill = Fill is null ? "#000000" : Document.ParseColor(Fill, "fill");
-            if (fill is null) throw new CommandException("image.trace: 'fill' non puo' essere \"none\": il risultato sarebbe invisibile.");
-            var decode = doc.ImagePixels ?? throw new CommandException("Il decodificatore di immagini non e' disponibile.");
-            var px = decode(img.Data, MaxSide) ?? throw new CommandException("image.trace: l'immagine non si puo' leggere.");
+            if (fill is null) throw new CommandException("image.trace: 'fill' cannot be \"none\": the result would be invisible.");
+            var decode = doc.ImagePixels ?? throw new CommandException("The image decoder is not available.");
+            var px = decode(img.Data, MaxSide) ?? throw new CommandException("image.trace: the image cannot be read.");
 
             // Pieno = opaco e scuro (o chiaro, con invert).
             var mask = new bool[px.Width * px.Height];
@@ -269,7 +269,7 @@ public sealed class TraceImage : Command
 
             var segs = ImageTrace.Trace(mask, px.Width, px.Height, MinArea, Smooth);
             if (segs.Count == 0)
-                throw new CommandException("image.trace: non ho trovato nessuna forma con questa soglia. Prova a cambiare 'threshold' o a usare \"invert\":true.");
+                throw new CommandException("image.trace: no shape found with this threshold. Try changing 'threshold' or using \"invert\":true.");
 
             // Dai pixel allo spazio locale dell'immagine (che ha la sua trasformazione).
             double sx = img.Width / px.Width, sy = img.Height / px.Height;

@@ -36,12 +36,12 @@ public sealed class Placement
             .Where(r => r.Item2 != null).ToList();
         if (given.Count != 1)
             throw new CommandException(
-                $"rel: indica esattamente un riferimento tra inside, rightOf, leftOf, above, below, alignTo (ne ho trovati {given.Count}). Esempio: {{\"inside\":\"cielo\",\"anchor\":\"top-right\",\"margin\":20}}.");
+                $"rel: give exactly one reference among inside, rightOf, leftOf, above, below, alignTo (found {given.Count}). Example: {{\"inside\":\"sky\",\"anchor\":\"top-right\",\"margin\":20}}.");
         var (kind, refName) = given[0];
 
         var reference = doc.Find(refName!);
         if (exclude != null && exclude.Contains(reference))
-            throw new CommandException($"rel: '{refName}' e' tra gli oggetti da posizionare: non puo' essere il proprio riferimento.");
+            throw new CommandException($"rel: '{refName}' is among the objects to place: it cannot be its own reference.");
         var rb = doc.PageBounds(reference);
 
         // Anchor di default e direzione del margine per ogni tipo di riferimento.
@@ -60,7 +60,7 @@ public sealed class Placement
         string refAnchorName;
         if (kind == "inside")
         {
-            if (RefAnchor != null) throw new CommandException("rel: con 'inside' usa solo 'anchor' (il punto dell'oggetto che va a filo del riferimento); 'refAnchor' serve con 'alignTo'.");
+            if (RefAnchor != null) throw new CommandException("rel: with 'inside' use only 'anchor' (the point of the object that sits flush with the reference); 'refAnchor' is for 'alignTo'.");
             refAnchorName = Anchor ?? defAnchor;
         }
         else refAnchorName = RefAnchor ?? (kind == "alignTo" ? Anchor ?? defAnchor : defRef);
@@ -91,7 +91,7 @@ public sealed class PlaceObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.place: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.place: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
 
         var boxes = objs.Select(doc.PageBounds).ToList();

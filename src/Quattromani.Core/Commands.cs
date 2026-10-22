@@ -113,26 +113,26 @@ public sealed class CreateShape : Command
             {
                 case "rectangle" or "ellipse":
                     if (Width <= 0 || Height <= 0)
-                        throw new CommandException("shape.create: 'width' e 'height' devono essere > 0.");
+                        throw new CommandException("shape.create: 'width' and 'height' must be > 0.");
                     obj = Type == "ellipse" ? new EllipseObject() : new RectangleObject();
                     obj.X = X; obj.Y = Y; obj.Width = Width; obj.Height = Height;
                     break;
                 case "path":
                     if (string.IsNullOrWhiteSpace(D))
-                        throw new CommandException("shape.create: type 'path' richiede 'd' (dati SVG), es. \"M 0 0 L 100 0 L 50 80 Z\".");
+                        throw new CommandException("shape.create: type 'path' requires 'd' (SVG path data), e.g. \"M 0 0 L 100 0 L 50 80 Z\".");
                     if (X != 0 || Y != 0 || Width != 0 || Height != 0)
-                        throw new CommandException("shape.create: type 'path' prende la posizione da 'd': togli x, y, width e height.");
+                        throw new CommandException("shape.create: type 'path' takes its position from 'd': remove x, y, width and height.");
                     var segs = PathData.Parse(D);
                     var box = PathData.Bounds(segs)!.Value;
                     obj = new PathObject { Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
                     break;
                 case "text":
                     if (string.IsNullOrEmpty(Text))
-                        throw new CommandException("shape.create: type 'text' richiede 'text', es. {\"cmd\":\"shape.create\",\"type\":\"text\",\"text\":\"Ciao\",\"fontSize\":32,\"x\":10,\"y\":10}.");
+                        throw new CommandException("shape.create: type 'text' requires 'text', e.g. {\"cmd\":\"shape.create\",\"type\":\"text\",\"text\":\"Hello\",\"fontSize\":32,\"x\":10,\"y\":10}.");
                     if (Height != 0)
-                        throw new CommandException("shape.create: per il testo 'height' viene calcolata; 'width', se c'e', e' la larghezza per l'a capo automatico.");
+                        throw new CommandException("shape.create: for text 'height' is computed; 'width', if given, is the width for automatic line wrapping.");
                     TextObject.Validate(doc, FontFamily, FontSize, Align, LineHeight, Width);
-                    var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile: il testo non si puo' creare.");
+                    var engine = doc.TextEngine ?? throw new CommandException("The font engine is not available: the text cannot be created.");
                     var text = new TextObject
                     {
                         Text = Text, X = X, Y = Y,
@@ -147,12 +147,12 @@ public sealed class CreateShape : Command
                     obj = CreateImage(doc);
                     break;
                 default:
-                    throw new CommandException($"shape.create: type '{Type}' non supportato. Valori: \"rectangle\", \"ellipse\", \"path\", \"text\", \"image\".");
+                    throw new CommandException($"shape.create: type '{Type}' is not supported. Values: \"rectangle\", \"ellipse\", \"path\", \"text\", \"image\".");
             }
             if (Rel != null)
             {
                 if (Type != "path" && (X != 0 || Y != 0))
-                    throw new CommandException("shape.create: con 'rel' la posizione viene calcolata: togli x e y.");
+                    throw new CommandException("shape.create: with 'rel' the position is computed: remove x and y.");
                 var (dx, dy) = Rel.Resolve(doc, obj.Bounds);
                 if (obj is PathObject) obj.Transform = Matrix3x2.CreateTranslation((float)dx, (float)dy);
                 else { obj.X += dx; obj.Y += dy; }
@@ -176,35 +176,35 @@ public sealed class CreateShape : Command
 
     ImageObject CreateImage(Document doc)
     {
-        const string Example = "{\"cmd\":\"shape.create\",\"type\":\"image\",\"src\":\"/Users/me/foto.png\",\"width\":400}";
+        const string Example = "{\"cmd\":\"shape.create\",\"type\":\"image\",\"src\":\"/Users/me/photo.png\",\"width\":400}";
         if (string.IsNullOrWhiteSpace(Src))
-            throw new CommandException($"shape.create: type 'image' richiede 'src' (percorso assoluto di un file o data URI base64), es. {Example}.");
+            throw new CommandException($"shape.create: type 'image' requires 'src' (absolute file path or base64 data URI), e.g. {Example}.");
         if (Height < 0 || Width < 0)
-            throw new CommandException("shape.create: 'width' e 'height' devono essere > 0.");
-        var probe = doc.ImageProbe ?? throw new CommandException("Il decodificatore di immagini non e' disponibile: l'immagine non si puo' creare.");
+            throw new CommandException("shape.create: 'width' and 'height' must be > 0.");
+        var probe = doc.ImageProbe ?? throw new CommandException("The image decoder is not available: the image cannot be created.");
 
         byte[] data;
         if (Src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             var comma = Src.IndexOf(',');
             if (comma < 0 || !Src[..comma].EndsWith(";base64", StringComparison.OrdinalIgnoreCase))
-                throw new CommandException("shape.create: 'src' come data URI deve essere \"data:image/png;base64,...\".");
+                throw new CommandException("shape.create: 'src' as a data URI must be \"data:image/png;base64,...\".");
             try { data = Convert.FromBase64String(Src[(comma + 1)..]); }
-            catch (FormatException) { throw new CommandException("shape.create: il base64 di 'src' non e' valido."); }
+            catch (FormatException) { throw new CommandException("shape.create: the base64 in 'src' is not valid."); }
             Src = $"data:image (base64, {data.Length / 1024} KB)"; // il redo riusa l'oggetto: il dato non serve piu' nel comando
         }
         else
         {
             if (!Path.IsPathFullyQualified(Src))
-                throw new CommandException($"shape.create: 'src' deve essere un percorso assoluto (es. \"/Users/me/foto.png\") oppure un data URI; ricevuto '{Src}'.");
-            if (!File.Exists(Src)) throw new CommandException($"shape.create: file non trovato: {Src}");
-            if (new FileInfo(Src).Length > MaxImageBytes) throw new CommandException($"shape.create: il file supera {MaxImageBytes / 1024 / 1024} MB.");
+                throw new CommandException($"shape.create: 'src' must be an absolute path (e.g. \"/Users/me/photo.png\") or a data URI; got '{Src}'.");
+            if (!File.Exists(Src)) throw new CommandException($"shape.create: file not found: {Src}");
+            if (new FileInfo(Src).Length > MaxImageBytes) throw new CommandException($"shape.create: the file exceeds {MaxImageBytes / 1024 / 1024} MB.");
             try { data = File.ReadAllBytes(Src); }
-            catch (IOException ex) { throw new CommandException($"shape.create: impossibile leggere {Src}: {ex.Message}"); }
-            catch (UnauthorizedAccessException ex) { throw new CommandException($"shape.create: impossibile leggere {Src}: {ex.Message}"); }
+            catch (IOException ex) { throw new CommandException($"shape.create: cannot read {Src}: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { throw new CommandException($"shape.create: cannot read {Src}: {ex.Message}"); }
         }
-        if (data.Length > MaxImageBytes) throw new CommandException($"shape.create: l'immagine supera {MaxImageBytes / 1024 / 1024} MB.");
-        var size = probe(data) is { Width: > 0, Height: > 0 } sz ? sz : throw new CommandException("shape.create: 'src' non e' un'immagine leggibile. Formati: PNG, JPEG, GIF, WebP, BMP.");
+        if (data.Length > MaxImageBytes) throw new CommandException($"shape.create: the image exceeds {MaxImageBytes / 1024 / 1024} MB.");
+        var size = probe(data) is { Width: > 0, Height: > 0 } sz ? sz : throw new CommandException("shape.create: 'src' is not a readable image. Formats: PNG, JPEG, GIF, WebP, BMP.");
 
         // Dimensione nativa se non indicata; con una sola misura l'altra segue le proporzioni.
         double w = Width, h = Height;
@@ -228,7 +228,7 @@ public sealed class MoveObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.move: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.move: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, o.Transform)).ToList();
         _oldOnPath = [];
         foreach (var (obj, old) in _old)
@@ -274,7 +274,7 @@ public sealed class SetStyle : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.style: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.style: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
         var stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
         // Su un gruppo lo stile si applica a tutte le forme che contiene.
@@ -307,7 +307,7 @@ public sealed class DeleteObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.delete: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.delete: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         _removed = Targets.Select(t => doc.FindEditable(t)).Distinct()
             .Select(o => { var c = doc.ContainerOf(o)!; return (c, c.IndexOf(o), o); })
             .OrderBy(e => e.Item2)
@@ -341,9 +341,9 @@ public sealed class ResizeObject : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.resize: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        if (Width is null && Height is null) throw new CommandException("object.resize: indica almeno 'width' o 'height'.");
-        if (Width <= 0 || Height <= 0) throw new CommandException("object.resize: 'width' e 'height' devono essere > 0.");
+        if (Targets.Count == 0) throw new CommandException("object.resize: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
+        if (Width is null && Height is null) throw new CommandException("object.resize: give at least 'width' or 'height'.");
+        if (Width <= 0 || Height <= 0) throw new CommandException("object.resize: 'width' and 'height' must be > 0.");
         var (ax, ay) = Core.Anchor.Parse(Anchor);
 
         _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, new Box(o.X, o.Y, o.Width, o.Height))).ToList();
@@ -385,7 +385,7 @@ public sealed class RotateObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.rotate: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("object.rotate: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, o.Transform)).ToList();
         foreach (var (obj, old) in _old)
         {
@@ -416,11 +416,11 @@ public sealed class GroupObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.group: 'targets' e' vuoto. Passa gli id o i nomi da raggruppare, es. [\"o1\",\"o2\"].");
+        if (Targets.Count == 0) throw new CommandException("object.group: 'targets' is empty. Pass the ids or names to group, e.g. [\"o1\",\"o2\"].");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         var container = doc.ContainerOf(objs[0])!;
         if (objs.Any(o => doc.ContainerOf(o) != container))
-            throw new CommandException("object.group: gli oggetti devono stare allo stesso livello (stesso layer o stesso gruppo).");
+            throw new CommandException("object.group: the objects must be at the same level (same layer or same group).");
 
         _entries = objs.Select(o => (container.IndexOf(o), o)).OrderBy(e => e.Item1).ToList();
         if (_group == null)
@@ -457,10 +457,10 @@ public sealed class UngroupObjects : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("object.ungroup: 'targets' e' vuoto. Passa l'id o il nome di un gruppo.");
+        if (Targets.Count == 0) throw new CommandException("object.ungroup: 'targets' is empty. Pass the id or name of a group.");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not GroupObject) is { } notGroup)
-            throw new CommandException($"object.ungroup: '{notGroup.Name ?? notGroup.Id}' e' un {notGroup.Type}, non un gruppo.");
+            throw new CommandException($"object.ungroup: '{notGroup.Name ?? notGroup.Id}' is a {notGroup.Type}, not a group.");
 
         _done = [];
         foreach (var g in objs.Cast<GroupObject>())
@@ -510,13 +510,13 @@ public sealed class SetPath : Command
     {
         var o = doc.FindEditable(Target);
         if (o is not PathObject p)
-            throw new CommandException($"path.set: '{Target}' e' un {o.Type}, non un path (shape.toPath converte rettangoli ed ellissi in path).");
+            throw new CommandException($"path.set: '{Target}' is a {o.Type}, not a path (shape.toPath converts rectangles and ellipses to paths).");
         if (!doc.Pages.SelectMany(pg => pg.Layers).Any(l => l.Objects.Contains(p)))
-            throw new CommandException($"path.set: '{Target}' e' dentro un gruppo: separalo prima con object.ungroup.");
+            throw new CommandException($"path.set: '{Target}' is inside a group: ungroup it first with object.ungroup.");
         var segs = PathData.Parse(D);
         var box = PathData.Bounds(segs)!.Value;
         if (Kinds != null && Kinds.Any(c => c is not ('c' or 's' or 'y')))
-            throw new CommandException("path.set: 'kinds' puo' contenere solo 'c' (cuspide), 's' (liscio) e 'y' (simmetrico).");
+            throw new CommandException("path.set: 'kinds' may only contain 'c' (cusp), 's' (smooth) and 'y' (symmetric).");
         var kinds = Kinds != null && Kinds.Length == PathNodes.FromSegments(segs).Sum(sp => sp.Nodes.Count) ? Kinds : null;
 
         _obj = p;
@@ -551,14 +551,14 @@ public sealed class ConvertToPath : Command
 
     public override void Apply(Document doc)
     {
-        if (Targets.Count == 0) throw new CommandException("shape.toPath: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
+        if (Targets.Count == 0) throw new CommandException("shape.toPath: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is GroupObject) is { } g)
-            throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' e' un gruppo: separalo prima con object.ungroup.");
+            throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' is a group: ungroup it first with object.ungroup.");
         if (objs.FirstOrDefault(o => o is ImageObject) is { } img)
-            throw new CommandException($"shape.toPath: '{img.Name ?? img.Id}' e' un'immagine: le immagini non si convertono in path.");
+            throw new CommandException($"shape.toPath: '{img.Name ?? img.Id}' is an image: images cannot be converted to paths.");
         var convertible = objs.Where(o => o is RectangleObject or EllipseObject or TextObject).ToList();
-        if (convertible.Count == 0) throw new CommandException("shape.toPath: gli oggetti indicati sono gia' path.");
+        if (convertible.Count == 0) throw new CommandException("shape.toPath: the given objects are already paths.");
 
         if (_done.Count == 0)
             foreach (var o in convertible)
@@ -570,11 +570,11 @@ public sealed class ConvertToPath : Command
                     if (t.PathGlyphs != null) segs = PathData.Transform(t.PathGlyphs, t.Fit); // testo su tracciato: i glifi sono gia' disposti
                     else
                     {
-                        var engine = doc.TextEngine ?? throw new CommandException("Il motore dei font non e' disponibile.");
+                        var engine = doc.TextEngine ?? throw new CommandException("The font engine is not available.");
                         var outline = engine.Outline(t.Style, t.Lines);
                         segs = PathData.Transform(outline, Matrix3x2.CreateTranslation((float)t.Source.X, (float)t.Source.Y) * t.Fit);
                     }
-                    if (!segs.Any(s => s.Op is 'L' or 'C')) throw new CommandException("shape.toPath: il testo non contiene caratteri visibili.");
+                    if (!segs.Any(s => s.Op is 'L' or 'C')) throw new CommandException("shape.toPath: the text has no visible characters.");
                 }
                 else if (o is EllipseObject) segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);
                 else segs = PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
@@ -616,9 +616,9 @@ public sealed partial class RenameObject : Command
         if (string.IsNullOrEmpty(name)) name = null;
         if (name != null)
         {
-            if (name.Length > 80) throw new CommandException("object.rename: il nome puo' avere al massimo 80 caratteri.");
+            if (name.Length > 80) throw new CommandException("object.rename: the name can have at most 80 characters.");
             if (IdLike().IsMatch(name))
-                throw new CommandException($"object.rename: '{name}' assomiglia a un id (o1, o2...), che e' riservato: scegli un altro nome.");
+                throw new CommandException($"object.rename: '{name}' looks like an id (o1, o2...), which is reserved: choose another name.");
         }
         _obj = o;
         _old = o.Name;

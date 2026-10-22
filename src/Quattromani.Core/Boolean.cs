@@ -36,11 +36,11 @@ internal static class PolyBoolean
                 segs = PathData.Transform(p.Segments, p.Fit);
                 break;
             case TextObject:
-                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un testo: convertilo prima in curve con shape.toPath.");
+                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' is a text: convert it to curves first with shape.toPath.");
             case ImageObject:
-                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un'immagine: le immagini non si convertono in path e non entrano nelle operazioni booleane.");
+                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' is an image: images cannot be converted to paths and cannot take part in boolean operations.");
             default:
-                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' e' un {o.Type}: le operazioni booleane funzionano su rettangoli, ellissi e path (separa prima i gruppi con object.ungroup).");
+                throw new CommandException($"shape.boolean: '{o.Name ?? o.Id}' is a {o.Type}: boolean operations work on rectangles, ellipses and paths (ungroup groups first with object.ungroup).");
         }
         return FlattenSegments(PathData.Transform(segs, o.Transform));
     }
@@ -57,7 +57,7 @@ internal static class PolyBoolean
             foreach (var (x, y) in pts)
             {
                 if (Math.Abs(x) > MaxCoord || Math.Abs(y) > MaxCoord)
-                    throw new CommandException($"shape.boolean: coordinate troppo grandi (oltre {MaxCoord:0} unita').");
+                    throw new CommandException($"shape.boolean: coordinates too large (over {MaxCoord:0} units).");
                 var p = new P((long)Math.Round(x * Scale), (long)Math.Round(y * Scale));
                 if (ring.Count == 0 || ring[^1] != p) ring.Add(p);
             }
@@ -171,7 +171,7 @@ internal static class PolyBoolean
         }
 
         if ((long)pieces.Count * edges.Count > 1_000_000_000)
-            throw new CommandException("shape.boolean: le forme sono troppo complesse (troppi segmenti e incroci). Semplifica i path.");
+            throw new CommandException("shape.boolean: the shapes are too complex (too many segments and crossings). Simplify the paths.");
 
         // 4. Classifica ogni pezzo dai due lati; tiene quelli sul confine, orientati con l'interno a sinistra.
         var byOp = Enumerable.Range(0, operands.Count).Select(k => edges.Where(e => e.Op == k).ToArray()).ToArray();
@@ -367,12 +367,12 @@ public sealed class BooleanOp : Command
     public override void Apply(Document doc)
     {
         if (Op is not ("weld" or "intersect" or "subtract" or "trim"))
-            throw new CommandException($"shape.boolean: op '{Op}' non valida. Valori: \"weld\", \"intersect\", \"subtract\", \"trim\".");
+            throw new CommandException($"shape.boolean: op '{Op}' is not valid. Values: \"weld\", \"intersect\", \"subtract\", \"trim\".");
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
-        if (objs.Count < 2) throw new CommandException("shape.boolean: servono almeno 2 oggetti in 'targets'.");
+        if (objs.Count < 2) throw new CommandException("shape.boolean: at least 2 objects are needed in 'targets'.");
         var container = doc.ContainerOf(objs[0])!;
         if (objs.Any(o => doc.ContainerOf(o) != container))
-            throw new CommandException("shape.boolean: gli oggetti devono stare allo stesso livello (stesso layer o stesso gruppo).");
+            throw new CommandException("shape.boolean: the objects must be at the same level (same layer or same group).");
 
         var entries = objs.Select(o => (Index: container.IndexOf(o), Obj: o)).OrderBy(e => e.Index).ToList();
         if (_result == null)
@@ -386,7 +386,7 @@ public sealed class BooleanOp : Command
             };
             var rings = PolyBoolean.Compute(operands, inside);
             if (rings.Count == 0)
-                throw new CommandException($"shape.boolean: il risultato di '{Op}' e' vuoto (gli oggetti non si sovrappongono?).");
+                throw new CommandException($"shape.boolean: the result of '{Op}' is empty (do the objects overlap?).");
 
             var segs = PolyBoolean.ToSegments(rings);
             var box = PathData.Bounds(segs)!.Value;
