@@ -61,6 +61,7 @@ public static partial class DocumentFile
         public string? Fill { get; set; }
         public string? Stroke { get; set; }
         public double? StrokeWidth { get; set; }
+        public double? Radius { get; set; }
         public double[]? Dash { get; set; }
         public string? Cap { get; set; }
         public string? Join { get; set; }
@@ -117,6 +118,7 @@ public static partial class DocumentFile
         {
             Type = o.Type, Id = o.Id, Name = o.Name, X = o.X, Y = o.Y, Width = o.Width, Height = o.Height,
             Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth == 0 ? null : o.StrokeWidth,
+            Radius = o is RectangleObject { CornerRadius: > 0 } rr ? rr.CornerRadius : null,
             Dash = o.StrokeDash, Cap = o.StrokeCap == "butt" ? null : o.StrokeCap, Join = o.StrokeJoin == "miter" ? null : o.StrokeJoin, Opacity = o.Opacity == 1 ? null : o.Opacity,
             Hidden = o.Hidden ? true : null, Locked = o.Locked ? true : null,
             Transform = o.Transform == Matrix3x2.Identity ? null : [o.Transform.M11, o.Transform.M12, o.Transform.M21, o.Transform.M22, o.Transform.M31, o.Transform.M32],
@@ -253,7 +255,10 @@ public static partial class DocumentFile
         SceneObject obj;
         switch (d.Type)
         {
-            case "rectangle": obj = new RectangleObject(); break;
+            case "rectangle":
+                if (d.Radius is { } rad && !(double.IsFinite(rad) && rad >= 0)) throw new CommandException($"Object {label}: invalid 'radius'.");
+                obj = new RectangleObject { CornerRadius = d.Radius ?? 0 };
+                break;
             case "ellipse": obj = new EllipseObject(); break;
             case "image":
             {

@@ -168,6 +168,12 @@
                             </Button.Flyout>
                         </Button>
                     </StackPanel>
+                    <StackPanel x:Name="ShapeBar" Orientation="Horizontal" Spacing="6" IsVisible="False">
+                        <TextBlock x:Name="SidesLabel" Text="Sides" VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+                        <NumericUpDown x:Name="SidesBox" Width="120" Minimum="3" Maximum="100" Increment="1" FormatString="0" Value="5" VerticalAlignment="Center" ToolTip.Tip="Number of sides (polygon) or points (star)" />
+                        <TextBlock x:Name="DepthLabel" Text="Depth %" VerticalAlignment="Center" Opacity="0.6" FontSize="12" Margin="8,0,0,0" />
+                        <NumericUpDown x:Name="DepthBox" Width="120" Minimum="5" Maximum="95" Increment="5" FormatString="0" Value="50" VerticalAlignment="Center" ToolTip.Tip="Inner radius of the star, as a percentage of the outer one" />
+                    </StackPanel>
                     <StackPanel x:Name="NodeBar" Orientation="Horizontal" Spacing="4" IsVisible="False">
                         <Button x:Name="ToCurvesButton" Classes="bar" Content="To curves" ToolTip.Tip="Convert rectangles and ellipses to paths, so their nodes can be edited (Ctrl/Cmd+Q)" />
                         <Button x:Name="NodeLineButton" Classes="bar" Content="Line" ToolTip.Tip="Make the segments of the selected nodes straight" />
@@ -261,10 +267,26 @@
                     <Path Data="M3,12 A9,7 0 1 0 21,12 A9,7 0 1 0 3,12 Z" StrokeThickness="2" Width="24" Height="24" Stretch="None"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
+                <ToggleButton x:Name="PolygonTool" Classes="tool" ToolTip.Tip="Polygon (Y): drag a box; Shift = square. Sides in the top bar">
+                    <Path Data="M12,3 L20,7.5 L20,16.5 L12,21 L4,16.5 L4,7.5 Z" StrokeThickness="2" StrokeJoin="Round" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="StarTool" Classes="tool" ToolTip.Tip="Star (U): drag a box; Shift = square. Points and depth in the top bar">
+                    <Path Data="M12,3 L14.6,9.2 L21.3,9.7 L16.2,14 L17.8,20.6 L12,17 L6.2,20.6 L7.8,14 L2.7,9.7 L9.4,9.2 Z" StrokeThickness="1.8" StrokeJoin="Round" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="LineTool" Classes="tool" ToolTip.Tip="Line (L): drag from one end to the other; Shift = 15° steps">
+                    <Path Data="M5,19 L19,5" StrokeThickness="2" StrokeLineCap="Round" Width="24" Height="24" Stretch="None"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
                 <ToggleButton x:Name="FillTool" Classes="tool" ToolTip.Tip="Fill (G): drag across an object to draw a gradient; drag its handles to change it. Double-click the line to add a color, click a handle then a palette color to recolor it, Delete removes it. Shift = 15° steps">
                     <Path Data="M4,5 H20 V19 H4 Z M7.5,16.5 L16.5,7.5 M5.5,15 h4 v4 h-4 Z M14.5,5 h4 v4 h-4 Z"
                           StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="EyedropperTool" Classes="tool" ToolTip.Tip="Eyedropper (I): click an object to take its fill (right click or Alt = its stroke) and apply it to the selection">
+                    <Path Data="M20.7,5.3 L18.7,3.3 C18.3,2.9 17.7,2.9 17.3,3.3 L14,6.6 L12.7,5.3 L11.3,6.7 L12.6,8 L4,16.6 L4,20 L7.4,20 L16,11.4 L17.3,12.7 L18.7,11.3 L17.4,10 L20.7,6.7 C21.1,6.3 21.1,5.7 20.7,5.3 Z"
+                          StrokeThickness="1.5" StrokeJoin="Round" Width="24" Height="24" Stretch="None" Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
                 <ToggleButton x:Name="TextTool" Classes="tool" ToolTip.Tip="Text (T): click to type, drag to set a wrapping width. Double-click a text to edit it; Ctrl/Cmd+Enter or click outside to finish, Esc cancels">
                     <TextBlock Text="T" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -272,6 +294,11 @@
                 <ToggleButton x:Name="PenTool" Classes="tool" ToolTip.Tip="Pen (P): click = corner node, click and drag = smooth curve. Click the first node to close, double-click or Enter to finish, Backspace removes the last node, Esc cancels">
                     <Path Data="M12,21 L6,11 L8,3 L16,3 L18,11 Z M12,21 L12,13 M13.6,10 A1.6,1.6 0 1 0 10.4,10 A1.6,1.6 0 1 0 13.6,10 Z"
                           StrokeThickness="1.8" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
+                          Stroke="{Binding $parent[ToggleButton].Foreground}" />
+                </ToggleButton>
+                <ToggleButton x:Name="PencilTool" Classes="tool" ToolTip.Tip="Pencil (B): draw freehand; the stroke becomes a smooth editable curve">
+                    <Path Data="M4,20 L5,15 L16,4 L20,8 L9,19 Z M14,6 L18,10"
+                          StrokeThickness="1.6" Width="24" Height="24" Stretch="None" StrokeLineCap="Round" StrokeJoin="Round"
                           Stroke="{Binding $parent[ToggleButton].Foreground}" />
                 </ToggleButton>
             </StackPanel>
@@ -338,6 +365,10 @@
                     <TextBlock Classes="caption" Text="OPACITY (%)" Margin="0,6,0,0" />
                     <NumericUpDown x:Name="OpacityBox" Minimum="0" Maximum="100" Increment="5" FormatString="0" Value="100"
                                    ToolTip.Tip="Opacity of the whole object (fill and stroke together; for a group, all its content)" />
+                    <StackPanel x:Name="RadiusPanel" Spacing="8" IsVisible="False">
+                        <TextBlock Classes="caption" Text="CORNER RADIUS (px)" Margin="0,6,0,0" />
+                        <NumericUpDown x:Name="RadiusBox" Minimum="0" Maximum="10000" Increment="1" FormatString="0.##" Value="0" ToolTip.Tip="Roundness of the corners of the selected rectangles" />
+                    </StackPanel>
                 </StackPanel>
                 <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource PanelBorder}" />
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="16,10,10,4">

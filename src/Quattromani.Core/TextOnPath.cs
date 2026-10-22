@@ -23,7 +23,7 @@ static class TextOnPathLayout
         return o switch
         {
             PathObject p => PathData.Transform(p.Segments, p.Fit * world),
-            RectangleObject => PathData.Transform(PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height), world),
+            RectangleObject rect => PathData.Transform(rect.Outline(), world),
             EllipseObject => PathData.Transform(PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height), world),
             _ => null,
         };

@@ -12,12 +12,12 @@ sealed record TextInfo(List<TextLine> Lines, TextStyle Style);
 // Immutable copy of the objects: rendering runs on another thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
     string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
-    string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null, double Opacity = 1, double[]? Dash = null, string? Cap = null, string? Join = null)
+    string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null, double Opacity = 1, double[]? Dash = null, string? Cap = null, string? Join = null, double Radius = 0)
 {
     public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
     public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
 
-    public static Item From(SceneObject o) => Make(o) with { Opacity = o.Opacity, Dash = o.StrokeDash, Cap = o.StrokeCap, Join = o.StrokeJoin };
+    public static Item From(SceneObject o) => Make(o) with { Opacity = o.Opacity, Dash = o.StrokeDash, Cap = o.StrokeCap, Join = o.StrokeJoin, Radius = (o as RectangleObject)?.EffectiveRadius ?? 0 };
 
     static Item Make(SceneObject o) => o switch
     {
@@ -210,7 +210,10 @@ static class SceneRenderer
         {
             case Kind.Ellipse: clip.AddOval(r); break;
             case Kind.Path: clip.AddPath(BuildPath(it.Segments!, it.Fit)); break;
-            default: clip.AddRect(r); break;
+            default:
+                if (it.Radius > 0) clip.AddRoundRect(r, (float)it.Radius, (float)it.Radius);
+                else clip.AddRect(r);
+                break;
         }
 
         paint.Shader?.Dispose();
@@ -272,6 +275,7 @@ static class SceneRenderer
         }
         var r = SKRect.Create((float)it.X, (float)it.Y, (float)it.W, (float)it.H);
         if (it.Kind == Kind.Ellipse) canvas.DrawOval(r, paint);
+        else if (it.Radius > 0) canvas.DrawRoundRect(r, (float)it.Radius, (float)it.Radius, paint);
         else canvas.DrawRect(r, paint);
     }
 

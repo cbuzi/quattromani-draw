@@ -46,6 +46,7 @@ public static class Json
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 [JsonDerivedType(typeof(TraceImage), "image.trace")]
 [JsonDerivedType(typeof(ImportSvg), "svg.import")]
+[JsonDerivedType(typeof(SetCornerRadius), "rect.corner")]
 [JsonDerivedType(typeof(AddLayer), "layer.add")]
 [JsonDerivedType(typeof(SetLayer), "layer.set")]
 [JsonDerivedType(typeof(DeleteLayer), "layer.delete")]
@@ -85,6 +86,14 @@ public sealed class CreateShape : Command
     public string? Join { get; set; }
     /// <summary>0 (invisible) to 1 (opaque, default).</summary>
     public double? Opacity { get; set; }
+    /// <summary>Only for type "rectangle": corner radius in px.</summary>
+    public double? CornerRadius { get; set; }
+    /// <summary>Only for type "polygon": number of sides (3-100, default 5).</summary>
+    public int? Sides { get; set; }
+    /// <summary>Only for type "star": number of points (3-100, default 5).</summary>
+    public int? Points { get; set; }
+    /// <summary>Only for type "star": inner radius as a fraction of the outer one (0.05-0.95, default 0.5).</summary>
+    public double? InnerRatio { get; set; }
     /// <summary>Only for type "path": SVG data (M L H V C S Q T A Z, absolute or relative).</summary>
     public string? D { get; set; }
     /// <summary>Relative positioning to other objects, instead of x and y.</summary>
@@ -122,8 +131,26 @@ public sealed class CreateShape : Command
                 case "rectangle" or "ellipse":
                     if (Width <= 0 || Height <= 0)
                         throw new CommandException("shape.create: 'width' and 'height' must be > 0.");
-                    obj = Type == "ellipse" ? new EllipseObject() : new RectangleObject();
+                    if (CornerRadius != null && Type == "ellipse") throw new CommandException("shape.create: 'cornerRadius' only applies to rectangles.");
+                    if (CornerRadius is < 0) throw new CommandException("shape.create: 'cornerRadius' cannot be negative.");
+                    obj = Type == "ellipse" ? new EllipseObject() : new RectangleObject { CornerRadius = CornerRadius ?? 0 };
                     obj.X = X; obj.Y = Y; obj.Width = Width; obj.Height = Height;
+                    break;
+                case "line":
+                    if (Width == 0 && Height == 0)
+                        throw new CommandException("shape.create: type 'line' goes from (x, y) to (x + width, y + height): width and height cannot both be 0 (they may be negative).");
+                    obj = MakePath(doc, [new('M', X: X, Y: Y), new('L', X: X + Width, Y: Y + Height)]);
+                    break;
+                case "polygon" or "star":
+                    if (Width <= 0 || Height <= 0)
+                        throw new CommandException($"shape.create: type '{Type}' needs 'width' and 'height' > 0 (the box it fills).");
+                    if (Type == "polygon" && (Points != null || InnerRatio != null) || Type == "star" && Sides != null)
+                        throw new CommandException(Type == "polygon" ? "shape.create: a polygon takes 'sides' (not 'points' or 'innerRatio')." : "shape.create: a star takes 'points' and 'innerRatio' (not 'sides').");
+                    var count = (Type == "polygon" ? Sides : Points) ?? 5;
+                    var ratio = InnerRatio ?? 0.5;
+                    if (count is < 3 or > 100) throw new CommandException($"shape.create: '{(Type == "polygon" ? "sides" : "points")}' must be between 3 and 100.");
+                    if (!(ratio >= 0.05 && ratio <= 0.95)) throw new CommandException("shape.create: 'innerRatio' must be between 0.05 and 0.95.");
+                    obj = MakePath(doc, PathData.PolygonSegments(X, Y, Width, Height, count, Type == "star" ? ratio : 1));
                     break;
                 case "path":
                     if (string.IsNullOrWhiteSpace(D))
@@ -155,7 +182,7 @@ public sealed class CreateShape : Command
                     obj = CreateImage(doc);
                     break;
                 default:
-                    throw new CommandException($"shape.create: type '{Type}' is not supported. Values: \"rectangle\", \"ellipse\", \"path\", \"text\", \"image\".");
+                    throw new CommandException($"shape.create: type '{Type}' is not supported. Values: \"rectangle\", \"ellipse\", \"line\", \"polygon\", \"star\", \"path\", \"text\", \"image\".");
             }
             if (Rel != null)
             {
@@ -185,6 +212,12 @@ public sealed class CreateShape : Command
     }
 
     public override void Undo(Document doc) => _layer!.Objects.Remove(_obj!);
+
+    static PathObject MakePath(Document doc, List<PathSeg> segs)
+    {
+        var box = PathData.Bounds(segs)!.Value;
+        return new PathObject { Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
+    }
 
     ImageObject CreateImage(Document doc)
     {
@@ -322,6 +355,33 @@ public sealed class SetStyle : Command
     {
         foreach (var (obj, fill, stroke, width, dash, cap, join, opacity) in _old)
             (obj.Fill, obj.Stroke, obj.StrokeWidth, obj.StrokeDash, obj.StrokeCap, obj.StrokeJoin, obj.Opacity) = (fill, stroke, width, dash, cap, join, opacity);
+    }
+}
+
+/// <summary>Sets the corner radius of rectangles (0 = square corners).</summary>
+public sealed class SetCornerRadius : Command
+{
+    public List<string> Targets { get; set; } = [];
+    public double Radius { get; set; }
+
+    List<(RectangleObject Obj, double Old)> _old = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("rect.corner: 'targets' is empty. Pass ids or names of rectangles, e.g. [\"o1\"].");
+        if (!(Radius >= 0) || !double.IsFinite(Radius)) throw new CommandException("rect.corner: 'radius' must be a number >= 0.");
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
+        if (objs.FirstOrDefault(o => o is not RectangleObject) is { } other)
+            throw new CommandException($"rect.corner: '{other.Name ?? other.Id}' is a {other.Type}, not a rectangle (shape.toPath turns shapes into paths, whose corners are edited with the Node tool).");
+        _old = objs.Cast<RectangleObject>().Select(r => (r, r.CornerRadius)).ToList();
+        foreach (var (r, _) in _old) r.CornerRadius = Radius;
+    }
+
+    public override void Undo(Document doc)
+    {
+        foreach (var (r, old) in _old) r.CornerRadius = old;
     }
 }
 
@@ -605,7 +665,7 @@ public sealed class ConvertToPath : Command
                     if (!segs.Any(s => s.Op is 'L' or 'C')) throw new CommandException("shape.toPath: the text has no visible characters.");
                 }
                 else if (o is EllipseObject) segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);
-                else segs = PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
+                else segs = ((RectangleObject)o).Outline();
                 var box = o is TextObject ? PathData.Bounds(segs)!.Value : new Box(o.X, o.Y, o.Width, o.Height);
                 var container = doc.ContainerOf(o)!;
                 _done.Add((container, container.IndexOf(o), o, new PathObject

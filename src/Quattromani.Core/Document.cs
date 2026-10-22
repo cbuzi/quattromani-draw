@@ -95,7 +95,14 @@ public abstract class SceneObject
     public double Rotation => Math.Atan2(Transform.M12, Transform.M11) * 180 / Math.PI;
 }
 
-public sealed class RectangleObject : SceneObject { public override string Type => "rectangle"; }
+public sealed class RectangleObject : SceneObject
+{
+    public override string Type => "rectangle";
+    /// <summary>Corner radius in px (0 = square corners); never more than half the shorter side.</summary>
+    public double CornerRadius { get; set; }
+    public double EffectiveRadius => Math.Max(0, Math.Min(CornerRadius, Math.Min(Width, Height) / 2));
+    public List<PathSeg> Outline() => PathData.RectangleSegments(X, Y, Width, Height, EffectiveRadius);
+}
 public sealed class EllipseObject : SceneObject { public override string Type => "ellipse"; }
 
 /// <summary>Embedded raster image: the bytes of the original file (PNG, JPEG, GIF, WebP, BMP). Geometry like the rectangle; fill = background, stroke = frame.</summary>

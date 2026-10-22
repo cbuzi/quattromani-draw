@@ -121,6 +121,56 @@ public static class ImageTrace
         output.Add(new('Z'));
     }
 
+    /// <summary>
+    /// Bezier curves through a hand-drawn polyline (open path): corners where the line turns sharply, smooth curves in between.
+    /// <paramref name="tolerance"/> is the maximum distance from the points, in the points' own units. Returns M/L/C segments (no Z).
+    /// </summary>
+    public static List<PathSeg> FitOpen(IReadOnlyList<(double X, double Y)> points, double tolerance)
+    {
+        var d = new List<V>();
+        foreach (var (x, y) in points)
+        {
+            var v = new V(x, y);
+            if (d.Count == 0 || (v - d[^1]).Len > 1e-9) d.Add(v);
+        }
+        var output = new List<PathSeg>();
+        if (d.Count < 2) return output;
+        output.Add(new('M', X: d[0].X, Y: d[0].Y));
+        if (d.Count == 2) { output.Add(new('L', X: d[1].X, Y: d[1].Y)); return output; }
+
+        // Corners among the inner points (interior angle < 120°); among nearby candidates the sharpest wins.
+        int n = d.Count;
+        var interior = new double[n];
+        for (var i = 1; i < n - 1; i++)
+        {
+            V a = d[Math.Max(0, i - Reach)] - d[i], b = d[Math.Min(n - 1, i + Reach)] - d[i];
+            interior[i] = a.Len < 1e-9 || b.Len < 1e-9 ? 180 : Math.Acos(Math.Clamp(a.Dot(b) / (a.Len * b.Len), -1, 1)) * 180 / Math.PI;
+        }
+        var cuts = new List<int> { 0 };
+        for (var i = 1; i < n - 1; i++)
+        {
+            if (interior[i] >= 120) continue;
+            var best = true;
+            for (var k = -Reach; k <= Reach && best; k++)
+            {
+                var j = i + k;
+                if (k != 0 && j >= 1 && j < n - 1 && (interior[j] < interior[i] || (interior[j] == interior[i] && k < 0))) best = false;
+            }
+            if (best) cuts.Add(i);
+        }
+        cuts.Add(n - 1);
+
+        var err = Math.Max(0.01, tolerance);
+        for (var c = 0; c + 1 < cuts.Count; c++)
+        {
+            var run = d.GetRange(cuts[c], cuts[c + 1] - cuts[c] + 1);
+            if (run.Count == 2) { output.Add(new('L', X: run[1].X, Y: run[1].Y)); continue; }
+            int m = Math.Min(Reach, run.Count - 1);
+            FitCubic(run, 0, run.Count - 1, (run[m] - run[0]).Unit(), (run[^(m + 1)] - run[^1]).Unit(), err * err, output);
+        }
+        return output;
+    }
+
     // Schneider, "An Algorithm for Automatically Fitting Digitized Curves" (Graphics Gems, 1990).
     static void FitCubic(List<V> d, int first, int last, V t1, V t2, double errSq, List<PathSeg> output)
     {

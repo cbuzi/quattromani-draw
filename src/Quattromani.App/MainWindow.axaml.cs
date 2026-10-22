@@ -177,6 +177,18 @@ public partial class MainWindow : Window
         RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
         PenTool.Click += (_, _) => { Canvas.Tool = Tool.Pen; SyncToolButtons(); };
+        PencilTool.Click += (_, _) => { Canvas.Tool = Tool.Pencil; SyncToolButtons(); };
+        PolygonTool.Click += (_, _) => { Canvas.Tool = Tool.Polygon; SyncToolButtons(); };
+        StarTool.Click += (_, _) => { Canvas.Tool = Tool.Star; SyncToolButtons(); };
+        LineTool.Click += (_, _) => { Canvas.Tool = Tool.Line; SyncToolButtons(); };
+        EyedropperTool.Click += (_, _) => { Canvas.Tool = Tool.Eyedropper; SyncToolButtons(); };
+        Canvas.ColorPicked += (color, stroke) => ApplyStyle(fill: stroke ? null : color, stroke: stroke ? color : null);
+        SidesBox.ValueChanged += (_, e) =>
+        {
+            if (e.NewValue is not { } v) return;
+            if (Canvas.Tool == Tool.Star) Canvas.StarPoints = (int)v; else Canvas.PolygonSides = (int)v;
+        };
+        DepthBox.ValueChanged += (_, e) => { if (e.NewValue is { } v) Canvas.StarInner = (double)v / 100; };
         NodeTool.Click += (_, _) => { Canvas.Tool = Tool.Node; SyncToolButtons(); };
         TextTool.Click += (_, _) => { Canvas.Tool = Tool.Text; SyncToolButtons(); };
 
@@ -421,6 +433,11 @@ public partial class MainWindow : Window
         RectTool.IsChecked = Canvas.Tool == Tool.Rectangle;
         EllipseTool.IsChecked = Canvas.Tool == Tool.Ellipse;
         PenTool.IsChecked = Canvas.Tool == Tool.Pen;
+        PencilTool.IsChecked = Canvas.Tool == Tool.Pencil;
+        PolygonTool.IsChecked = Canvas.Tool == Tool.Polygon;
+        StarTool.IsChecked = Canvas.Tool == Tool.Star;
+        LineTool.IsChecked = Canvas.Tool == Tool.Line;
+        EyedropperTool.IsChecked = Canvas.Tool == Tool.Eyedropper;
         TextTool.IsChecked = Canvas.Tool == Tool.Text;
         FillTool.IsChecked = Canvas.Tool == Tool.Fill;
         NodeTool.IsChecked = Canvas.Tool == Tool.Node;
@@ -499,11 +516,12 @@ public partial class MainWindow : Window
             ToCurves();
             e.Handled = true;
         }
-        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10 or Key.T or Key.G)
+        else if (!cmd && e.Key is Key.V or Key.R or Key.E or Key.P or Key.N or Key.F10 or Key.T or Key.G or Key.L or Key.Y or Key.U or Key.B or Key.I)
         {
             Canvas.Tool = e.Key switch
             {
-                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, Key.T => Tool.Text, Key.G => Tool.Fill, _ => Tool.Select,
+                Key.R => Tool.Rectangle, Key.E => Tool.Ellipse, Key.P => Tool.Pen, Key.N or Key.F10 => Tool.Node, Key.T => Tool.Text, Key.G => Tool.Fill,
+                Key.L => Tool.Line, Key.Y => Tool.Polygon, Key.U => Tool.Star, Key.B => Tool.Pencil, Key.I => Tool.Eyedropper, _ => Tool.Select,
             };
             e.Handled = true;
         }
@@ -667,12 +685,21 @@ public partial class MainWindow : Window
     void UpdateBars()
     {
         var node = Canvas.Tool == Tool.Node;
-        var text = !node && (Canvas.Tool == Tool.Text || SelectedTextStyle() != null);
-        var page = !node && !text && Canvas.SelectedIds.Count == 0; // without a selection the bar shows the page
+        var shape = !node && Canvas.Tool is Tool.Polygon or Tool.Star;
+        var text = !node && !shape && (Canvas.Tool == Tool.Text || SelectedTextStyle() != null);
+        var page = !node && !shape && !text && Canvas.SelectedIds.Count == 0; // without a selection the bar shows the page
         NodeBar.IsVisible = node;
+        ShapeBar.IsVisible = shape;
+        if (shape)
+        {
+            var star = Canvas.Tool == Tool.Star;
+            SidesLabel.Text = star ? "Points" : "Sides";
+            DepthLabel.IsVisible = DepthBox.IsVisible = star;
+            SidesBox.Value = star ? Canvas.StarPoints : Canvas.PolygonSides;
+        }
         TextBar.IsVisible = text;
         PageBar.IsVisible = page;
-        BoolBar.IsVisible = !node && !text && !page;
+        BoolBar.IsVisible = !node && !shape && !text && !page;
         XformBar.IsVisible = BoolBar.IsVisible;
     }
 

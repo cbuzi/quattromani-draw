@@ -120,6 +120,45 @@ public static class PathData
         new('M', X: x, Y: y), new('L', X: x + w, Y: y), new('L', X: x + w, Y: y + h), new('L', X: x, Y: y + h), new('Z'),
     ];
 
+    /// <summary>Rectangle with rounded corners (radius <paramref name="r"/>, already limited to half the shorter side).</summary>
+    public static List<PathSeg> RectangleSegments(double x, double y, double w, double h, double r)
+    {
+        if (r <= 0) return RectangleSegments(x, y, w, h);
+        const double k = 0.5522847498;
+        var c = r * (1 - k); // distance of the curve's control points from the corner
+        return
+        [
+            new('M', X: x + r, Y: y), new('L', X: x + w - r, Y: y),
+            new('C', x + w - c, y, x + w, y + c, x + w, y + r), new('L', X: x + w, Y: y + h - r),
+            new('C', x + w, y + h - c, x + w - c, y + h, x + w - r, y + h), new('L', X: x + r, Y: y + h),
+            new('C', x + c, y + h, x, y + h - c, x, y + h - r), new('L', X: x, Y: y + r),
+            new('C', x, y + c, x + c, y, x + r, y), new('Z'),
+        ];
+    }
+
+    /// <summary>
+    /// Regular polygon with <paramref name="n"/> sides, or a star with <paramref name="n"/> points if <paramref name="innerRatio"/> &lt; 1 (inner radius / outer radius).
+    /// The first vertex is at the top; the shape is stretched to fill exactly the box (x, y, w, h).
+    /// </summary>
+    public static List<PathSeg> PolygonSegments(double x, double y, double w, double h, int n, double innerRatio = 1)
+    {
+        var count = innerRatio < 1 ? 2 * n : n;
+        var pts = new (double X, double Y)[count];
+        for (var i = 0; i < count; i++)
+        {
+            var angle = -Math.PI / 2 + i * 2 * Math.PI / count;
+            var r = innerRatio < 1 && i % 2 == 1 ? innerRatio : 1;
+            pts[i] = (r * Math.Cos(angle), r * Math.Sin(angle));
+        }
+        double minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minY = pts.Min(p => p.Y), maxY = pts.Max(p => p.Y);
+        double sx = w / (maxX - minX), sy = h / (maxY - minY);
+        var segs = new List<PathSeg>();
+        for (var i = 0; i < count; i++)
+            segs.Add(new(i == 0 ? 'M' : 'L', X: x + (pts[i].X - minX) * sx, Y: y + (pts[i].Y - minY) * sy));
+        segs.Add(new('Z'));
+        return segs;
+    }
+
     /// <summary>Ellipse as four cubic curves (standard approximation with k = 0.5523).</summary>
     public static List<PathSeg> EllipseSegments(double x, double y, double w, double h)
     {

@@ -36,7 +36,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children, int? Nodes,
         int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null,
         string? Layer = null, bool? Hidden = null, bool? Locked = null,
-        double[]? Dash = null, string? Cap = null, string? Join = null, double? Opacity = null);
+        double[]? Dash = null, string? Cap = null, string? Join = null, double? Opacity = null, double? Radius = null);
 
     // `parent` brings us from the container's (group's) space to page space.
     // A traced path can have thousands of nodes: beyond this threshold get_document does not report `d` (only `nodes`).
@@ -59,7 +59,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
             o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null,
             Hidden: o.Hidden ? true : null, Locked: o.Locked ? true : null,
-            Dash: o.StrokeDash?.Select(R).ToArray(), Cap: o.StrokeCap == "butt" ? null : o.StrokeCap, Join: o.StrokeJoin == "miter" ? null : o.StrokeJoin, Opacity: o.Opacity == 1 ? null : R(o.Opacity));
+            Dash: o.StrokeDash?.Select(R).ToArray(), Cap: o.StrokeCap == "butt" ? null : o.StrokeCap, Join: o.StrokeJoin == "miter" ? null : o.StrokeJoin, Opacity: o.Opacity == 1 ? null : R(o.Opacity),
+            Radius: o is RectangleObject { CornerRadius: > 0 } rr ? R(rr.EffectiveRadius) : null);
     }
 
     [McpServerTool(Name = "execute")]
@@ -73,6 +74,10 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"image.trace","target":"sketch","threshold":128,"smooth":1,"fill":"#000000","keepOriginal":true}   (vectorizes an imported image in black and white: dark pixels become ONE path with holes, drawn right above the image with the same position; returns the path id in `created`. threshold 1-255 = brightness below which a pixel is filled (default 128); "invert":true fills the light pixels instead; minArea = specks smaller than this many image pixels are ignored (default 4); smooth 0.2-5 = curve tolerance in image pixels, higher = fewer nodes and softer lines (default 1); keepOriginal:false removes the image. Transparent pixels count as empty. Good for line art, logos and sketches; photos give huge paths. Render to check, retry with another threshold if it is too thick or too thin)
           {"cmd":"svg.import","src":"/Users/me/logo.svg","name":"logo","x":20,"y":20,"width":200}   (imports an SVG file, or inline markup with "svg":"<svg ...>", as ONE group: shapes, paths, groups, text, embedded images, gradients, <use> and class-based CSS are kept as editable objects; clip-paths, masks, filters, dashes and evenodd fills are not supported and reported in `notes` in the result. x,y,width,height give the position and size of the artwork's bounding box (give only width or only height to keep the proportions); omit them to keep the SVG's own coordinates and size; accepts rel. Returns the group id in `created`. Great for icons and logos: import, then render to check)
           STROKE STYLE and OPACITY (in shape.create and object.style): "dash":"solid"|"dashed"|"dotted"|"dashdot" (scaled to the stroke width) or numbers in px like "8 4" / "8 4 2 4"; "cap":"butt"|"round"|"square"; "join":"miter"|"round"|"bevel"; "opacity":0..1 for the whole object (on a group: its content together). Example: {"cmd":"object.style","targets":["road"],"stroke":"#FFFFFF","strokeWidth":3,"dash":"dashed","cap":"round","opacity":0.8}
+          {"cmd":"shape.create","type":"line","x":10,"y":10,"width":200,"height":-50,"stroke":"#000000","strokeWidth":3}   (a line from (x,y) to (x+width,y+height); width/height may be negative; it is a path)
+          {"cmd":"shape.create","type":"polygon","sides":6,"x":10,"y":10,"width":100,"height":90,"fill":"#22C55E"}   (regular polygon with `sides` 3-100, first vertex at the top, stretched to fill the box; it is a path)
+          {"cmd":"shape.create","type":"star","points":5,"innerRatio":0.5,"x":10,"y":10,"width":100,"height":96,"fill":"#FACC15"}   (star with `points` 3-100; innerRatio = inner radius / outer radius, 0.05-0.95; it is a path)
+          {"cmd":"rect.corner","targets":["card"],"radius":12}   (corner radius in px of rectangles; also "cornerRadius":12 in shape.create for a rectangle; 0 = square; limited to half the shorter side)
           {"cmd":"layer.add","name":"sketch","above":"Layer 1","activate":true}   (new layer, on top unless `above` names a layer; by default it becomes the ACTIVE layer, where new objects go when shape.create has no "layer")
           {"cmd":"layer.set","layer":"sketch","name":"reference","visible":false,"locked":true,"active":true}   (any subset of fields; a hidden layer is not drawn, rendered or exported; a locked layer and everything in it refuses edits until unlocked)
           {"cmd":"layer.order","layer":"sketch","action":"front"}   (front, back, up, down: higher layers cover lower ones)   {"cmd":"layer.delete","layer":"sketch"}   (deletes the layer WITH its objects; the last layer cannot be deleted)
@@ -145,7 +150,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, svg.import, layer.add, layer.set, layer.delete, layer.order, object.toLayer, object.state, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, rect.corner, image.trace, svg.import, layer.add, layer.set, layer.delete, layer.order, object.toLayer, object.state, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

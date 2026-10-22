@@ -103,6 +103,7 @@ public static class SvgFile
                 default:
                     e = new XElement(Svg + "rect", new XAttribute("x", N(o.X)), new XAttribute("y", N(o.Y)),
                         new XAttribute("width", N(o.Width)), new XAttribute("height", N(o.Height)));
+                    if (o is RectangleObject { EffectiveRadius: > 0 } rounded) e.SetAttributeValue("rx", N(rounded.EffectiveRadius));
                     Transform(e, o.Transform);
                     Style(e, o, new Box(o.X, o.Y, o.Width, o.Height));
                     break;
@@ -697,6 +698,8 @@ public static class SvgFile
             if (w <= 0 || h <= 0) return null;
             var rx = Len(p.GetValueOrDefault("rx"), _vw); var ry = Len(p.GetValueOrDefault("ry"), _vh);
             if (rx is null or <= 0 && ry is null or <= 0) return new RectangleObject { X = x, Y = y, Width = w, Height = h };
+            if (rx is null or <= 0 || ry is null or <= 0 || Math.Abs(rx.Value - ry.Value) < 1e-9)
+                return new RectangleObject { X = x, Y = y, Width = w, Height = h, CornerRadius = rx is > 0 ? rx.Value : ry!.Value };
             double a = Math.Min(rx is > 0 ? rx.Value : ry!.Value, w / 2), b = Math.Min(ry is > 0 ? ry.Value : rx!.Value, h / 2);
             string F(double v) => Fmt(v);
             return MakePath($"M {F(x + a)} {F(y)} H {F(x + w - a)} A {F(a)} {F(b)} 0 0 1 {F(x + w)} {F(y + b)} V {F(y + h - b)} A {F(a)} {F(b)} 0 0 1 {F(x + w - a)} {F(y + h)} " +

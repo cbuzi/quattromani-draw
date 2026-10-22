@@ -21,6 +21,11 @@ public partial class MainWindow
         CapCombo.SelectionChanged += (_, _) => { if (!_syncing && CapCombo.SelectedIndex >= 0) ApplyStrokeStyle(cap: StrokeStyle.Caps[CapCombo.SelectedIndex]); };
         JoinCombo.SelectionChanged += (_, _) => { if (!_syncing && JoinCombo.SelectedIndex >= 0) ApplyStrokeStyle(join: StrokeStyle.Joins[JoinCombo.SelectedIndex]); };
         OpacityBox.ValueChanged += (_, e) => { if (!_syncing && e.NewValue is { } v) ApplyStrokeStyle(opacity: (double)v / 100); };
+        RadiusBox.ValueChanged += (_, e) =>
+        {
+            if (_syncing || e.NewValue is not { } v || Canvas.SelectedIds.Count == 0) return;
+            if (Exec(new SetCornerRadius { Targets = Canvas.SelectedIds.ToList(), Radius = (double)v }) == null) Refresh();
+        };
         SyncStrokeStyle();
     }
 
@@ -46,6 +51,16 @@ public partial class MainWindow
         CapCombo.SelectedIndex = Math.Max(0, Array.IndexOf(StrokeStyle.Caps, cap));
         JoinCombo.SelectedIndex = Math.Max(0, Array.IndexOf(StrokeStyle.Joins, join));
         OpacityBox.Value = (decimal)Math.Round(opacity * 100);
+
+        // Corner radius: only when the whole selection is rectangles.
+        var ids = Canvas.SelectedIds.ToList();
+        var radius = ids.Count == 0 ? null : _bus.Read(d =>
+        {
+            var objs = ids.Select(id => d.AllObjects.FirstOrDefault(x => x.Id == id)).ToList();
+            return objs.All(x => x is RectangleObject) ? (double?)((RectangleObject)objs[0]!).CornerRadius : null;
+        });
+        RadiusPanel.IsVisible = radius != null;
+        if (radius != null) RadiusBox.Value = (decimal)radius.Value;
         _syncing = wasSyncing;
     }
 

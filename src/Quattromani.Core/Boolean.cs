@@ -26,8 +26,8 @@ internal static class PolyBoolean
         List<PathSeg> segs;
         switch (o)
         {
-            case RectangleObject:
-                segs = PathData.RectangleSegments(o.X, o.Y, o.Width, o.Height);
+            case RectangleObject rect:
+                segs = rect.Outline();
                 break;
             case EllipseObject:
                 segs = PathData.EllipseSegments(o.X, o.Y, o.Width, o.Height);

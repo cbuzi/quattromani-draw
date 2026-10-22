@@ -15,7 +15,7 @@ using GradientStop = Quattromani.Core.GradientStop;
 
 namespace Quattromani.App;
 
-public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text, Fill }
+public enum Tool { Select, Node, Rectangle, Ellipse, Polygon, Star, Line, Pen, Pencil, Text, Fill, Eyedropper }
 
 /// <summary>How the page is shown in the work area.</summary>
 public enum PageView { White, Outline, Hidden }
@@ -31,7 +31,7 @@ public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 /// </summary>
 public sealed class CanvasView : Control
 {
-    enum Drag { None, Pan, Move, Create, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox, FillHandle, FillDraw, GuideNew, GuideMove }
+    enum Drag { None, Pan, Move, Create, Pencil, Resize, Rotate, Marquee, PenNode, NodeMove, NodeHandle, TextBox, FillHandle, FillDraw, GuideNew, GuideMove }
     enum FillPart { Start, End, Stop, Center, RadX, RadY }
     enum NodePart { Node, In, Out }
 
@@ -210,6 +210,16 @@ public sealed class CanvasView : Control
         shape.Opacity = NewOpacity >= 1 ? null : NewOpacity;
         return shape;
     }
+
+    /// <summary>Options of the Polygon and Star tools.</summary>
+    public int PolygonSides { get; set; } = 5;
+    public int StarPoints { get; set; } = 5;
+    public double StarInner { get; set; } = 0.5;
+
+    /// <summary>The Eyedropper picked a color (fill or stroke of the clicked object; "none" if it has none).</summary>
+    public event Action<string, bool>? ColorPicked;
+
+    readonly List<Point> _pencil = []; // points of the freehand stroke in progress, in document coordinates
 
     /// <summary>Style applied to new shapes.</summary>
     public string? Fill { get; set; } = "#3B82F6";
@@ -511,6 +521,10 @@ public sealed class CanvasView : Control
 
     double AngleFromCenter(Point doc) => Math.Atan2(doc.Y - _rotCenter.Y, doc.X - _rotCenter.X) * 180 / Math.PI;
 
+    // Fill and stroke of an object, or of the first shape inside it if it is a group.
+    static (string? Fill, string? Stroke)? FirstStyled(SceneObject o) =>
+        o is GroupObject g ? g.Children.Reverse<SceneObject>().Select(FirstStyled).FirstOrDefault(s => s != null) : (o.Fill, o.Stroke);
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         Focus();
@@ -556,6 +570,23 @@ public sealed class CanvasView : Control
             NodePress(pt.Position, e.ClickCount, shift);
             if (_drag != Drag.None) e.Pointer.Capture(this);
             return;
+        }
+        else if (Tool == Tool.Eyedropper && (pt.Properties.IsLeftButtonPressed || pt.Properties.IsRightButtonPressed))
+        {
+            // Left click takes the fill, right click (or Alt) the stroke.
+            var stroke = pt.Properties.IsRightButtonPressed || e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+            if (HitTest(ToDoc(pt.Position)) is { } hit)
+            {
+                var colors = Bus?.Read(d => d.AllObjects.FirstOrDefault(o => o.Id == hit) is { } o ? FirstStyled(o) : null);
+                if (colors is { } c) ColorPicked?.Invoke((stroke ? c.Stroke ?? c.Fill : c.Fill ?? c.Stroke) ?? "none", stroke);
+            }
+            return;
+        }
+        else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Pencil)
+        {
+            _pencil.Clear();
+            _pencil.Add(ToDoc(pt.Position));
+            _drag = Drag.Pencil;
         }
         else if (pt.Properties.IsLeftButtonPressed && Tool != Tool.Select)
         {
@@ -1166,7 +1197,13 @@ public sealed class CanvasView : Control
             SnapMove();
         }
         else if (_drag is Drag.Create or Drag.TextBox)
-            _createEnd = SnapPoint(ToDoc(pos));
+            _createEnd = ConstrainCreate(SnapPoint(ToDoc(pos)), shift);
+        else if (_drag == Drag.Pencil)
+        {
+            var d = ToDoc(pos);
+            var last = _pencil[^1];
+            if ((Math.Abs(d.X - last.X) + Math.Abs(d.Y - last.Y)) * _zoom >= 2) _pencil.Add(d);
+        }
         else if (_drag == Drag.Marquee)
             _marqueeEnd = ToDoc(pos);
         else if (_drag == Drag.Resize && _dragItem is { } it)
@@ -1249,15 +1286,39 @@ public sealed class CanvasView : Control
         if (_drag == Drag.Create)
         {
             var b = CreateBox();
-            if (b.Width * _zoom >= 3 && b.Height * _zoom >= 3 && Bus != null)
+            var big = Tool == Tool.Line ? Math.Max(b.Width, b.Height) * _zoom >= 3 : b.Width * _zoom >= 3 && b.Height * _zoom >= 3;
+            if (big && Bus != null)
             {
-                if (Try(WithNewStyle(new CreateShape
+                var shape = new CreateShape
                 {
-                    Type = Tool == Tool.Ellipse ? "ellipse" : "rectangle",
+                    Type = Tool switch { Tool.Ellipse => "ellipse", Tool.Polygon => "polygon", Tool.Star => "star", Tool.Line => "line", _ => "rectangle" },
                     X = b.X, Y = b.Y, Width = b.Width, Height = b.Height,
                     Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth,
-                })) is { } r) Select(r.CreatedIds[0]);
+                };
+                if (Tool == Tool.Polygon) shape.Sides = PolygonSides;
+                if (Tool == Tool.Star) (shape.Points, shape.InnerRatio) = (StarPoints, StarInner);
+                if (Tool == Tool.Line) // from where the mouse went down to where it is now (the box loses the direction)
+                    (shape.X, shape.Y, shape.Width, shape.Height, shape.Fill, shape.Stroke, shape.StrokeWidth) =
+                        (_createStart.X, _createStart.Y, _createEnd.X - _createStart.X, _createEnd.Y - _createStart.Y, null, Stroke ?? "#1F2937", StrokeWidth > 0 ? StrokeWidth : 2);
+                if (Try(WithNewStyle(shape)) is { } r) Select(r.CreatedIds[0]);
                 Tool = Tool.Select; // after drawing we go back to selection
+            }
+        }
+        else if (_drag == Drag.Pencil)
+        {
+            var pts = _pencil.ToList();
+            _pencil.Clear();
+            _drag = Drag.None;
+            var length = pts.Zip(pts.Skip(1), (a, b) => Math.Abs(b.X - a.X) + Math.Abs(b.Y - a.Y)).Sum();
+            if (pts.Count >= 2 && length * _zoom >= 4 && Bus != null)
+            {
+                // Curves through the points with an error of about 2 screen pixels; the tool stays active for the next stroke.
+                var segs = ImageTrace.FitOpen(pts.Select(p => (p.X, p.Y)).ToList(), 2 / _zoom);
+                if (segs.Count > 1 && Try(WithNewStyle(new CreateShape
+                {
+                    Type = "path", D = PathData.ToString(segs, 3), Fill = "none",
+                    Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
+                })) is { } r) Select(r.CreatedIds[0]);
             }
         }
         else if (_drag == Drag.TextBox)
@@ -1339,6 +1400,37 @@ public sealed class CanvasView : Control
 
     static Box BoxOf(Point a, Point b) => new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
     Box CreateBox() => BoxOf(_createStart, _createEnd);
+
+    // Shift: a line snaps to 15° steps; the other shapes become square.
+    Point ConstrainCreate(Point end, bool shift)
+    {
+        if (!shift || _drag != Drag.Create) return end;
+        double dx = end.X - _createStart.X, dy = end.Y - _createStart.Y;
+        if (Tool == Tool.Line)
+        {
+            var step = Math.PI / 12;
+            var angle = Math.Round(Math.Atan2(dy, dx) / step) * step;
+            var len = Math.Sqrt(dx * dx + dy * dy);
+            return new(_createStart.X + len * Math.Cos(angle), _createStart.Y + len * Math.Sin(angle));
+        }
+        var m = Math.Max(Math.Abs(dx), Math.Abs(dy));
+        return new(_createStart.X + (dx < 0 ? -m : m), _createStart.Y + (dy < 0 ? -m : m));
+    }
+
+    // The outline of what the Line, Polygon and Star tools would create now; null with the other tools.
+    List<PathSeg>? CreatePreview()
+    {
+        if (_drag == Drag.Pencil) return _pencil.Count < 2 ? null : _pencil.Select((p, i) => new PathSeg(i == 0 ? 'M' : 'L', X: p.X, Y: p.Y)).ToList();
+        if (_drag != Drag.Create) return null;
+        var b = CreateBox();
+        return Tool switch
+        {
+            Tool.Line => [new('M', X: _createStart.X, Y: _createStart.Y), new('L', X: _createEnd.X, Y: _createEnd.Y)],
+            Tool.Polygon when b.Width > 0 && b.Height > 0 => PathData.PolygonSegments(b.X, b.Y, b.Width, b.Height, PolygonSides),
+            Tool.Star when b.Width > 0 && b.Height > 0 => PathData.PolygonSegments(b.X, b.Y, b.Width, b.Height, StarPoints, StarInner),
+            _ => null,
+        };
+    }
     Box MarqueeBox() => BoxOf(_marqueeStart, _marqueeEnd);
 
     // The selected object as it will appear at the end of the gesture (preview).
@@ -1420,8 +1512,9 @@ public sealed class CanvasView : Control
             }
         }
 
+        var createPath = CreatePreview();
         var gesture = new Gesture(
-            _drag is Drag.Create or Drag.TextBox ? CreateBox() : null, Tool == Tool.Ellipse,
+            _drag is Drag.Create or Drag.TextBox && createPath == null ? CreateBox() : null, Tool == Tool.Ellipse,
             _drag == Drag.Marquee ? MarqueeBox() : null,
             Tool == Tool.Pen && _pen.Count > 0
                 ? _pen.Select(n => new PenNodeView(V(n.P), n.In is { } i ? V(i) : null, n.Out is { } o ? V(o) : null)).ToList()
@@ -1431,7 +1524,7 @@ public sealed class CanvasView : Control
             nodeModel?.SelectMany((sp, si) => sp.Nodes.Select((n, ni) => new NodeV(n.P, n.In, n.Out, _nodeSel.Contains((si, ni)), n.Kind))).ToList(),
             Tool == Tool.Pen && _pen.Count >= 2 && _drag != Drag.PenNode &&
                 NearFirstNode(new Point(_penHover.X * _zoom + _pan.X, _penHover.Y * _zoom + _pan.Y)),
-            Tool == Tool.Fill, fillView);
+            Tool == Tool.Fill, fillView, createPath);
         var guides = Bus.Read(d => d.Pages[0].Guides.ToList());
         if (_drag is Drag.GuideNew or Drag.GuideMove)
         {
@@ -1457,7 +1550,7 @@ public sealed class CanvasView : Control
     sealed record NodeV(Vector2 P, Vector2? In, Vector2? Out, bool Selected, NodeKind Kind);
 
     sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover,
-        bool NodeMode, List<NodeV>? Nodes, bool PenClosing, bool FillMode, FillView? FillOverlay);
+        bool NodeMode, List<NodeV>? Nodes, bool PenClosing, bool FillMode, FillView? FillOverlay, List<PathSeg>? CreatePath);
 
     /// <summary>Selection handle; Hx/Hy are fractions of the local rectangle, Pos is in document coordinates.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
@@ -1718,6 +1811,11 @@ public sealed class CanvasView : Control
         {
             var w = (float)(1.5 / zoom);
 
+            if (gesture.CreatePath is { } cp)
+            {
+                using var preview = SceneRenderer.BuildPath(cp, Matrix3x2.Identity);
+                Haloed(paint, w, () => canvas.DrawPath(preview, paint));
+            }
             if (gesture.Create is { } c)
             {
                 var r = SKRect.Create((float)c.X, (float)c.Y, (float)c.Width, (float)c.Height);
