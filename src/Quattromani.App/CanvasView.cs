@@ -196,6 +196,21 @@ public sealed class CanvasView : Control
         if (SelectedId is { } id && IsText(id)) TextEditRequested?.Invoke(new TextEditRequest(id, default, null));
     }
 
+    /// <summary>Stroke style and opacity of new shapes (the values SetStyle/CreateShape take; "solid" = no dash).</summary>
+    public string NewDash { get; set; } = "solid";
+    public string NewCap { get; set; } = "butt";
+    public string NewJoin { get; set; } = "miter";
+    public double NewOpacity { get; set; } = 1;
+
+    CreateShape WithNewStyle(CreateShape shape)
+    {
+        shape.Dash = NewDash == "solid" ? null : NewDash;
+        shape.Cap = NewCap == "butt" ? null : NewCap;
+        shape.Join = NewJoin == "miter" ? null : NewJoin;
+        shape.Opacity = NewOpacity >= 1 ? null : NewOpacity;
+        return shape;
+    }
+
     /// <summary>Style applied to new shapes.</summary>
     public string? Fill { get; set; } = "#3B82F6";
     public string? Stroke { get; set; } = "#1F2937";
@@ -652,12 +667,12 @@ public sealed class CanvasView : Control
             sb.Append(" Z");
         }
 
-        if (Try(new CreateShape
+        if (Try(WithNewStyle(new CreateShape
         {
             Type = "path", D = sb.ToString(),
             Fill = closed ? Fill ?? "none" : "none", // an open path is not filled
             Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
-        }) is { } r) Select(r.CreatedIds[0]);
+        })) is { } r) Select(r.CreatedIds[0]);
         if (select) Tool = Tool.Select;
     }
 
@@ -1236,12 +1251,12 @@ public sealed class CanvasView : Control
             var b = CreateBox();
             if (b.Width * _zoom >= 3 && b.Height * _zoom >= 3 && Bus != null)
             {
-                if (Try(new CreateShape
+                if (Try(WithNewStyle(new CreateShape
                 {
                     Type = Tool == Tool.Ellipse ? "ellipse" : "rectangle",
                     X = b.X, Y = b.Y, Width = b.Width, Height = b.Height,
                     Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth,
-                }) is { } r) Select(r.CreatedIds[0]);
+                })) is { } r) Select(r.CreatedIds[0]);
                 Tool = Tool.Select; // after drawing we go back to selection
             }
         }

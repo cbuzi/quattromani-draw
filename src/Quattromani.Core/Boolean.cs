@@ -395,7 +395,7 @@ public sealed class BooleanOp : Command
             {
                 Id = doc.NewId(), Name = Name, Segments = segs, Source = box,
                 X = box.X, Y = box.Y, Width = box.Width, Height = box.Height,
-                Fill = back.Fill, Stroke = back.Stroke, StrokeWidth = back.StrokeWidth,
+                Fill = back.Fill, Stroke = back.Stroke, StrokeWidth = back.StrokeWidth, StrokeDash = back.StrokeDash, StrokeCap = back.StrokeCap, StrokeJoin = back.StrokeJoin, Opacity = back.Opacity,
             };
         }
 

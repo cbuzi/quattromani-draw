@@ -12,12 +12,14 @@ sealed record TextInfo(List<TextLine> Lines, TextStyle Style);
 // Immutable copy of the objects: rendering runs on another thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
     string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
-    string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null)
+    string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null, double Opacity = 1, double[]? Dash = null, string? Cap = null, string? Join = null)
 {
     public Box Bounds => SceneObject.BoundsOf(X, Y, W, H, M);
     public Matrix3x2 Fit => SceneObject.FitMatrix(Source, new(X, Y, W, H));
 
-    public static Item From(SceneObject o) => o switch
+    public static Item From(SceneObject o) => Make(o) with { Opacity = o.Opacity, Dash = o.StrokeDash, Cap = o.StrokeCap, Join = o.StrokeJoin };
+
+    static Item Make(SceneObject o) => o switch
     {
         PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             p.Source, p.Segments, null, p.NodeKinds),
@@ -64,6 +66,9 @@ static class SceneRenderer
     /// <param name="vectorPatterns">For the PDF: patterns are drawn as vector geometry (the image shader would be rasterized at low resolution).</param>
     public static void DrawItem(SKCanvas canvas, SKPaint paint, Item it, bool vectorPatterns = false)
     {
+        // Opacity applies to the object as a whole (fill and stroke together; a group's content together): it is drawn on a layer.
+        using var layerPaint = it.Opacity < 1 ? new SKPaint { Color = new SKColor(255, 255, 255, (byte)Math.Round(Math.Clamp(it.Opacity, 0, 1) * 255)) } : null;
+        if (layerPaint != null) canvas.SaveLayer(layerPaint);
         canvas.Save();
         var m = ToSk(it.M);
         canvas.Concat(in m);
@@ -95,12 +100,22 @@ static class SceneRenderer
             if (it.StrokeWidth > 0 && Prepare(paint, it.Stroke, box))
             {
                 paint.Style = SKPaintStyle.Stroke; paint.StrokeWidth = (float)it.StrokeWidth;
+                paint.StrokeCap = it.Cap switch { "round" => SKStrokeCap.Round, "square" => SKStrokeCap.Square, _ => SKStrokeCap.Butt };
+                paint.StrokeJoin = it.Join switch { "round" => SKStrokeJoin.Round, "bevel" => SKStrokeJoin.Bevel, _ => SKStrokeJoin.Miter };
+                if (it.Dash is { Length: > 0 } dash)
+                    paint.PathEffect = SKPathEffect.CreateDash((dash.Length % 2 == 0 ? dash : [.. dash, .. dash]).Select(v => (float)v).ToArray(), 0); // an odd list repeats, like SVG
                 DrawShape(canvas, paint, it);
+                // the paint is shared by all the items: back to the defaults
+                paint.PathEffect?.Dispose();
+                paint.PathEffect = null;
+                paint.StrokeCap = SKStrokeCap.Butt;
+                paint.StrokeJoin = SKStrokeJoin.Miter;
             }
             paint.Shader?.Dispose();
             paint.Shader = null;
         }
         canvas.Restore();
+        if (layerPaint != null) canvas.Restore();
     }
 
     /// <summary>Sets color or gradient on the paint; false if there is nothing to draw.</summary>

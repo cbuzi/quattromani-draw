@@ -49,6 +49,18 @@ public abstract class SceneObject
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double StrokeWidth { get; set; }
+    /// <summary>Dash pattern in px (dash, gap, dash, gap...); null = solid line.</summary>
+    public double[]? StrokeDash { get; set; }
+    /// <summary>"butt", "round" or "square".</summary>
+    public string StrokeCap { get; set; } = "butt";
+    /// <summary>"miter", "round" or "bevel".</summary>
+    public string StrokeJoin { get; set; } = "miter";
+    /// <summary>0 (invisible) to 1 (opaque). Applies to the whole object, fill and stroke together (for a group, to all its content together).</summary>
+    public double Opacity { get; set; } = 1;
+
+    /// <summary>Copies fill, stroke and opacity from another object.</summary>
+    public void CopyStyleFrom(SceneObject o) =>
+        (Fill, Stroke, StrokeWidth, StrokeDash, StrokeCap, StrokeJoin, Opacity) = (o.Fill, o.Stroke, o.StrokeWidth, o.StrokeDash, o.StrokeCap, o.StrokeJoin, o.Opacity);
 
     /// <summary>Bounding box in the layer's space, after the transform.</summary>
     public Box Bounds => BoundsOf(X, Y, Width, Height, Transform);

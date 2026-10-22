@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         Selection = new CanvasSelection(Canvas);
         InitFiles();
         InitLayers();
+        InitStrokeStyle();
         Canvas.Bus = _bus;
 
         // The bus may notify from any thread.
@@ -1259,6 +1260,7 @@ public partial class MainWindow : Window
         ObjectList.ItemsSource = items.Select(i => i.Label).ToList();
         ObjectList.SelectedIndex = Canvas.SelectedId is { } s ? _ids.IndexOf(s) : -1;
         RefreshLayers();
+        SyncStrokeStyle();
 
         // The panel shows the style of the selected object (and becomes the style of new shapes).
         if (Canvas.SelectedId is { } cur &&

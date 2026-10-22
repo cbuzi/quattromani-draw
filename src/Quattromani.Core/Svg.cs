@@ -109,6 +109,7 @@ public static class SvgFile
             }
             e.SetAttributeValue("id", o.Id);
             if (o.Name != null) e.SetAttributeValue("data-name", o.Name);
+            if (o.Opacity < 1) e.SetAttributeValue("opacity", N(o.Opacity, 3));
             if (o.Hidden) e.SetAttributeValue("display", "none");
             if (o.Locked) e.SetAttributeValue(Sodipodi + "insensitive", "true");
             return e;
@@ -149,7 +150,7 @@ public static class SvgFile
                 var frame = Rect();
                 frame.SetAttributeValue("fill", "none");
                 Paint(frame, "stroke", im.Stroke, box);
-                frame.SetAttributeValue("stroke-width", N(im.StrokeWidth));
+                StrokeAttributes(frame, im);
                 e.Add(frame);
             }
             return e;
@@ -169,8 +170,16 @@ public static class SvgFile
             if (o.Stroke != null && o.StrokeWidth > 0)
             {
                 Paint(e, "stroke", o.Stroke, box);
-                e.SetAttributeValue("stroke-width", N(o.StrokeWidth));
+                StrokeAttributes(e, o);
             }
+        }
+
+        static void StrokeAttributes(XElement e, SceneObject o)
+        {
+            e.SetAttributeValue("stroke-width", N(o.StrokeWidth));
+            if (o.StrokeDash is { Length: > 0 } dash) e.SetAttributeValue("stroke-dasharray", string.Join(" ", dash.Select(v => N(v))));
+            if (o.StrokeCap != "butt") e.SetAttributeValue("stroke-linecap", o.StrokeCap);
+            if (o.StrokeJoin != "miter") e.SetAttributeValue("stroke-linejoin", o.StrokeJoin);
         }
 
         // "#RRGGBBAA" becomes color + opacity, which is what SVG understands.
@@ -283,6 +292,7 @@ public static class SvgFile
     }
 
     sealed record St(string Fill = "black", string Stroke = "none", double StrokeWidth = 1, double Opacity = 1, double FillOpacity = 1, double StrokeOpacity = 1,
+        double[]? Dash = null, string Cap = "butt", string Join = "miter",
         string FontFamily = "", double FontSize = 16, bool Bold = false, bool Italic = false, string Anchor = "start");
 
     sealed class Importer(Document doc)
@@ -392,7 +402,7 @@ public static class SvgFile
             if (V("fill") is { } fill) s = s with { Fill = fill };
             if (V("stroke") is { } stroke) s = s with { Stroke = stroke };
             if (Len(V("stroke-width"), _vw) is { } sw) s = s with { StrokeWidth = sw };
-            if (Len(V("opacity")) is { } op) s = s with { Opacity = s.Opacity * Math.Clamp(op, 0, 1) };
+            s = s with { Opacity = Len(V("opacity")) is { } op ? Math.Clamp(op, 0, 1) : 1 }; // opacity is not inherited: it belongs to this element
             if (Len(V("fill-opacity")) is { } fo) s = s with { FillOpacity = Math.Clamp(fo, 0, 1) };
             if (Len(V("stroke-opacity")) is { } so) s = s with { StrokeOpacity = Math.Clamp(so, 0, 1) };
             if (V("font-family") is { } ff) s = s with { FontFamily = ff.Split(',')[0].Trim().Trim('\'', '"') };
@@ -401,8 +411,13 @@ public static class SvgFile
             if (V("font-style") is { } fst) s = s with { Italic = fst is "italic" or "oblique" };
             if (V("text-anchor") is { } ta) s = s with { Anchor = ta };
             if (V("fill-rule") == "evenodd" || V("clip-rule") == "evenodd") Note("fill-rule evenodd is not supported: holes may come out filled");
-            if (V("stroke-dasharray") is { } da && da != "none") Note("dashes (stroke-dasharray) ignored");
-            if (V("stroke-linecap") is "round" or "square" || V("stroke-linejoin") is "round" or "bevel") Note("stroke caps and joins (linecap, linejoin) ignored");
+            if (V("stroke-dasharray") is { } da)
+            {
+                var dash = da == "none" ? [] : Nums(da);
+                s = s with { Dash = dash.Length > 0 && dash.Length <= 8 && dash.All(v => v >= 0) && dash.Sum() > 0 ? dash : null };
+            }
+            if (V("stroke-linecap") is "butt" or "round" or "square") s = s with { Cap = V("stroke-linecap")! };
+            if (V("stroke-linejoin") is { } lj) s = s with { Join = lj is "round" or "bevel" ? lj : "miter" };
             foreach (var unsupported in new[] { "clip-path", "mask", "filter" })
                 if (V(unsupported) is { } v && v != "none") Note($"{unsupported} ignored");
             return s;
@@ -600,7 +615,7 @@ public static class SvgFile
             switch (tag)
             {
                 case "g" or "a" or "svg" or "switch":
-                    into.AddRange(Children(e.Elements(), st, tf, name));
+                    into.AddRange(Children(e.Elements(), st, tf, name, st.Opacity));
                     return;
                 case "use":
                     if (Href(e) is not { } target) return;
@@ -610,7 +625,7 @@ public static class SvgFile
                     if (target.Name.LocalName == "symbol") foreach (var c in target.Elements()) Visit(c, st, kids);
                     else Visit(target, st, kids);
                     _depth--;
-                    if (kids.Count > 0) into.Add(MakeGroup(kids, tf, name));
+                    if (kids.Count > 0) into.Add(MakeGroup(kids, tf, name, opacity: st.Opacity));
                     return;
             }
 
@@ -630,27 +645,28 @@ public static class SvgFile
             if (Finish(obj, st, p, tf, name)) into.Add(obj);
         }
 
-        List<SceneObject> Children(IEnumerable<XElement> els, St st, Matrix3x2 tf, string? name)
+        List<SceneObject> Children(IEnumerable<XElement> els, St st, Matrix3x2 tf, string? name, double opacity)
         {
             var kids = new List<SceneObject>();
             _depth++;
             foreach (var c in els) Visit(c, st, kids);
             _depth--;
-            return kids.Count == 0 ? [] : [MakeGroup(kids, tf, name)];
+            return kids.Count == 0 ? [] : [MakeGroup(kids, tf, name, opacity: opacity)];
         }
 
         // A group with a single child and no name is useless: the child absorbs the transform.
-        static SceneObject MakeGroup(List<SceneObject> kids, Matrix3x2 tf, string? name, bool force = false)
+        static SceneObject MakeGroup(List<SceneObject> kids, Matrix3x2 tf, string? name, bool force = false, double opacity = 1)
         {
             if (kids.Count == 1 && name is null && !force)
             {
                 kids[0].Transform *= tf;
+                kids[0].Opacity *= opacity;
                 return kids[0];
             }
             var bs = kids.Select(k => k.Bounds).ToList();
             var (x0, y0) = (bs.Min(b => b.X), bs.Min(b => b.Y));
             var box = new Box(x0, y0, bs.Max(b => b.X + b.Width) - x0, bs.Max(b => b.Y + b.Height) - y0);
-            var g = new GroupObject { Name = name, Transform = tf, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
+            var g = new GroupObject { Name = name, Transform = tf, Opacity = opacity, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height };
             g.Children.AddRange(kids);
             return g;
         }
@@ -662,11 +678,13 @@ public static class SvgFile
         {
             obj.Transform = tf;
             obj.Name = name;
+            obj.Opacity = st.Opacity;
             if (obj is ImageObject) return true;
             var box = obj is TextObject t ? t.Source : new Box(obj.X, obj.Y, obj.Width, obj.Height);
-            obj.Fill = Paint(st.Fill, st.Opacity * st.FillOpacity, box);
-            obj.Stroke = st.StrokeWidth > 0 ? Paint(st.Stroke, st.Opacity * st.StrokeOpacity, box) : null;
+            obj.Fill = Paint(st.Fill, st.FillOpacity, box);
+            obj.Stroke = st.StrokeWidth > 0 ? Paint(st.Stroke, st.StrokeOpacity, box) : null;
             obj.StrokeWidth = obj.Stroke is null ? 0 : st.StrokeWidth;
+            if (obj.Stroke != null) (obj.StrokeDash, obj.StrokeCap, obj.StrokeJoin) = (st.Dash, st.Cap, st.Join);
             return obj.Fill != null || obj.Stroke != null;
         }
 

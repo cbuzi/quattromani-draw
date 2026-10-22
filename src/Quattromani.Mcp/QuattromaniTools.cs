@@ -17,7 +17,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         All coordinates and sizes are document pixels (96 dpi, like CSS px); the page starts at (0,0) at the top-left and extends to (width,height) (A4 portrait = 793.7 x 1122.52). Objects may lie outside the page.
         type is "rectangle", "ellipse", "path", "text", "image" or "group". Images include `pixels` ([w,h] of the embedded bitmap; the data itself is never returned). Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z; very large paths report only `nodes` instead);
         groups include `children` (same structure, listed bottom to top).
-        `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
+        Style extras appear only when not default: `dash` ([dash,gap,...] px), `cap`, `join`, `opacity`. `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
         With more than one layer (or a hidden/locked one) the result also has `layers` ([{name,visible?,locked?,active?}] from bottom to top) and each top-level object has `layer`; objects with their own flag report `hidden`/`locked`.
         Objects are listed bottom to top across layers (the last one is drawn on top). Bounds are in document pixels, y grows downward.
         Call this before editing to learn ids and names, and remember `version` to call get_changes later.
@@ -35,7 +35,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     sealed record ObjInfo(string Id, string? Name, string Type, double[] Bounds, double? Rotation, double[]? Size,
         string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children, int? Nodes,
         int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null,
-        string? Layer = null, bool? Hidden = null, bool? Locked = null);
+        string? Layer = null, bool? Hidden = null, bool? Locked = null,
+        double[]? Dash = null, string? Cap = null, string? Join = null, double? Opacity = null);
 
     // `parent` brings us from the container's (group's) space to page space.
     // A traced path can have thousands of nodes: beyond this threshold get_document does not report `d` (only `nodes`).
@@ -57,7 +58,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             o is ImageObject im ? [im.PixelWidth, im.PixelHeight] : null,
             (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
             o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null,
-            Hidden: o.Hidden ? true : null, Locked: o.Locked ? true : null);
+            Hidden: o.Hidden ? true : null, Locked: o.Locked ? true : null,
+            Dash: o.StrokeDash?.Select(R).ToArray(), Cap: o.StrokeCap == "butt" ? null : o.StrokeCap, Join: o.StrokeJoin == "miter" ? null : o.StrokeJoin, Opacity: o.Opacity == 1 ? null : R(o.Opacity));
     }
 
     [McpServerTool(Name = "execute")]
@@ -70,6 +72,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.create","type":"image","name":"sketch","src":"/Users/me/sketch.png","x":0,"y":0,"width":400}   (embeds a bitmap: PNG, JPEG, GIF, WebP or BMP; `src` = absolute file path or "data:image/png;base64,..."; omit width and height for the native size, give only one to keep the proportions; accepts rel; fill = background under transparent parts, stroke = frame. Handy as a reference to trace over: place it, call render, then draw vector shapes on top. Images move/resize/rotate/group/align like any object but cannot become paths or enter shape.boolean)
           {"cmd":"image.trace","target":"sketch","threshold":128,"smooth":1,"fill":"#000000","keepOriginal":true}   (vectorizes an imported image in black and white: dark pixels become ONE path with holes, drawn right above the image with the same position; returns the path id in `created`. threshold 1-255 = brightness below which a pixel is filled (default 128); "invert":true fills the light pixels instead; minArea = specks smaller than this many image pixels are ignored (default 4); smooth 0.2-5 = curve tolerance in image pixels, higher = fewer nodes and softer lines (default 1); keepOriginal:false removes the image. Transparent pixels count as empty. Good for line art, logos and sketches; photos give huge paths. Render to check, retry with another threshold if it is too thick or too thin)
           {"cmd":"svg.import","src":"/Users/me/logo.svg","name":"logo","x":20,"y":20,"width":200}   (imports an SVG file, or inline markup with "svg":"<svg ...>", as ONE group: shapes, paths, groups, text, embedded images, gradients, <use> and class-based CSS are kept as editable objects; clip-paths, masks, filters, dashes and evenodd fills are not supported and reported in `notes` in the result. x,y,width,height give the position and size of the artwork's bounding box (give only width or only height to keep the proportions); omit them to keep the SVG's own coordinates and size; accepts rel. Returns the group id in `created`. Great for icons and logos: import, then render to check)
+          STROKE STYLE and OPACITY (in shape.create and object.style): "dash":"solid"|"dashed"|"dotted"|"dashdot" (scaled to the stroke width) or numbers in px like "8 4" / "8 4 2 4"; "cap":"butt"|"round"|"square"; "join":"miter"|"round"|"bevel"; "opacity":0..1 for the whole object (on a group: its content together). Example: {"cmd":"object.style","targets":["road"],"stroke":"#FFFFFF","strokeWidth":3,"dash":"dashed","cap":"round","opacity":0.8}
           {"cmd":"layer.add","name":"sketch","above":"Layer 1","activate":true}   (new layer, on top unless `above` names a layer; by default it becomes the ACTIVE layer, where new objects go when shape.create has no "layer")
           {"cmd":"layer.set","layer":"sketch","name":"reference","visible":false,"locked":true,"active":true}   (any subset of fields; a hidden layer is not drawn, rendered or exported; a locked layer and everything in it refuses edits until unlocked)
           {"cmd":"layer.order","layer":"sketch","action":"front"}   (front, back, up, down: higher layers cover lower ones)   {"cmd":"layer.delete","layer":"sketch"}   (deletes the layer WITH its objects; the last layer cannot be deleted)

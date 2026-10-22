@@ -77,6 +77,14 @@ public sealed class CreateShape : Command
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double? StrokeWidth { get; set; }
+    /// <summary>"solid", "dashed", "dotted", "dashdot" or numbers in px ("8 4"); see <see cref="StrokeStyle"/>.</summary>
+    public string? Dash { get; set; }
+    /// <summary>"butt" (default), "round" or "square".</summary>
+    public string? Cap { get; set; }
+    /// <summary>"miter" (default), "round" or "bevel".</summary>
+    public string? Join { get; set; }
+    /// <summary>0 (invisible) to 1 (opaque, default).</summary>
+    public double? Opacity { get; set; }
     /// <summary>Only for type "path": SVG data (M L H V C S Q T A Z, absolute or relative).</summary>
     public string? D { get; set; }
     /// <summary>Relative positioning to other objects, instead of x and y.</summary>
@@ -166,6 +174,10 @@ public sealed class CreateShape : Command
             // A path with neither fill nor stroke would be invisible: give it a black stroke.
             if (obj is PathObject && obj.Fill is null && obj.Stroke is null && Fill is null && Stroke is null) obj.Stroke = "#000000";
             obj.StrokeWidth = StrokeWidth ?? (obj.Stroke is null ? 0 : 1);
+            if (Dash != null) obj.StrokeDash = StrokeStyle.ParseDash(Dash, obj.StrokeWidth);
+            if (Cap != null) obj.StrokeCap = StrokeStyle.CheckCap(Cap);
+            if (Join != null) obj.StrokeJoin = StrokeStyle.CheckJoin(Join);
+            if (Opacity != null) obj.Opacity = StrokeStyle.CheckOpacity(Opacity.Value);
             _obj = obj;
         }
         _layer ??= doc.TargetLayer(Layer);
@@ -265,8 +277,16 @@ public sealed class SetStyle : Command
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double? StrokeWidth { get; set; }
+    /// <summary>"solid", "dashed", "dotted", "dashdot" or numbers in px ("8 4"); see <see cref="StrokeStyle"/>.</summary>
+    public string? Dash { get; set; }
+    /// <summary>"butt", "round" or "square".</summary>
+    public string? Cap { get; set; }
+    /// <summary>"miter", "round" or "bevel".</summary>
+    public string? Join { get; set; }
+    /// <summary>0 (invisible) to 1 (opaque). Set on the targets themselves (a group's opacity applies to its content as a whole).</summary>
+    public double? Opacity { get; set; }
 
-    List<(SceneObject Obj, string? Fill, string? Stroke, double Width)> _old = [];
+    List<(SceneObject Obj, string? Fill, string? Stroke, double Width, double[]? Dash, string Cap, string Join, double Opacity)> _old = [];
 
     static IEnumerable<SceneObject> Leaves(SceneObject o) => o is GroupObject g ? g.Children.SelectMany(Leaves) : [o];
 
@@ -277,23 +297,31 @@ public sealed class SetStyle : Command
         if (Targets.Count == 0) throw new CommandException("object.style: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
         var stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
-        // On a group the style applies to all the shapes it contains.
-        _old = Targets.Select(t => doc.FindEditable(t)).SelectMany(Leaves).Distinct()
-            .Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth)).ToList();
-        foreach (var (obj, _, _, _) in _old)
+        if (StrokeWidth is < 0) throw new CommandException("'strokeWidth' cannot be negative.");
+        var cap = Cap is null ? null : StrokeStyle.CheckCap(Cap);
+        var join = Join is null ? null : StrokeStyle.CheckJoin(Join);
+        var opacity = Opacity is null ? (double?)null : StrokeStyle.CheckOpacity(Opacity.Value);
+
+        var tops = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
+        // Colors, stroke and dash apply to all the shapes a group contains; opacity to the targets themselves.
+        var leaves = tops.SelectMany(Leaves).Distinct().ToList();
+        _old = leaves.Union(tops).Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth, o.StrokeDash, o.StrokeCap, o.StrokeJoin, o.Opacity)).ToList();
+        foreach (var obj in leaves)
         {
             if (Fill != null) obj.Fill = fill;
             if (Stroke != null) obj.Stroke = stroke;
             if (StrokeWidth != null) obj.StrokeWidth = StrokeWidth.Value;
+            if (Dash != null) obj.StrokeDash = StrokeStyle.ParseDash(Dash, obj.StrokeWidth);
+            if (cap != null) obj.StrokeCap = cap;
+            if (join != null) obj.StrokeJoin = join;
         }
+        if (opacity != null) foreach (var obj in tops) obj.Opacity = opacity.Value;
     }
 
     public override void Undo(Document doc)
     {
-        foreach (var (obj, fill, stroke, width) in _old)
-        {
-            obj.Fill = fill; obj.Stroke = stroke; obj.StrokeWidth = width;
-        }
+        foreach (var (obj, fill, stroke, width, dash, cap, join, opacity) in _old)
+            (obj.Fill, obj.Stroke, obj.StrokeWidth, obj.StrokeDash, obj.StrokeCap, obj.StrokeJoin, obj.Opacity) = (fill, stroke, width, dash, cap, join, opacity);
     }
 }
 
@@ -583,7 +611,8 @@ public sealed class ConvertToPath : Command
                 _done.Add((container, container.IndexOf(o), o, new PathObject
                 {
                     Id = o.Id, Name = o.Name, Segments = segs, Source = box, X = box.X, Y = box.Y, Width = box.Width, Height = box.Height,
-                    Transform = o.Transform, Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth,
+                    Transform = o.Transform, Hidden = o.Hidden,
+                    Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth, StrokeDash = o.StrokeDash, StrokeCap = o.StrokeCap, StrokeJoin = o.StrokeJoin, Opacity = o.Opacity,
                 }));
             }
         foreach (var (container, _, old, @new) in _done) container[container.IndexOf(old)] = @new;

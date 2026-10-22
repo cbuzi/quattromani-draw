@@ -61,6 +61,10 @@ public static partial class DocumentFile
         public string? Fill { get; set; }
         public string? Stroke { get; set; }
         public double? StrokeWidth { get; set; }
+        public double[]? Dash { get; set; }
+        public string? Cap { get; set; }
+        public string? Join { get; set; }
+        public double? Opacity { get; set; }
         public bool? Hidden { get; set; }
         public bool? Locked { get; set; }
 
@@ -113,6 +117,7 @@ public static partial class DocumentFile
         {
             Type = o.Type, Id = o.Id, Name = o.Name, X = o.X, Y = o.Y, Width = o.Width, Height = o.Height,
             Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth == 0 ? null : o.StrokeWidth,
+            Dash = o.StrokeDash, Cap = o.StrokeCap == "butt" ? null : o.StrokeCap, Join = o.StrokeJoin == "miter" ? null : o.StrokeJoin, Opacity = o.Opacity == 1 ? null : o.Opacity,
             Hidden = o.Hidden ? true : null, Locked = o.Locked ? true : null,
             Transform = o.Transform == Matrix3x2.Identity ? null : [o.Transform.M11, o.Transform.M12, o.Transform.M21, o.Transform.M22, o.Transform.M31, o.Transform.M32],
         };
@@ -290,6 +295,14 @@ public static partial class DocumentFile
         obj.Stroke = d.Stroke is null ? null : Document.ParseColor(d.Stroke, $"{label}.stroke");
         obj.StrokeWidth = d.StrokeWidth ?? 0;
         (obj.Hidden, obj.Locked) = (d.Hidden == true, d.Locked == true);
+        if (d.Dash is { } dash)
+        {
+            if (dash.Length is 0 or > 8 || !dash.All(v => double.IsFinite(v) && v >= 0) || dash.Sum() <= 0) throw new CommandException($"Object {label}: invalid 'dash'.");
+            obj.StrokeDash = dash;
+        }
+        if (d.Cap != null) obj.StrokeCap = StrokeStyle.CheckCap(d.Cap);
+        if (d.Join != null) obj.StrokeJoin = StrokeStyle.CheckJoin(d.Join);
+        if (d.Opacity != null) obj.Opacity = StrokeStyle.CheckOpacity(d.Opacity.Value);
         if (d.Transform is { } t)
         {
             if (t.Length != 6 || !t.All(float.IsFinite)) throw new CommandException($"Object {label}: 'transform' must have 6 numbers.");
