@@ -11,13 +11,16 @@ namespace Quattromani.App;
 /// </summary>
 static class AgentLauncher
 {
-    public sealed record Agent(string Id, string Name, string Command, string InstallUrl);
+    /// <param name="Fallbacks">Where the command may live when it is not on the PATH (for example inside the desktop app that ships it); "~" is the home folder.</param>
+    public sealed record Agent(string Id, string Name, string Command, string InstallUrl, string[] Fallbacks);
 
     public static readonly Agent[] Agents =
     [
-        new("claude", "Claude Code", "claude", "https://docs.claude.com/en/docs/claude-code"),
-        new("codex", "Codex", "codex", "https://github.com/openai/codex"),
-        new("opencode", "OpenCode", "opencode", "https://opencode.ai"),
+        new("claude", "Claude Code", "claude", "https://docs.claude.com/en/docs/claude-code", ["~/.local/bin/claude", "~/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]),
+        // The Codex desktop app carries its own command line tool and shares ~/.codex/config.toml with it.
+        new("codex", "Codex", "codex", "https://github.com/openai/codex",
+            ["/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex", "~/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex", "/opt/homebrew/bin/codex", "/usr/local/bin/codex"]),
+        new("opencode", "OpenCode", "opencode", "https://opencode.ai", ["~/.opencode/bin/opencode", "/opt/homebrew/bin/opencode", "/usr/local/bin/opencode"]),
     ];
 
     static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".quattromani");
@@ -83,18 +86,26 @@ static class AgentLauncher
 
     static string UnixScript(Agent a)
     {
+        // $AGENT is the command found on the PATH or, failing that, at one of the usual places.
         var run = a.Id switch
         {
-            "claude" => $"claude --mcp-config {Quote(McpConfigFile)} --allowedTools mcp__quattromani",
+            "claude" => $"\"$AGENT\" --mcp-config {Quote(McpConfigFile)} --allowedTools mcp__quattromani",
             // Codex keeps its MCP servers in its own config: (re)register ours, then start.
-            "codex" => $"codex mcp remove quattromani >/dev/null 2>&1; codex mcp add quattromani --url {Quote(Url)} >/dev/null 2>&1; codex",
-            _ => a.Command,
+            "codex" => $"\"$AGENT\" mcp remove quattromani >/dev/null 2>&1; \"$AGENT\" mcp add quattromani --url {Quote(Url)} >/dev/null 2>&1; \"$AGENT\"",
+            _ => "\"$AGENT\"",
         };
+        var fallbacks = string.Join(" ", a.Fallbacks.Select(p => p.StartsWith("~/") ? "\"$HOME/" + p[2..] + "\"" : Quote(p)));
         // -il: login and interactive shell, so the PATH is the one the user has in their own terminal.
         return $$"""
             #!/bin/zsh -il
             cd {{Quote(WorkspaceDir)}} || exit 1
-            if ! command -v {{a.Command}} >/dev/null 2>&1; then
+            AGENT=$(command -v {{a.Command}} 2>/dev/null)
+            if [ -z "$AGENT" ]; then
+              for p in {{fallbacks}}; do
+                if [ -x "$p" ]; then AGENT="$p"; break; fi
+              done
+            fi
+            if [ -z "$AGENT" ]; then
               echo "{{a.Name}} was not found. Install it first: {{a.InstallUrl}}"
               echo
               read -r "?Press Enter to close"
