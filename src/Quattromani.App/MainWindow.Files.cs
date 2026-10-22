@@ -149,7 +149,7 @@ public partial class MainWindow
             {
                 Entry("Undo", () => _bus.Undo()), Entry("Redo", () => _bus.Redo()),
                 new NativeMenuItemSeparator(),
-                Entry("Cut", () => CopySelection(true)), Entry("Copy", () => CopySelection(false)), Entry("Paste", Paste),
+                Entry("Cut", () => CopySelection(true)), Entry("Copy", () => CopySelection(false)), Entry("Paste", () => _ = PasteAsync()),
                 Entry("Duplicate", Duplicate, Key.D),
             },
         };
@@ -179,6 +179,8 @@ public partial class MainWindow
                 new NativeMenuItemSeparator(),
                 Entry("Fit Text to Path", FitTextToPath),
                 Entry("Trace Image", () => _ = TraceSelectedAsync()),
+                Entry("Flip Horizontally", () => FlipSelected("x")),
+                Entry("Flip Vertically", () => FlipSelected("y")),
                 new NativeMenuItemSeparator(),
                 Entry("Hide", ToggleHidden),
                 Entry("Show All", ShowAll),
@@ -345,18 +347,23 @@ public partial class MainWindow
     // As for images: reduced if it does not fit in 80% of the page, centered on `center`.
     void ImportSvgFile(string path, Point center)
     {
+        try { ImportSvgText(File.ReadAllText(path), Path.GetFileNameWithoutExtension(path), center); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
+    }
+
+    void ImportSvgText(string text, string name, Point center)
+    {
         try
         {
-            var text = File.ReadAllText(path);
             var (box, page) = _bus.Read(d => (SvgFile.Measure(d, text), (d.Pages[0].Width, d.Pages[0].Height)));
             var k = Math.Min(1, Math.Min(0.8 * page.Width / Math.Max(box.Width, 1e-9), 0.8 * page.Height / Math.Max(box.Height, 1e-9)));
             double w = box.Width * k, h = box.Height * k;
-            var cmd = new ImportSvg { Svg = text, Name = Path.GetFileNameWithoutExtension(path), X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h };
+            var cmd = new ImportSvg { Svg = text, Name = name, X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h };
             var r = _bus.Execute([cmd]);
             Canvas.SetSelection(r.CreatedIds);
             if (cmd.Notes is { } notes) ShowNotice($"Imported, but: {string.Join("; ", notes)}", error: false);
         }
-        catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
     // Vectorizes the selected image with the default values; the result (a path) sits above the original.

@@ -16,6 +16,48 @@ static class Shift
 }
 
 /// <summary>
+/// Mirrors objects: axis "x" flips left-right, "y" flips top-bottom. By default each object is mirrored around its own center;
+/// with <c>together</c> all of them around the center of their joint box (their layout is mirrored as well).
+/// </summary>
+public sealed class FlipObjects : Command
+{
+    public List<string> Targets { get; set; } = [];
+    public string Axis { get; set; } = "";
+    public bool Together { get; set; }
+
+    List<(SceneObject Obj, Matrix3x2 Old)> _old = [];
+
+    [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
+
+    public override void Apply(Document doc)
+    {
+        if (Targets.Count == 0) throw new CommandException("object.flip: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
+        if (Axis is not ("x" or "y")) throw new CommandException("object.flip: 'axis' must be \"x\" (left-right) or \"y\" (top-bottom). Example: {\"cmd\":\"object.flip\",\"targets\":[\"o1\"],\"axis\":\"x\"}.");
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
+        objs = objs.Where(o => !objs.Any(p => p != o && Document.SelfAndDescendants(p).Contains(o))).ToList();
+        _old = objs.Select(o => (o, o.Transform)).ToList();
+
+        var boxes = objs.Select(doc.PageBounds).ToList();
+        var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);
+        var joint = new Box(x0, y0, boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0);
+        for (var i = 0; i < objs.Count; i++)
+        {
+            var b = Together ? joint : boxes[i];
+            Vector2 c = new((float)(b.X + b.Width / 2), (float)(b.Y + b.Height / 2));
+            // The mirror is defined on the page; it is brought into the space of the object's container.
+            var mirror = Matrix3x2.CreateTranslation(-c) * Matrix3x2.CreateScale(Axis == "x" ? -1 : 1, Axis == "y" ? -1 : 1) * Matrix3x2.CreateTranslation(c);
+            var parent = doc.ParentMatrix(objs[i]);
+            if (Matrix3x2.Invert(parent, out var inv)) objs[i].Transform = objs[i].Transform * parent * mirror * inv;
+        }
+    }
+
+    public override void Undo(Document doc)
+    {
+        foreach (var (obj, old) in _old) obj.Transform = old;
+    }
+}
+
+/// <summary>
 /// Stacking order (z-order) among siblings at the same level. <c>action</c>: "front" (on top), "back" (at the bottom),
 /// "forward" / "backward" (one step), or <c>above</c> / <c>below</c> = right above or below another object.
 /// Several objects keep their relative order.

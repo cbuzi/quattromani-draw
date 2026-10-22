@@ -56,6 +56,25 @@ public static class SvgFile
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + root.ToString();
     }
 
+    /// <summary>SVG of some objects only (for the system clipboard): the viewBox is their joint box, in document coordinates.</summary>
+    public static string ExportObjects(Document doc, IEnumerable<SceneObject> objects)
+    {
+        var objs = objects.ToList();
+        var boxes = objs.Select(doc.PageBounds).ToList();
+        var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);
+        var (w, h) = (boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0);
+        var defs = new XElement(Svg + "defs");
+        var writer = new Writer(defs);
+        var root = new XElement(Svg + "svg",
+            new XAttribute(XNamespace.Xmlns + "xlink", Xlink),
+            new XAttribute("width", N(w) + "px"), new XAttribute("height", N(h) + "px"),
+            new XAttribute("viewBox", $"{N(x0)} {N(y0)} {N(w)} {N(h)}"));
+        var body = objs.Select(writer.Object).ToList();
+        if (defs.HasElements) root.Add(defs);
+        root.Add(body);
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + root.ToString();
+    }
+
     sealed class Writer(XElement defs)
     {
         int _n;

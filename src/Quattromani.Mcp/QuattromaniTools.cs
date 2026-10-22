@@ -77,6 +77,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.create","type":"line","x":10,"y":10,"width":200,"height":-50,"stroke":"#000000","strokeWidth":3}   (a line from (x,y) to (x+width,y+height); width/height may be negative; it is a path)
           {"cmd":"shape.create","type":"polygon","sides":6,"x":10,"y":10,"width":100,"height":90,"fill":"#22C55E"}   (regular polygon with `sides` 3-100, first vertex at the top, stretched to fill the box; it is a path)
           {"cmd":"shape.create","type":"star","points":5,"innerRatio":0.5,"x":10,"y":10,"width":100,"height":96,"fill":"#FACC15"}   (star with `points` 3-100; innerRatio = inner radius / outer radius, 0.05-0.95; it is a path)
+          {"cmd":"object.flip","targets":["wing"],"axis":"x","together":false}   (mirror left-right with "x" or top-bottom with "y", each object around its own center; "together":true mirrors them around the center of their joint box)
           {"cmd":"rect.corner","targets":["card"],"radius":12}   (corner radius in px of rectangles; also "cornerRadius":12 in shape.create for a rectangle; 0 = square; limited to half the shorter side)
           {"cmd":"layer.add","name":"sketch","above":"Layer 1","activate":true}   (new layer, on top unless `above` names a layer; by default it becomes the ACTIVE layer, where new objects go when shape.create has no "layer")
           {"cmd":"layer.set","layer":"sketch","name":"reference","visible":false,"locked":true,"active":true}   (any subset of fields; a hidden layer is not drawn, rendered or exported; a locked layer and everything in it refuses edits until unlocked)
@@ -150,7 +151,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, rect.corner, image.trace, svg.import, layer.add, layer.set, layer.delete, layer.order, object.toLayer, object.state, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, rect.corner, object.flip, image.trace, svg.import, layer.add, layer.set, layer.delete, layer.order, object.toLayer, object.state, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

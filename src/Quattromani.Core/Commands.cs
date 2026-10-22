@@ -47,6 +47,7 @@ public static class Json
 [JsonDerivedType(typeof(TraceImage), "image.trace")]
 [JsonDerivedType(typeof(ImportSvg), "svg.import")]
 [JsonDerivedType(typeof(SetCornerRadius), "rect.corner")]
+[JsonDerivedType(typeof(FlipObjects), "object.flip")]
 [JsonDerivedType(typeof(AddLayer), "layer.add")]
 [JsonDerivedType(typeof(SetLayer), "layer.set")]
 [JsonDerivedType(typeof(DeleteLayer), "layer.delete")]

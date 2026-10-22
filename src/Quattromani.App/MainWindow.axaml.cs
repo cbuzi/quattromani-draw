@@ -1,3 +1,4 @@
+using Avalonia.Input.Platform;
 using Quattromani.Core;
 using Avalonia;
 using Avalonia.Controls;
@@ -263,6 +264,8 @@ public partial class MainWindow : Window
         MenuForward.Click += (_, _) => OrderSelected("forward");
         MenuBackward.Click += (_, _) => OrderSelected("backward");
         MenuToBack.Click += (_, _) => OrderSelected("back");
+        MenuFlipH.Click += (_, _) => FlipSelected("x");
+        MenuFlipV.Click += (_, _) => FlipSelected("y");
         MenuAlignLeft.Click += (_, _) => AlignSelected("left", null);
         MenuAlignCenter.Click += (_, _) => AlignSelected("center", null);
         MenuAlignRight.Click += (_, _) => AlignSelected("right", null);
@@ -505,7 +508,7 @@ public partial class MainWindow : Window
         }
         else if (cmd && e.Key == Key.D) { Duplicate(); e.Handled = true; }
         else if (cmd && e.Key is Key.C or Key.X) { CopySelection(e.Key == Key.X); e.Handled = true; }
-        else if (cmd && e.Key == Key.V) { Paste(); e.Handled = true; }
+        else if (cmd && e.Key == Key.V) { _ = PasteAsync(); e.Handled = true; }
         else if (cmd && e.Key == Key.G)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) Ungroup(); else Group();
@@ -1179,6 +1182,9 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
+    // Several objects are mirrored together, as one block; a single one around its own center.
+    void FlipSelected(string axis) => ExecuteOnSelection(ids => new FlipObjects { Targets = ids, Axis = axis, Together = ids.Count > 1 });
+
     void OrderSelected(string action) => ExecuteOnSelection(ids => new OrderObjects { Targets = ids, Action = action });
 
     void AlignSelected(string? x, string? y, string? to = null) => ExecuteOnSelection(ids => new AlignObjects { Targets = ids, X = x, Y = y, To = to });
@@ -1214,7 +1220,39 @@ public partial class MainWindow : Window
         if (ids.Count == 0) return;
         _clipboard = _bus.Read(d => DocumentFile.ExportObjects(d.Objects.Where(o => ids.Contains(o.Id))));
         _pasteCount = cut ? 0 : 1; // after Copy the original is still there; after Cut the first paste goes to the same place
+        CopySvgToSystemClipboard(ids);
         if (cut) Exec(new DeleteObjects { Targets = ids.ToList() });
+    }
+
+    // Besides the internal copy, the selection goes to the system clipboard as SVG text, so other programs can paste it.
+    string? _lastSvgCopy;
+
+    void CopySvgToSystemClipboard(HashSet<string> ids)
+    {
+        var svg = _bus.Read(d => d.Objects.Where(o => ids.Contains(o.Id)).ToList() is { Count: > 0 } objs ? SvgFile.ExportObjects(d, objs) : null);
+        if (svg == null) return;
+        _lastSvgCopy = svg;
+        if (GetTopLevel(this)?.Clipboard is { } cb) _ = cb.SetTextAsync(svg);
+    }
+
+    // An SVG on the system clipboard (copied from another program) is imported; otherwise the internal copy is pasted.
+    async Task PasteAsync()
+    {
+        string? text = null;
+        try { if (GetTopLevel(this)?.Clipboard is { } cb) text = await cb.TryGetTextAsync(); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException) { } // clipboard not available
+        if (text != null && text != _lastSvgCopy && LooksLikeSvg(text))
+        {
+            ImportSvgText(text, "pasted", Canvas.ViewCenter);
+            return;
+        }
+        Paste();
+    }
+
+    static bool LooksLikeSvg(string text)
+    {
+        var t = text.AsSpan().TrimStart();
+        return t.StartsWith("<svg", StringComparison.OrdinalIgnoreCase) || t.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && text.Contains("<svg", StringComparison.OrdinalIgnoreCase);
     }
 
     void Paste()

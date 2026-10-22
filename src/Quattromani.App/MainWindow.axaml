@@ -62,6 +62,9 @@
                                 <MenuItem x:Name="MenuForward" Header="Forward one" />
                                 <MenuItem x:Name="MenuBackward" Header="Back one" />
                                 <MenuItem x:Name="MenuToBack" Header="To back" />
+                                <Separator />
+                                <MenuItem x:Name="MenuFlipH" Header="Flip horizontally" />
+                                <MenuItem x:Name="MenuFlipV" Header="Flip vertically" />
                             </MenuFlyout>
                         </Button.Flyout>
                         <StackPanel Spacing="3">
