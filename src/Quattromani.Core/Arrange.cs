@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Quattromani.Core;
 
-/// <summary>Spostamento di oggetti espresso nello spazio pagina, riportato nello spazio del loro contenitore (anche dentro gruppi ruotati o scalati).</summary>
+/// <summary>Moves objects by an amount expressed in page space, brought back to the space of their container (even inside rotated or scaled groups).</summary>
 static class Shift
 {
     public static Matrix3x2 Apply(Document doc, SceneObject o, double dx, double dy)
@@ -16,9 +16,9 @@ static class Shift
 }
 
 /// <summary>
-/// Ordine di sovrapposizione (z-order) tra fratelli dello stesso livello. <c>action</c>: "front" (in primo piano), "back" (sullo sfondo),
-/// "forward" / "backward" (di un posto), oppure <c>above</c> / <c>below</c> = subito sopra o sotto un altro oggetto.
-/// Più oggetti mantengono il loro ordine relativo.
+/// Stacking order (z-order) among siblings at the same level. <c>action</c>: "front" (on top), "back" (at the bottom),
+/// "forward" / "backward" (one step), or <c>above</c> / <c>below</c> = right above or below another object.
+/// Several objects keep their relative order.
 /// </summary>
 public sealed class OrderObjects : Command
 {
@@ -57,7 +57,7 @@ public sealed class OrderObjects : Command
         {
             var list = g.Key;
             var set = g.ToHashSet();
-            var moving = list.Where(set.Contains).ToList(); // in ordine di sovrapposizione attuale
+            var moving = list.Where(set.Contains).ToList(); // in current stacking order
             var others = list.Where(o => !set.Contains(o)).ToList();
             List<SceneObject> result;
             switch (Action, reference)
@@ -96,8 +96,8 @@ public sealed class OrderObjects : Command
 }
 
 /// <summary>
-/// Allinea ogni oggetto, singolarmente, a un riferimento: x = "left" | "center" | "right", y = "top" | "middle" | "bottom" (anche entrambi).
-/// <c>to</c>: "selection" (il riquadro della selezione; è il default con più oggetti), "page" (default con un oggetto solo) oppure un oggetto.
+/// Aligns each object, individually, to a reference: x = "left" | "center" | "right", y = "top" | "middle" | "bottom" (or both).
+/// <c>to</c>: "selection" (the selection box; the default with several objects), "page" (default with a single object) or an object.
 /// </summary>
 public sealed class AlignObjects : Command
 {
@@ -166,8 +166,8 @@ public sealed class AlignObjects : Command
 }
 
 /// <summary>
-/// Distribuisce gli oggetti lungo un asse. mode "gaps" (default): spazi uguali tra un oggetto e il successivo, con il primo e l'ultimo fermi
-/// (oppure con <c>gap</c> esplicito, partendo dal primo); mode "centers": centri equidistanti, primo e ultimo fermi.
+/// Distributes objects along an axis. mode "gaps" (default): equal gaps between each object and the next, with the first and last fixed
+/// (or with an explicit <c>gap</c>, starting from the first); mode "centers": equally spaced centers, first and last fixed.
 /// </summary>
 public sealed class DistributeObjects : Command
 {
@@ -196,12 +196,12 @@ public sealed class DistributeObjects : Command
                 : "object.distribute: at least 3 objects are needed (2 are enough with an explicit 'gap').");
 
         bool horizontal = Axis == "x";
-        // (inizio, fine) di ogni oggetto sull'asse, in ordine di posizione
+        // (start, end) of each object on the axis, in position order
         var items = objs.Select(o => (Obj: o, B: doc.PageBounds(o)))
             .Select(e => (e.Obj, Start: horizontal ? e.B.X : e.B.Y, Size: horizontal ? e.B.Width : e.B.Height))
             .OrderBy(e => e.Start + e.Size / 2).ToList();
 
-        var target = new double[items.Count]; // nuovo inizio di ogni oggetto
+        var target = new double[items.Count]; // new start of each object
         if (mode == "centers")
         {
             double c0 = items[0].Start + items[0].Size / 2, cN = items[^1].Start + items[^1].Size / 2;

@@ -10,7 +10,7 @@ namespace Quattromani.App;
 
 public class App : Application
 {
-    // Piccolo comando per la voce di menu About (nessuna dipendenza da librerie MVVM).
+    // Small command for the About menu item (no dependency on MVVM libraries).
     sealed class RelayAbout : System.Windows.Input.ICommand
     {
         public event EventHandler? CanExecuteChanged { add { } remove { } }
@@ -24,7 +24,7 @@ public class App : Application
             _ = new AboutWindow().ShowDialog(owner);
     }
 
-    /// <summary>Unico bus dell'app: UI (e in seguito MCP) modificano il documento solo da qui.</summary>
+    /// <summary>The app's single bus: the UI (and later MCP) modify the document only from here.</summary>
     public static CommandBus Bus { get; } = new(new Document { TextEngine = new SkiaTextEngine(), ImageProbe = SceneRenderer.Probe, ImagePixels = SceneRenderer.Pixels });
     internal static FileSession Files { get; } = new(Bus);
     internal static Recovery Recovery { get; } = new(Bus, Files);
@@ -35,11 +35,11 @@ public class App : Application
         BuildAppMenu();
     }
 
-    // Menu dell'applicazione (macOS). Va assegnato in Initialize(): Avalonia lo legge subito dopo, e se non lo trova ne crea uno
-    // suo con "About Avalonia".
+    // Application menu (macOS). It must be assigned in Initialize(): Avalonia reads it right after, and if it does not find it it creates
+    // its own with "About Avalonia".
     void BuildAppMenu()
     {
-        // About, Nascondi, Esci, con le scorciatoie di sempre.
+        // About, Hide, Quit, with the usual shortcuts.
         if (OperatingSystem.IsMacOS())
         {
             NativeMenuItem Entry(string header, Action action, Key? key = null, KeyModifiers extra = KeyModifiers.None)
@@ -57,7 +57,7 @@ public class App : Application
                 Entry("Hide Others", MacApp.HideOthers, Key.H, KeyModifiers.Alt),
                 Entry("Show All", MacApp.ShowAll),
                 new NativeMenuItemSeparator(),
-                // Chiudere la finestra principale: se ci sono modifiche non salvate chiede cosa farne.
+                // Closing the main window: if there are unsaved changes it asks what to do with them.
                 Entry("Quit Quattromani Draw", () => (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow?.Close(), Key.Q),
             });
         }
@@ -73,8 +73,8 @@ public class App : Application
             var window = new MainWindow();
             desktop.MainWindow = window;
             Recovery.Start();
-            // Un errore imprevisto in un gestore dell'interfaccia non deve chiudere l'app e far perdere il lavoro: lo si registra, si
-            // mette al sicuro una copia e si continua.
+            // An unexpected error in a UI handler must not close the app and lose the work: it is logged, a backup copy is
+            // made and we carry on.
             Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
                 CrashLog.Write("UI thread", e.Exception);
@@ -83,7 +83,7 @@ public class App : Application
                 e.Handled = true;
             };
             var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection);
-            desktop.Exit += (_, _) => { McpHost.RemoveDiscoveryFile(); _ = mcp.StopAsync(); }; // senza attendere: il server non ha nulla da salvare, e aspettare le connessioni aperte faceva "laggare" la chiusura
+            desktop.Exit += (_, _) => { McpHost.RemoveDiscoveryFile(); _ = mcp.StopAsync(); }; // without waiting: the server has nothing to save, and waiting for open connections made the closing "lag"
         }
 
         base.OnFrameworkInitializationCompleted();

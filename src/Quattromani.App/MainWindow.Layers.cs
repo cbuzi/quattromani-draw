@@ -8,17 +8,17 @@ using Quattromani.Core;
 
 namespace Quattromani.App;
 
-/// <summary>Pannello Layers, nascondi/blocca e "sposta nel layer" per gli oggetti.</summary>
+/// <summary>Layers panel, hide/lock and "move to layer" for objects.</summary>
 public partial class MainWindow
 {
-    // Icone Material Design (occhio, lucchetto chiuso e aperto).
+    // Material Design icons (eye, closed and open lock).
     const string EyeIcon = "M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z";
     const string LockIcon = "M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z";
     const string UnlockIcon = "M18,1C15.24,1 13,3.24 13,6V8H4A2,2 0 0,0 2,10V20A2,2 0 0,0 4,22H16A2,2 0 0,0 18,20V10A2,2 0 0,0 16,8H15V6C15,4.34 16.34,3 18,3C19.66,3 21,4.34 21,6V8H23V6C23,3.24 20.76,1 18,1M10,17A2,2 0 0,1 8,15A2,2 0 0,1 10,13A2,2 0 0,1 12,15A2,2 0 0,1 10,17Z";
 
-    List<string> _layerNames = []; // dall'alto in basso, come nell'elenco
+    List<string> _layerNames = []; // from top to bottom, as in the list
 
-    // I comandi dell'utente passano da qui: un comando rifiutato diventa un avviso.
+    // The user's commands go through here: a rejected command becomes a notice.
     BatchResult? Exec(params Command[] commands)
     {
         try { return _bus.Execute(commands); }
@@ -54,7 +54,7 @@ public partial class MainWindow
         if (ActiveLayerName() is { } name) Exec(new OrderLayer { Layer = name, Action = action });
     }
 
-    /// <summary>Riallinea l'elenco dei layer al documento (thread UI, dentro Refresh).</summary>
+    /// <summary>Aligns the layer list with the document (UI thread, inside Refresh).</summary>
     void RefreshLayers()
     {
         var (layers, active) = _bus.Read(d => (d.Pages[0].Layers.Select(l => (l.Name, l.Visible, l.Locked, l.Objects.Count)).ToList(), d.Pages[0].Layers.IndexOf(d.Pages[0].ActiveLayer)));
@@ -107,7 +107,7 @@ public partial class MainWindow
             if (done) return;
             done = true;
             var text = box.Text?.Trim() ?? "";
-            if (apply && text != name && Exec(new SetLayer { Layer = name, Name = text }) != null) return; // l'elenco si ricostruisce da solo
+            if (apply && text != name && Exec(new SetLayer { Layer = name, Name = text }) != null) return; // the list rebuilds itself
             row.Children.Remove(box);
             row.Children.Add(label);
         }
@@ -119,7 +119,7 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(() => { box.Focus(); box.SelectAll(); }, DispatcherPriority.Background);
     }
 
-    // ---- Nascondi, blocca, sposta nel layer ----------------------------------------------------
+    // ---- Hide, lock, move to layer ----------------------------------------------------
 
     void FillObjectMenu(ContextMenu menu)
     {
@@ -140,7 +140,7 @@ public partial class MainWindow
         menu.ItemsSource = new List<Control> { Entry(hidden ? "Show" : "Hide", ToggleHidden), Entry(locked ? "Unlock" : "Lock", ToggleLocked), new Separator(), move };
     }
 
-    // Se tutti gli oggetti selezionati hanno già lo stato, lo tolgo; altrimenti lo do a tutti.
+    // If all the selected objects already have the state, remove it; otherwise give it to all.
     void ToggleState(bool hidden)
     {
         var ids = Canvas.SelectedIds.ToList();
@@ -148,7 +148,7 @@ public partial class MainWindow
         var all = _bus.Read(d => ids.All(id => d.AllObjects.FirstOrDefault(o => o.Id == id) is { } o && (hidden ? o.Hidden : o.Locked)));
         var cmd = new SetObjectState { Targets = ids };
         if (hidden) cmd.Hidden = !all; else cmd.Locked = !all;
-        if (Exec(cmd) != null && hidden && !all) Canvas.SetSelection([]); // un oggetto nascosto non resta selezionato sul disegno
+        if (Exec(cmd) != null && hidden && !all) Canvas.SetSelection([]); // a hidden object does not stay selected on the canvas
     }
 
     void ToggleHidden() => ToggleState(hidden: true);

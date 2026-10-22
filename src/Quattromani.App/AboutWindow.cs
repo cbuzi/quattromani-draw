@@ -9,7 +9,7 @@ using Avalonia.Platform;
 
 namespace Quattromani.App;
 
-/// <summary>"Informazioni su Quattromani Draw", con il comando per collegare un agente (Claude Code, Codex...) via MCP.</summary>
+/// <summary>"About Quattromani Draw", with the command to connect an agent (Claude Code, Codex...) via MCP.</summary>
 sealed class AboutWindow : Window
 {
     public AboutWindow()

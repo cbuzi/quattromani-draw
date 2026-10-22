@@ -1,40 +1,40 @@
 namespace Quattromani.Core;
 
-/// <param name="Kind">"do", "undo" oppure "redo".</param>
+/// <param name="Kind">"do", "undo" or "redo".</param>
 public sealed record Change(long Version, string Author, string Kind, Command Command);
 
 public sealed record BatchResult(long Version, List<string> CreatedIds);
 
 /// <summary>
-/// Unico punto di modifica del documento, usato da umano e LLM. Thread-safe: ogni operazione prende lo stesso lock.
+/// Single point of modification of the document, used by human and LLM. Thread-safe: every operation takes the same lock.
 /// </summary>
 public sealed class CommandBus(Document document)
 {
     readonly object _gate = new();
     readonly List<Change> _log = [];
-    readonly List<List<Command>> _undo = []; // l'ultimo è il prossimo da annullare
+    readonly List<List<Command>> _undo = []; // the last one is the next to undo
     readonly Stack<List<Command>> _redo = new();
     long _logFloor;
 
-    /// <summary>Passi di undo conservati: oltre, i più vecchi vengono dimenticati (i comandi tengono in memoria anche immagini e oggetti eliminati).</summary>
+    /// <summary>Undo steps kept: beyond that, the oldest are forgotten (commands also keep images and deleted objects in memory).</summary>
     public const int MaxUndoSteps = 200;
-    /// <summary>Voci del registro delle modifiche conservate per get_changes.</summary>
+    /// <summary>Entries of the change log kept for get_changes.</summary>
     public const int MaxLogEntries = 5000;
 
     public Document Document => document;
 
-    /// <summary>Sollevato (fuori dal lock, su thread arbitrario) dopo ogni modifica.</summary>
+    /// <summary>Raised (outside the lock, on an arbitrary thread) after every change.</summary>
     public event Action? Changed;
 
     public long Version { get { lock (_gate) return document.Version; } }
 
-    /// <summary>Legge il documento sotto lock.</summary>
+    /// <summary>Reads the document under lock.</summary>
     public T Read<T>(Func<Document, T> read)
     {
         lock (_gate) return read(document);
     }
 
-    /// <summary>Applica un batch come transazione: un solo step di undo; se un comando fallisce, nulla cambia.</summary>
+    /// <summary>Applies a batch as a transaction: a single undo step; if a command fails, nothing changes.</summary>
     public BatchResult Execute(IReadOnlyList<Command> commands, string author = "human")
     {
         if (author != "human" && !author.StartsWith("llm:"))
@@ -72,8 +72,8 @@ public sealed class CommandBus(Document document)
     }
 
     /// <summary>
-    /// Sostituisce l'intero documento (apri o nuovo). Non è annullabile: l'undo ricomincia da zero; la versione però
-    /// continua a crescere e nel registro resta una voce "reset", così chi legge get_changes sa che deve ricaricare.
+    /// Replaces the whole document (open or new). Not undoable: undo starts over; the version however
+    /// keeps growing and a "reset" entry stays in the log, so whoever reads get_changes knows it must reload.
     /// </summary>
     public void Replace(Document loaded, string reason, string? file, string author = "human")
     {
@@ -89,7 +89,7 @@ public sealed class CommandBus(Document document)
     }
 
     /// <summary>
-    /// Sceglie il layer dove finiscono gli oggetti nuovi. Non è una modifica del contenuto: niente versione, niente undo, il documento non risulta "modificato".
+    /// Chooses the layer where new objects go. It is not a content change: no version, no undo, the document does not become "modified".
     /// </summary>
     public void SetActiveLayer(string name)
     {
@@ -127,12 +127,12 @@ public sealed class CommandBus(Document document)
     }
 
     /// <summary>
-    /// Le modifiche con versione fino a questa (compresa) sono state dimenticate per limitare la memoria: chi chiede le modifiche
-    /// da una versione più vecchia non le riceverebbe tutte e deve rileggere il documento.
+    /// Changes with a version up to this one (included) were forgotten to limit memory: whoever asks for changes
+    /// from an older version would not receive them all and must reread the document.
     /// </summary>
     public long LogFloor { get { lock (_gate) return _logFloor; } }
 
-    /// <summary>Modifiche con versione &gt; sinceVersion, in ordine.</summary>
+    /// <summary>Changes with version &gt; sinceVersion, in order.</summary>
     public (long Version, List<Change> Changes) GetChanges(long sinceVersion)
     {
         lock (_gate) return (document.Version, _log.Where(c => c.Version > sinceVersion).ToList());
@@ -144,7 +144,7 @@ public sealed class CommandBus(Document document)
             _log.Add(new(++document.Version, author, kind, cmd));
         if (_log.Count > MaxLogEntries)
         {
-            var drop = _log.Count - MaxLogEntries * 4 / 5; // si taglia un po' di più, così non si ricompatta a ogni comando
+            var drop = _log.Count - MaxLogEntries * 4 / 5; // cut a bit more, so we do not compact on every command
             _logFloor = _log[drop - 1].Version;
             _log.RemoveRange(0, drop);
         }

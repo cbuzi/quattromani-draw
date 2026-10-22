@@ -6,9 +6,9 @@ using Quattromani.Core;
 namespace Quattromani.App;
 
 /// <summary>
-/// Copia di sicurezza del lavoro non salvato: ogni pochi secondi, se il documento è cambiato, ne scrive una copia in
-/// ~/.quattromani/recovery. Si cancella quando il documento viene salvato o chiuso di proposito; se l'app si interrompe
-/// (errore, blocco, spegnimento) resta lì e all'avvio successivo si offre di ripristinarla.
+/// Backup of unsaved work: every few seconds, if the document changed, it writes a copy in
+/// ~/.quattromani/recovery. It is deleted when the document is saved or closed on purpose; if the app is interrupted
+/// (error, freeze, shutdown) it stays there and at the next start the user is offered to restore it.
 /// </summary>
 sealed class Recovery
 {
@@ -33,7 +33,7 @@ sealed class Recovery
 
     public void Start()
     {
-        // Salvato, aperto o nuovo: la copia di sicurezza non serve più.
+        // Saved, opened or new: the backup is no longer needed.
         _files.StateChanged += () => { if (!_files.IsDirty) Delete(); };
         new DispatcherTimer(Interval, DispatcherPriority.Background, (_, _) => Tick()).Start();
     }
@@ -41,10 +41,10 @@ sealed class Recovery
     void Tick()
     {
         if (!_files.IsDirty || _bus.Version == _writtenVersion) return;
-        _ = Task.Run(Write); // la serializzazione di un documento con immagini non deve fermare l'interfaccia
+        _ = Task.Run(Write); // serializing a document with images must not freeze the interface
     }
 
-    /// <summary>Scrive subito la copia; false se non c'era nulla da salvare o la scrittura è fallita.</summary>
+    /// <summary>Writes the copy now; false if there was nothing to save or the write failed.</summary>
     public bool Write()
     {
         lock (_write)
@@ -63,7 +63,7 @@ sealed class Recovery
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return false; // è un salvataggio di cortesia: se non riesce, si riprova al giro dopo
+                return false; // this is a courtesy save: if it fails, try again next round
             }
         }
     }
@@ -78,7 +78,7 @@ sealed class Recovery
         }
     }
 
-    /// <summary>La copia più recente lasciata da un'istanza che non c'è più (null se non ce ne sono).</summary>
+    /// <summary>The most recent copy left by an instance that no longer exists (null if there are none).</summary>
     public static (string File, string? OriginalPath, DateTime SavedAt)? FindStale()
     {
         if (!Directory.Exists(Dir)) return null;
@@ -96,7 +96,7 @@ sealed class Recovery
         return best is { } b ? (b.File, b.Path, b.At) : null;
     }
 
-    /// <summary>Toglie una copia ripristinata o scartata.</summary>
+    /// <summary>Removes a restored or discarded copy.</summary>
     public static void Discard(string file)
     {
         TryDelete(file);
@@ -119,7 +119,7 @@ sealed class Recovery
     }
 }
 
-/// <summary>Registro degli errori imprevisti: ~/.quattromani/crash.log (tenuto sotto 1 MB).</summary>
+/// <summary>Log of unexpected errors: ~/.quattromani/crash.log (kept under 1 MB).</summary>
 static class CrashLog
 {
     static readonly string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".quattromani", "crash.log");

@@ -12,7 +12,7 @@ static class LayerNames
         return $"Layer {n}";
     }
 
-    /// <summary>Nome valido e unico (maiuscole ininfluenti, come nella ricerca); <paramref name="except"/> è il layer che sta per prenderlo.</summary>
+    /// <summary>Valid and unique name (case-insensitive, like the lookup); <paramref name="except"/> is the layer about to take it.</summary>
     public static string Check(Page page, string? name, Layer? except = null)
     {
         name = name?.Trim();
@@ -24,13 +24,13 @@ static class LayerNames
     }
 }
 
-/// <summary>Crea un layer (di default in cima) e lo rende attivo: gli oggetti nuovi finiscono lì.</summary>
+/// <summary>Creates a layer (on top by default) and makes it active: new objects go there.</summary>
 public sealed class AddLayer : Command
 {
     public string? Name { get; set; }
-    /// <summary>Nome di un layer esistente: il nuovo gli sta subito sopra. Senza, in cima a tutti.</summary>
+    /// <summary>Name of an existing layer: the new one sits right above it. Without it, on top of all.</summary>
     public string? Above { get; set; }
-    /// <summary>Rende attivo il nuovo layer (default sì).</summary>
+    /// <summary>Makes the new layer active (default yes).</summary>
     public bool Activate { get; set; } = true;
 
     Layer? _layer;
@@ -54,14 +54,14 @@ public sealed class AddLayer : Command
     }
 }
 
-/// <summary>Rinomina un layer, lo mostra o nasconde, lo blocca o sblocca, lo rende attivo. I campi omessi restano invariati.</summary>
+/// <summary>Renames a layer, shows or hides it, locks or unlocks it, makes it active. Omitted fields stay unchanged.</summary>
 public sealed class SetLayer : Command
 {
     public string Layer { get; set; } = "";
     public string? Name { get; set; }
     public bool? Visible { get; set; }
     public bool? Locked { get; set; }
-    /// <summary>true = gli oggetti nuovi finiranno in questo layer.</summary>
+    /// <summary>true = new objects will go to this layer.</summary>
     public bool? Active { get; set; }
 
     (Layer Layer, string Name, bool Visible, bool Locked, Layer Active)? _old;
@@ -88,7 +88,7 @@ public sealed class SetLayer : Command
     }
 }
 
-/// <summary>Elimina un layer con tutto il suo contenuto (l'undo lo riporta). L'ultimo layer non si può eliminare.</summary>
+/// <summary>Deletes a layer with all its content (undo brings it back). The last layer cannot be deleted.</summary>
 public sealed class DeleteLayer : Command
 {
     public string Layer { get; set; } = "";
@@ -110,11 +110,11 @@ public sealed class DeleteLayer : Command
     public override void Undo(Document doc) => doc.Pages[0].Layers.Insert(_index, _layer!);
 }
 
-/// <summary>Cambia la posizione di un layer: i layer più in alto coprono quelli sotto.</summary>
+/// <summary>Changes the position of a layer: higher layers cover the ones below.</summary>
 public sealed class OrderLayer : Command
 {
     public string Layer { get; set; } = "";
-    /// <summary>"front" (in cima), "back" (in fondo), "up" (uno più in alto), "down" (uno più in basso).</summary>
+    /// <summary>"front" (on top), "back" (at the bottom), "up" (one higher), "down" (one lower).</summary>
     public string Action { get; set; } = "";
 
     Layer? _layer;
@@ -146,7 +146,7 @@ public sealed class OrderLayer : Command
     }
 }
 
-/// <summary>Sposta oggetti (anche da dentro un gruppo) in cima a un altro layer, senza cambiare dove appaiono.</summary>
+/// <summary>Moves objects (also out of a group) to the top of another layer, without changing where they appear.</summary>
 public sealed class MoveToLayer : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -163,19 +163,19 @@ public sealed class MoveToLayer : Command
         if (string.IsNullOrWhiteSpace(Layer)) throw new CommandException("object.toLayer: missing 'layer'. Example: {\"cmd\":\"object.toLayer\",\"targets\":[\"o1\"],\"layer\":\"sketch\"}.");
         var dest = doc.FindLayer(Layer);
         var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
-        // Se un gruppo e un suo figlio sono entrambi indicati, basta spostare il gruppo.
+        // If a group and one of its children are both given, moving the group is enough.
         objs = objs.Where(o => !objs.Any(p => p != o && Document.SelfAndDescendants(p).Contains(o))).ToList();
         var order = doc.AllObjects.ToList();
         var moved = objs.OrderBy(order.IndexOf)
             .Select(o => { var c = doc.ContainerOf(o)!; return (o, c, c.IndexOf(o), o.Transform); }).ToList();
-        var parents = moved.Select(m => doc.ParentMatrix(m.o)).ToList(); // prima di toglierli dal loro contenitore
+        var parents = moved.Select(m => doc.ParentMatrix(m.o)).ToList(); // before taking them out of their container
 
         _moved = moved;
         _dest = dest;
         for (var i = 0; i < moved.Count; i++)
         {
             var (o, container, _, _) = moved[i];
-            o.Transform *= parents[i]; // fuori dal gruppo l'oggetto porta con sé la trasformazione del gruppo
+            o.Transform *= parents[i]; // outside the group the object carries the group's transform with it
             container.Remove(o);
             dest.Objects.Add(o);
         }
@@ -192,7 +192,7 @@ public sealed class MoveToLayer : Command
     }
 }
 
-/// <summary>Nasconde o mostra, blocca o sblocca oggetti. I campi omessi restano invariati.</summary>
+/// <summary>Hides or shows, locks or unlocks objects. Omitted fields stay unchanged.</summary>
 public sealed class SetObjectState : Command
 {
     public List<string> Targets { get; set; } = [];

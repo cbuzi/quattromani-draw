@@ -6,8 +6,8 @@ using SkiaSharp;
 namespace Quattromani.App;
 
 /// <summary>
-/// Il file del documento aperto: percorso corrente, modifiche non salvate, salvataggio, apertura ed export.
-/// Lo usano sia la finestra (per l'utente) sia i tool MCP (per l'agente), quindi può essere chiamato da qualsiasi thread.
+/// The file of the open document: current path, unsaved changes, saving, opening and export.
+/// Used by both the window (for the user) and the MCP tools (for the agent), so it can be called from any thread.
 /// </summary>
 sealed class FileSession(CommandBus bus) : IFileService
 {
@@ -16,12 +16,12 @@ sealed class FileSession(CommandBus bus) : IFileService
     public string? CurrentPath { get; private set; }
     public bool IsDirty => bus.Version != _savedVersion;
 
-    /// <summary>Cambiato il file corrente o lo stato "modificato" (sempre sul thread dell'interfaccia).</summary>
+    /// <summary>The current file or the "modified" state changed (always on the UI thread).</summary>
     public event Action? StateChanged;
 
     void Notify() => Dispatcher.UIThread.Post(() => StateChanged?.Invoke());
 
-    // La scrittura passa da un file temporaneo: se qualcosa va storto il file esistente non si rovina.
+    // Writing goes through a temporary file: if something goes wrong the existing file is not damaged.
     static void WriteAtomic(string path, Action<string> write)
     {
         var tmp = path + ".tmp";
@@ -32,7 +32,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            try { File.Delete(tmp); } catch { /* il file temporaneo non è importante */ }
+            try { File.Delete(tmp); } catch { /* the temporary file is not important */ }
             throw new CommandException($"Cannot write '{path}': {ex.Message}");
         }
     }
@@ -57,7 +57,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         {
             throw new CommandException($"Cannot read '{path}': {ex.Message}");
         }
-        var doc = DocumentFile.Load(text); // se il file non è valido, il documento attuale non viene toccato
+        var doc = DocumentFile.Load(text); // if the file is not valid, the current document is not touched
         bus.Replace(doc, "open", path);
         CurrentPath = path;
         _savedVersion = bus.Version;
@@ -65,7 +65,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         Notify();
     }
 
-    /// <summary>Riapre una copia di sicurezza: il documento risulta modificato (non salvato) e, se aveva un file, lo ritrova.</summary>
+    /// <summary>Reopens a backup copy: the document is marked modified (not saved) and, if it had a file, finds it again.</summary>
     public void Recover(string recoveryFile, string? originalPath)
     {
         string text;
@@ -100,7 +100,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         var side = Math.Max(w, h) * scale;
         if (side > MaxPngSide)
             throw new CommandException($"The image would be {Math.Round(w * scale)} x {Math.Round(h * scale)} pixels: the longest side may not exceed {MaxPngSide}. Use a lower scale (at most {Math.Round(MaxPngSide / Math.Max(w, h), 2)} for this page).");
-        // La pagina e nient'altro: quello che esce dai bordi non entra nell'immagine.
+        // The page and nothing else: what goes beyond the edges does not enter the image.
         var img = new SkiaDocumentRenderer(bus).Render(new Box(0, 0, w, h), (int)Math.Max(1, Math.Round(side)), background ?? "transparent", labels: false, showPage: false);
         WriteAtomic(path, tmp => File.WriteAllBytes(tmp, img.Png));
         return (img.PixelWidth, img.PixelHeight);
@@ -113,13 +113,13 @@ sealed class FileSession(CommandBus bus) : IFileService
     }
 }
 
-/// <summary>PDF vettoriale: testi (font incorporati), curve, gradienti e motivi restano vettoriali; la pagina ha la sua misura reale.</summary>
+/// <summary>Vector PDF: texts (embedded fonts), curves, gradients and patterns stay vector; the page has its real size.</summary>
 static class PdfExporter
 {
     public static void Export(CommandBus bus, string path, string? sourceFile)
     {
         var (items, page) = bus.Read(d => (d.RenderObjects.Select(Item.From).ToList(), (d.Pages[0].Width, d.Pages[0].Height)));
-        const float PtPerPx = 72f / 96f; // il documento è in px a 96 dpi, il PDF in punti (1/72 di pollice)
+        const float PtPerPx = 72f / 96f; // the document is in px at 96 dpi, the PDF in points (1/72 of an inch)
 
         using var stream = File.Create(path);
         using var pdf = SKDocument.CreatePdf(stream, new SKDocumentPdfMetadata
@@ -132,7 +132,7 @@ static class PdfExporter
         });
         var canvas = pdf.BeginPage((float)page.Width * PtPerPx, (float)page.Height * PtPerPx);
         canvas.Scale(PtPerPx);
-        canvas.ClipRect(new SKRect(0, 0, (float)page.Width, (float)page.Height)); // quello che esce dalla pagina non si stampa
+        canvas.ClipRect(new SKRect(0, 0, (float)page.Width, (float)page.Height)); // what goes beyond the page is not printed
         using var paint = new SKPaint { IsAntialias = true };
         foreach (var it in items) SceneRenderer.DrawItem(canvas, paint, it, vectorPatterns: true);
         pdf.EndPage();

@@ -3,7 +3,7 @@ using Avalonia.Platform;
 
 namespace Quattromani.App;
 
-/// <summary>Le azioni standard del menu dell'applicazione su macOS (Nascondi, Nascondi altre, Mostra tutte), richiamate da Objective-C.</summary>
+/// <summary>The standard actions of the application menu on macOS (Hide, Hide Others, Show All), called from Objective-C.</summary>
 static class MacApp
 {
     const string ObjC = "/usr/lib/libobjc.A.dylib";
@@ -27,7 +27,7 @@ static class MacApp
     public static void HideOthers() => Call("hideOtherApplications:");
     public static void ShowAll() => Call("unhideAllApplications:");
 
-    /// <summary>Icona del Dock: serve anche con "dotnet run", dove non c'è un bundle .app con la sua icona.</summary>
+    /// <summary>Dock icon: also needed with "dotnet run", where there is no .app bundle with its icon.</summary>
     public static void SetDockIcon()
     {
         if (!OperatingSystem.IsMacOS()) return;

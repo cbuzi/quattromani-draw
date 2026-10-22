@@ -4,17 +4,17 @@ using System.Text.RegularExpressions;
 
 namespace Quattromani.Core;
 
-/// <param name="Position">0..1 lungo la linea del gradiente (o dal centro verso il raggio, per i radiali).</param>
+/// <param name="Position">0..1 along the gradient line (or from the center to the radius, for radial ones).</param>
 public sealed record GradientStop(string Color, double Position);
 
 /// <summary>
-/// Gradiente in stile CSS, relativo al riquadro dell'oggetto. Lineare: <c>Angle</c> in gradi come in CSS (0 = verso l'alto,
-/// 90 = verso destra, 180 = verso il basso). Radiale: centro in frazioni del riquadro, raggio fino all'angolo più lontano.
+/// CSS-style gradient, relative to the object's box. Linear: <c>Angle</c> in degrees as in CSS (0 = upwards,
+/// 90 = to the right, 180 = downwards). Radial: center as fractions of the box, radius up to the farthest corner.
 /// </summary>
 /// <remarks>
-/// Linear: di default la linea è definita dall'angolo (stile CSS); con X1,Y1,X2,Y2 (frazioni del riquadro, anche fuori da 0..1)
-/// ha punti espliciti, che è quello che si trascina con lo strumento di riempimento. Radial: di default il raggio arriva
-/// all'angolo più lontano; con Rx,Ry (frazioni di larghezza e altezza) l'ellisse è esplicita.
+/// Linear: by default the line is defined by the angle (CSS style); with X1,Y1,X2,Y2 (fractions of the box, also outside 0..1)
+/// it has explicit points, which is what the fill tool drags. Radial: by default the radius reaches
+/// the farthest corner; with Rx,Ry (fractions of width and height) the ellipse is explicit.
 /// </remarks>
 public sealed record GradientSpec(bool Radial, double Angle, bool Circle, double CenterX, double CenterY, List<GradientStop> Stops,
     double? X1 = null, double? Y1 = null, double? X2 = null, double? Y2 = null, double? Rx = null, double? Ry = null)
@@ -46,7 +46,7 @@ public static partial class Gradient
 
     static CommandException Error(string field, string message) => new($"'{field}': {message} {Syntax}");
 
-    /// <summary>Interpreta un gradiente; se non è valido solleva un errore che spiega la sintassi.</summary>
+    /// <summary>Parses a gradient; if it is not valid it raises an error explaining the syntax.</summary>
     public static GradientSpec Parse(string value, string field)
     {
         var s = value.Trim();
@@ -55,7 +55,7 @@ public static partial class Gradient
         var inner = s[(s.IndexOf('(') + 1)..^1];
         var parts = inner.Split(',').Select(p => p.Trim()).ToList();
 
-        double angle = 180; // come in CSS: dall'alto verso il basso
+        double angle = 180; // as in CSS: from top to bottom
         bool circle = false;
         double cx = 0.5, cy = 0.5;
         double? x1 = null, y1 = null, x2 = null, y2 = null, rx = null, ry = null;
@@ -96,7 +96,7 @@ public static partial class Gradient
             positions.Add(m.Groups[2].Success ? Math.Clamp(double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) / 100, 0, 1) : null);
         }
 
-        // Posizioni mancanti come in CSS: la prima 0, l'ultima 100%, le altre distribuite tra le vicine; mai decrescenti.
+        // Missing positions as in CSS: the first 0, the last 100%, the others spread between their neighbors; never decreasing.
         positions[0] ??= 0;
         positions[^1] ??= 1;
         for (var i = 1; i < positions.Count; i++)
@@ -115,7 +115,7 @@ public static partial class Gradient
             colors.Select((c, i) => new GradientStop(c, positions[i]!.Value)).ToList(), x1, y1, x2, y2, rx, ry);
     }
 
-    // Percentuale di un gruppo della regex come frazione (50% -> 0.5).
+    // Percentage of a regex group as a fraction (50% -> 0.5).
     static double P(Match m, int group) => double.Parse(m.Groups[group].Value, CultureInfo.InvariantCulture) / 100;
 
     public static bool TryParse(string value, out GradientSpec spec)
@@ -131,19 +131,19 @@ public static partial class Gradient
         _ => null,
     };
 
-    /// <summary>Estremi della linea di un gradiente lineare, come frazioni del riquadro (espliciti o ricavati dall'angolo, come CSS).</summary>
+    /// <summary>Ends of the line of a linear gradient, as fractions of the box (explicit or derived from the angle, like CSS).</summary>
     public static (double X1, double Y1, double X2, double Y2) LinearPoints(GradientSpec g, Box b)
     {
         if (g.HasLinearPoints) return (g.X1!.Value, g.Y1!.Value, g.X2!.Value, g.Y2!.Value);
         if (b.Width <= 0 || b.Height <= 0) return (0, 0, 1, 1);
-        // La linea passa dal centro e la sua lunghezza fa toccare gli angoli a 0% e 100%.
+        // The line goes through the center and its length makes the corners touch 0% and 100%.
         double th = g.Angle * Math.PI / 180, ux = Math.Sin(th), uy = -Math.Cos(th);
         var half = (Math.Abs(b.Width * ux) + Math.Abs(b.Height * uy)) / 2;
         double dx = ux * half / b.Width, dy = uy * half / b.Height;
         return (0.5 - dx, 0.5 - dy, 0.5 + dx, 0.5 + dy);
     }
 
-    /// <summary>Raggi di un gradiente radiale, come frazioni di larghezza e altezza (espliciti o fino all'angolo più lontano).</summary>
+    /// <summary>Radii of a radial gradient, as fractions of width and height (explicit or up to the farthest corner).</summary>
     public static (double Rx, double Ry) RadialRadii(GradientSpec g, Box b)
     {
         if (g.Rx is { } rx && g.Ry is { } ry) return (rx, ry);
@@ -154,7 +154,7 @@ public static partial class Gradient
         return (r / b.Width, r / b.Height);
     }
 
-    /// <summary>Colore del gradiente alla posizione t (0..1), interpolando tra le soste vicine; "#RRGGBB" o "#RRGGBBAA" se c'è trasparenza.</summary>
+    /// <summary>Color of the gradient at position t (0..1), interpolating between the nearest stops; "#RRGGBB" or "#RRGGBBAA" if there is transparency.</summary>
     public static string ColorAt(IReadOnlyList<GradientStop> stops, double t)
     {
         static (int R, int G, int B, int A) C(string c)
@@ -173,7 +173,7 @@ public static partial class Gradient
         return al == 255 ? $"#{r:X2}{g:X2}{bl:X2}" : $"#{r:X2}{g:X2}{bl:X2}{al:X2}";
     }
 
-    /// <summary>Forma canonica, con tutte le posizioni esplicite.</summary>
+    /// <summary>Canonical form, with all positions explicit.</summary>
     public static string Format(GradientSpec g)
     {
         static string N(double v) => Math.Round(v, 2).ToString("0.##", CultureInfo.InvariantCulture);

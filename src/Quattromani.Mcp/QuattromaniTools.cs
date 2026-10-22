@@ -37,8 +37,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null,
         string? Layer = null, bool? Hidden = null, bool? Locked = null);
 
-    // `parent` porta dallo spazio del contenitore (gruppo) allo spazio pagina.
-    // Un path tracciato può avere migliaia di nodi: oltre questa soglia get_document non riporta `d` (solo `nodes`).
+    // `parent` brings us from the container's (group's) space to page space.
+    // A traced path can have thousands of nodes: beyond this threshold get_document does not report `d` (only `nodes`).
     const int MaxPathSegments = 1500;
 
     static ObjInfo Describe(SceneObject o, Matrix3x2 parent)
@@ -159,7 +159,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         }
     }
 
-    // Percorso assoluto con l'estensione giusta: l'agente non deve poter scrivere file di altro tipo.
+    // Absolute path with the right extension: the agent must not be able to write files of other types.
     static string CheckPath(string path, string extension, bool mustExist)
     {
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
@@ -333,7 +333,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         """)]
     public string GetSelection()
     {
-        // La selezione si chiede al thread UI prima di prendere il lock del documento: tenendolo, il thread UI (che aspetta lo stesso lock per disegnare) e questo si bloccherebbero a vicenda.
+        // The selection is requested from the UI thread before taking the document lock: while holding it, the UI thread (which waits for the same lock to draw) and this one would block each other.
         var ids = selection.Get();
         var items = bus.Read(d => ids.Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().Select(o => new { id = o.Id, name = o.Name }).ToList());
         return JsonSerializer.Serialize(new { selection = items }, Json.Options);
@@ -363,7 +363,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     public string GetChanges([Description("Last version you know.")] long sinceVersion)
     {
         var (version, changes) = bus.GetChanges(sinceVersion);
-        var floor = bus.LogFloor; // dopo: se nel frattempo il registro si è accorciato, meglio segnalarlo che no
+        var floor = bus.LogFloor; // after: if the log got shorter in the meantime, better to report it than not
         return JsonSerializer.Serialize(new { version, truncated = sinceVersion < floor ? true : (bool?)null, changes }, Json.Options);
     }
 }

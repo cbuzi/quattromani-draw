@@ -7,7 +7,7 @@ public sealed class CommandException(string message) : Exception(message);
 
 public readonly record struct Box(double X, double Y, double Width, double Height);
 
-/// <summary>Punti di ancoraggio nominati sul rettangolo di un oggetto (frazioni di larghezza e altezza).</summary>
+/// <summary>Named anchor points on an object's rectangle (fractions of width and height).</summary>
 public static class Anchor
 {
     public static readonly (string Name, double X, double Y)[] All =
@@ -32,7 +32,7 @@ public abstract class SceneObject
     public string? Name { get; set; }
     public abstract string Type { get; }
 
-    // Geometria locale (prima della trasformazione).
+    // Local geometry (before the transform).
     public double X { get; set; }
     public double Y { get; set; }
     public double Width { get; set; }
@@ -40,17 +40,17 @@ public abstract class SceneObject
 
     public Matrix3x2 Transform { get; set; } = Matrix3x2.Identity;
 
-    /// <summary>Nascosto: non si disegna, non si esporta e non si può selezionare col mouse (i comandi lo vedono ancora).</summary>
+    /// <summary>Hidden: not drawn, not exported and not selectable with the mouse (commands still see it).</summary>
     public bool Hidden { get; set; }
-    /// <summary>Bloccato: i comandi che lo modificano falliscono e il mouse lo ignora. Vale anche per il contenuto di un gruppo bloccato e per gli oggetti di un layer bloccato.</summary>
+    /// <summary>Locked: commands that modify it fail and the mouse ignores it. Also applies to the content of a locked group and to the objects of a locked layer.</summary>
     public bool Locked { get; set; }
 
-    // Stile. Colori come "#RRGGBB" o "#RRGGBBAA"; null = nessuno.
+    // Style. Colors as "#RRGGBB" or "#RRGGBBAA"; null = none.
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double StrokeWidth { get; set; }
 
-    /// <summary>Bounding box nello spazio del layer, dopo la trasformazione.</summary>
+    /// <summary>Bounding box in the layer's space, after the transform.</summary>
     public Box Bounds => BoundsOf(X, Y, Width, Height, Transform);
 
     public static Box BoundsOf(double x, double y, double w, double h, Matrix3x2 m)
@@ -71,7 +71,7 @@ public abstract class SceneObject
         return new(minX, minY, maxX - minX, maxY - minY);
     }
 
-    /// <summary>Matrice che stira il riquadro <paramref name="src"/> (contenuto) sul riquadro <paramref name="dst"/>.</summary>
+    /// <summary>Matrix that stretches the box <paramref name="src"/> (content) onto the box <paramref name="dst"/>.</summary>
     public static Matrix3x2 FitMatrix(Box src, Box dst)
     {
         var sx = src.Width > 1e-9 ? dst.Width / src.Width : 1;
@@ -79,14 +79,14 @@ public abstract class SceneObject
         return new Matrix3x2((float)sx, 0, 0, (float)sy, (float)(dst.X - src.X * sx), (float)(dst.Y - src.Y * sy));
     }
 
-    /// <summary>Rotazione in gradi (oraria sullo schermo, dato che y cresce verso il basso).</summary>
+    /// <summary>Rotation in degrees (clockwise on screen, since y grows downwards).</summary>
     public double Rotation => Math.Atan2(Transform.M12, Transform.M11) * 180 / Math.PI;
 }
 
 public sealed class RectangleObject : SceneObject { public override string Type => "rectangle"; }
 public sealed class EllipseObject : SceneObject { public override string Type => "ellipse"; }
 
-/// <summary>Immagine raster incorporata: i byte del file originale (PNG, JPEG, GIF, WebP, BMP). Geometria come il rettangolo; fill = sfondo, stroke = cornice.</summary>
+/// <summary>Embedded raster image: the bytes of the original file (PNG, JPEG, GIF, WebP, BMP). Geometry like the rectangle; fill = background, stroke = frame.</summary>
 public sealed class ImageObject : SceneObject
 {
     public override string Type => "image";
@@ -96,20 +96,20 @@ public sealed class ImageObject : SceneObject
 }
 
 /// <summary>
-/// Path bezier. I segmenti restano come creati (Source = loro riquadro); (X, Y, Width, Height) è il riquadro su cui
-/// vengono stirati, così ridimensionare un path cambia solo quei quattro numeri, come per le altre forme.
+/// Bezier path. The segments stay as created (Source = their box); (X, Y, Width, Height) is the box they are
+/// stretched onto, so resizing a path only changes those four numbers, like the other shapes.
 /// </summary>
 public sealed class PathObject : SceneObject
 {
     public override string Type => "path";
     public List<PathSeg> Segments { get; internal set; } = [];
-    /// <summary>Tipo di ogni nodo (vedi PathNodes.KindsOf), per lo strumento Nodi; null = dedotto dalla geometria.</summary>
+    /// <summary>Kind of each node (see PathNodes.KindsOf), for the Node tool; null = derived from the geometry.</summary>
     public string? NodeKinds { get; internal set; }
     public Box Source { get; internal set; }
     public Matrix3x2 Fit => FitMatrix(Source, new(X, Y, Width, Height));
 }
 
-/// <summary>Gruppo: i figli sono nello spazio del gruppo (stirato come per PathObject, poi Transform).</summary>
+/// <summary>Group: children are in the group's space (stretched as for PathObject, then Transform).</summary>
 public sealed class GroupObject : SceneObject
 {
     public override string Type => "group";
@@ -129,14 +129,14 @@ public sealed class Layer(string name)
 public sealed class Page
 {
     public string Name { get; set; } = "Page 1";
-    /// <summary>Dimensioni in px (96 dpi); di default un A4 verticale. L'origine è l'angolo in alto a sinistra.</summary>
+    /// <summary>Size in px (96 dpi); A4 portrait by default. The origin is the top-left corner.</summary>
     public double Width { get; set; } = Units.ToPx(210, "mm");
     public double Height { get; set; } = Units.ToPx(297, "mm");
     public List<Layer> Layers { get; } = [new("Layer 1")];
     Layer? _active;
-    /// <summary>Il layer dove finiscono gli oggetti nuovi (se non se ne indica un altro); di default il primo.</summary>
+    /// <summary>The layer where new objects go (if none other is given); the first by default.</summary>
     public Layer ActiveLayer { get => _active != null && Layers.Contains(_active) ? _active : Layers[0]; internal set => _active = value; }
-    /// <summary>Linee guida (non si stampano né si esportano).</summary>
+    /// <summary>Guide lines (neither printed nor exported).</summary>
     public List<Guide> Guides { get; } = [];
 }
 
@@ -144,34 +144,34 @@ public sealed partial class Document
 {
     int _nextId;
 
-    /// <summary>Contatore degli id (per salvare e riaprire senza collisioni).</summary>
+    /// <summary>Id counter (to save and reopen without collisions).</summary>
     public int NextIdValue { get => _nextId; internal set => _nextId = value; }
 
-    /// <summary>Misura e contorni del testo, forniti dall'app; senza, i comandi sul testo danno un errore esplicito.</summary>
+    /// <summary>Measurement and outlines of text, provided by the app; without it, text commands give an explicit error.</summary>
     public ITextEngine? TextEngine { get; set; }
 
-    /// <summary>Dimensioni in pixel di un'immagine (null se i byte non sono un'immagine leggibile); fornita dall'app.</summary>
+    /// <summary>Size in pixels of an image (null if the bytes are not a readable image); provided by the app.</summary>
     public Func<byte[], (int Width, int Height)?>? ImageProbe { get; set; }
 
-    /// <summary>Pixel RGBA (non premoltiplicati, 4 byte l'uno) di un'immagine, ridotta se supera la dimensione indicata sul lato lungo; fornita dall'app.</summary>
+    /// <summary>RGBA pixels (non-premultiplied, 4 bytes each) of an image, downscaled if its longest side exceeds the given size; provided by the app.</summary>
     public Func<byte[], int, (int Width, int Height, byte[] Rgba)?>? ImagePixels { get; set; }
 
-    /// <summary>Incrementata dal CommandBus per ogni comando applicato.</summary>
+    /// <summary>Incremented by the CommandBus for every applied command.</summary>
     public long Version { get; internal set; }
     public List<Page> Pages { get; } = [new()];
 
     public IEnumerable<SceneObject> Objects =>
         Pages.SelectMany(p => p.Layers).SelectMany(l => l.Objects);
 
-    /// <summary>Gli oggetti da disegnare (layer visibili, oggetti non nascosti), dal fondo in cima.</summary>
+    /// <summary>The objects to draw (visible layers, non-hidden objects), from bottom to top.</summary>
     public IEnumerable<SceneObject> RenderObjects =>
         Pages.SelectMany(p => p.Layers).Where(l => l.Visible).SelectMany(l => l.Objects).Where(o => !o.Hidden);
 
-    /// <summary>Gli oggetti che il mouse può prendere: quelli disegnati, tranne i bloccati e quelli dei layer bloccati.</summary>
+    /// <summary>The objects the mouse can pick: the drawn ones, except locked ones and those in locked layers.</summary>
     public IEnumerable<SceneObject> PickableObjects =>
         Pages.SelectMany(p => p.Layers).Where(l => l.Visible && !l.Locked).SelectMany(l => l.Objects).Where(o => !o.Hidden && !o.Locked);
 
-    /// <summary>Il layer che contiene l'oggetto (anche dentro dei gruppi).</summary>
+    /// <summary>The layer that contains the object (also inside groups).</summary>
     public Layer? LayerOf(SceneObject target)
     {
         foreach (var layer in Pages.SelectMany(p => p.Layers))
@@ -179,7 +179,7 @@ public sealed partial class Document
         return null;
     }
 
-    /// <summary>L'oggetto è bloccato lui stesso, o lo è un gruppo che lo contiene, o il suo layer.</summary>
+    /// <summary>The object is locked itself, or a group containing it is, or its layer.</summary>
     public bool IsLocked(SceneObject target)
     {
         static bool InGroup(IEnumerable<SceneObject> list, SceneObject t, bool locked)
@@ -196,7 +196,7 @@ public sealed partial class Document
         return layer != null && InGroup(layer.Objects, target, layer.Locked);
     }
 
-    /// <summary>Come <see cref="Find"/>, per gli oggetti che un comando sta per modificare: se è bloccato spiega come sbloccarlo.</summary>
+    /// <summary>Like <see cref="Find"/>, for objects a command is about to modify: if locked it explains how to unlock it.</summary>
     public SceneObject FindEditable(string idOrName)
     {
         var obj = Find(idOrName);
@@ -205,7 +205,7 @@ public sealed partial class Document
         return obj;
     }
 
-    /// <summary>Trova un layer per nome (maiuscole ininfluenti).</summary>
+    /// <summary>Finds a layer by name (case-insensitive).</summary>
     public Layer FindLayer(string name)
     {
         var layers = Pages[0].Layers;
@@ -213,7 +213,7 @@ public sealed partial class Document
             ?? throw new CommandException($"Layer '{name}' not found. Layers (bottom to top): {string.Join(", ", layers.Select(l => $"\"{l.Name}\""))}.");
     }
 
-    /// <summary>Il layer dove un comando crea oggetti nuovi: quello indicato o l'attivo; deve essere visibile e non bloccato.</summary>
+    /// <summary>The layer where a command creates new objects: the given one or the active one; it must be visible and unlocked.</summary>
     public Layer TargetLayer(string? name)
     {
         var layer = name is null ? Pages[0].ActiveLayer : FindLayer(name);
@@ -222,13 +222,13 @@ public sealed partial class Document
         return layer;
     }
 
-    /// <summary>Tutti gli oggetti, figli dei gruppi compresi.</summary>
+    /// <summary>All objects, group children included.</summary>
     public IEnumerable<SceneObject> AllObjects => Objects.SelectMany(SelfAndDescendants);
 
     public static IEnumerable<SceneObject> SelfAndDescendants(SceneObject o) =>
         o is GroupObject g ? g.Children.SelectMany(SelfAndDescendants).Prepend(o) : [o];
 
-    /// <summary>La lista (layer o figli di un gruppo) che contiene l'oggetto.</summary>
+    /// <summary>The list (layer or group children) that contains the object.</summary>
     public List<SceneObject>? ContainerOf(SceneObject target)
     {
         static List<SceneObject>? Search(List<SceneObject> list, SceneObject t)
@@ -244,7 +244,7 @@ public sealed partial class Document
         return null;
     }
 
-    /// <summary>Matrice dallo spazio del contenitore dell'oggetto (layer o gruppo) allo spazio pagina.</summary>
+    /// <summary>Matrix from the space of the object's container (layer or group) to page space.</summary>
     public Matrix3x2 ParentMatrix(SceneObject target)
     {
         static bool Find(List<SceneObject> list, SceneObject t, Matrix3x2 parent, out Matrix3x2 result)
@@ -261,11 +261,11 @@ public sealed partial class Document
         return Matrix3x2.Identity;
     }
 
-    /// <summary>Riquadro dell'oggetto nello spazio pagina (anche se sta dentro dei gruppi trasformati).</summary>
+    /// <summary>Box of the object in page space (even if it is inside transformed groups).</summary>
     public Box PageBounds(SceneObject o) =>
         SceneObject.BoundsOf(o.X, o.Y, o.Width, o.Height, o.Transform * ParentMatrix(o));
 
-    /// <summary>Sostituisce il contenuto con quello di un altro documento (apri, nuovo). La versione e il motore dei font restano.</summary>
+    /// <summary>Replaces the content with that of another document (open, new). The version and the font engine stay.</summary>
     internal void ReplaceWith(Document other)
     {
         Pages.Clear();
@@ -273,7 +273,7 @@ public sealed partial class Document
         _nextId = other._nextId;
     }
 
-    /// <summary>Ricalcola i testi su tracciato (cambiano quando cambia il tracciato o il testo; i comandi non se ne occupano).</summary>
+    /// <summary>Recomputes texts on paths (they change when the path or the text changes; commands do not deal with it).</summary>
     internal void RefreshPathTexts()
     {
         foreach (var t in AllObjects.OfType<TextObject>().Where(t => t.OnPath != null).ToList())
@@ -282,7 +282,7 @@ public sealed partial class Document
 
     internal string NewId() => "o" + ++_nextId;
 
-    /// <summary>Trova un oggetto per id o per name.</summary>
+    /// <summary>Finds an object by id or by name.</summary>
     public SceneObject Find(string idOrName)
     {
         var obj = AllObjects.FirstOrDefault(o => o.Id == idOrName);
@@ -302,7 +302,7 @@ public sealed partial class Document
     [GeneratedRegex("^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$")]
     private static partial Regex ColorRegex();
 
-    /// <summary>Valida un colore o un gradiente (stile CSS); "none" diventa null (nessun colore). I gradienti vengono riscritti in forma canonica.</summary>
+    /// <summary>Validates a color or gradient (CSS style); "none" becomes null (no color). Gradients are rewritten in canonical form.</summary>
     internal static string? ParseColor(string value, string field)
     {
         if (value == "none") return null;

@@ -9,7 +9,7 @@ enum Kind { Rectangle, Ellipse, Path, Group, Text, Image }
 
 sealed record TextInfo(List<TextLine> Lines, TextStyle Style);
 
-// Copia immutabile degli oggetti: il rendering gira su un altro thread.
+// Immutable copy of the objects: rendering runs on another thread.
 sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H, Matrix3x2 M,
     string? Fill, string? Stroke, double StrokeWidth, Box Source, List<PathSeg>? Segments, List<Item>? Children,
     string? NodeKinds = null, TextInfo? Text = null, byte[]? Image = null)
@@ -21,7 +21,7 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
     {
         PathObject p => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             p.Source, p.Segments, null, p.NodeKinds),
-        // Testo su tracciato: i glifi sono già contorni, si disegna come un path (con tutti i suoi riempimenti).
+        // Text on a path: the glyphs are already outlines, it is drawn as a path (with all its fills).
         TextObject { PathGlyphs: { } glyphs } t => new(o.Id, Kind.Path, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             t.Source, glyphs, null),
         TextObject t => new(o.Id, Kind.Text, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
@@ -35,12 +35,12 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
     };
 }
 
-/// <summary>Disegno degli oggetti su un canvas Skia: lo usano sia la finestra sia il tool MCP render.</summary>
+/// <summary>Drawing of the objects on a Skia canvas: used by both the window and the MCP render tool.</summary>
 static class SceneRenderer
 {
     static SKMatrix ToSk(Matrix3x2 m) => new(m.M11, m.M21, m.M31, m.M12, m.M22, m.M32, 0, 0, 1);
 
-    // Path Skia dai segmenti, già stirati con `fit` (così il tratto resta uniforme).
+    // Skia path from the segments, already stretched with `fit` (so the stroke stays uniform).
     public static SKPath BuildPath(List<PathSeg> segs, Matrix3x2 fit)
     {
         static SKPoint P(double x, double y, Matrix3x2 m)
@@ -61,7 +61,7 @@ static class SceneRenderer
         return path;
     }
 
-    /// <param name="vectorPatterns">Per il PDF: i motivi si disegnano come geometria vettoriale (lo shader a immagine verrebbe rasterizzato a bassa risoluzione).</param>
+    /// <param name="vectorPatterns">For the PDF: patterns are drawn as vector geometry (the image shader would be rasterized at low resolution).</param>
     public static void DrawItem(SKCanvas canvas, SKPaint paint, Item it, bool vectorPatterns = false)
     {
         canvas.Save();
@@ -75,18 +75,18 @@ static class SceneRenderer
         }
         else
         {
-            // Il gradiente si riferisce al riquadro dell'oggetto (per il testo, quello del testo impaginato).
+            // The gradient refers to the object's box (for text, that of the laid-out text).
             var box = it.Kind == Kind.Text ? it.Source : new Box(it.X, it.Y, it.W, it.H);
             if (vectorPatterns && it.Kind != Kind.Text && it.Fill != null && Pattern.TryParse(it.Fill, out var pat) && DrawVectorPattern(canvas, paint, it, pat, box))
             {
-                // disegnato come geometria
+                // drawn as geometry
             }
             else if (Prepare(paint, it.Fill, box))
             {
                 paint.Style = SKPaintStyle.Fill;
                 DrawShape(canvas, paint, it);
             }
-            // Lo sfondo (fill) sta sotto l'immagine, la cornice (stroke) sopra.
+            // The background (fill) sits under the image, the frame (stroke) above.
             if (it.Kind == Kind.Image && Decode(it.Image!) is { } img)
             {
                 using var imgPaint = new SKPaint { IsAntialias = true };
@@ -103,7 +103,7 @@ static class SceneRenderer
         canvas.Restore();
     }
 
-    /// <summary>Imposta colore o gradiente sul paint; false se non c'è nulla da disegnare.</summary>
+    /// <summary>Sets color or gradient on the paint; false if there is nothing to draw.</summary>
     static bool Prepare(SKPaint paint, string? spec, Box box)
     {
         paint.Shader?.Dispose();
@@ -120,7 +120,7 @@ static class SceneRenderer
         {
             if (!Gradient.TryParse(spec, out var g) || MakeShader(g, box) is not { } shader) return false;
             paint.Shader = shader;
-            paint.Color = SKColors.White; // il colore del paint modula lo shader: bianco = invariato
+            paint.Color = SKColors.White; // the paint's color modulates the shader: white = unchanged
             return true;
         }
         if (ParseColor(spec) is not { } c) return false;
@@ -142,16 +142,16 @@ static class SceneRenderer
         var (fx, fy) = Gradient.RadialRadii(g, b);
         double cx = b.X + g.CenterX * b.Width, cy = b.Y + g.CenterY * b.Height, rx = fx * b.Width, ry = fy * b.Height;
         if (rx < 1e-6 || ry < 1e-6) return null;
-        // L'ellisse è un cerchio di raggio rx stirato in verticale attorno al centro.
+        // The ellipse is a circle of radius rx stretched vertically around the center.
         var m = SKMatrix.CreateScale(1, (float)(ry / rx), (float)cx, (float)cy);
         return SKShader.CreateRadialGradient(new SKPoint((float)cx, (float)cy), (float)rx, colors, pos, SKShaderTileMode.Clamp, m);
     }
 
-    // Motivo: un'unità disegnata una volta come immagine vettoriale e ripetuta; parte dall'angolo in alto a sinistra dell'oggetto.
+    // Pattern: a unit drawn once as a vector image and repeated; it starts at the object's top-left corner.
     static SKShader? MakePatternShader(PatternSpec p, Box b)
     {
         var size = (float)p.Size;
-        var tile = p.Kind == "checker" ? 2 * size : size; // gli scacchi si ripetono ogni due caselle
+        var tile = p.Kind == "checker" ? 2 * size : size; // checkers repeat every two squares
         using var recorder = new SKPictureRecorder();
         var canvas = recorder.BeginRecording(new SKRect(0, 0, tile, tile));
         using var paint = new SKPaint { IsAntialias = true, Color = ParseColor(p.Bg) ?? SKColors.Transparent };
@@ -173,10 +173,10 @@ static class SceneRenderer
         return picture.ToShader(SKShaderTileMode.Repeat, SKShaderTileMode.Repeat, SKFilterMode.Linear, local, new SKRect(0, 0, tile, tile));
     }
 
-    // Motivo come geometria: sfondo, poi gli elementi del motivo ritagliati sulla forma. False se sarebbero troppi.
+    // Pattern as geometry: background, then the pattern elements clipped to the shape. False if there would be too many.
     static bool DrawVectorPattern(SKCanvas canvas, SKPaint paint, Item it, PatternSpec p, Box b)
     {
-        // Area da coprire nello spazio del motivo (origine nell'angolo in alto a sinistra del riquadro, ruotato dell'angolo).
+        // Area to cover in the pattern's space (origin at the top-left corner of the box, rotated by the angle).
         var rad = -p.Angle * Math.PI / 180;
         double cos = Math.Cos(rad), sin = Math.Sin(rad);
         var us = new List<double>(); var vs = new List<double>();
@@ -239,7 +239,7 @@ static class SceneRenderer
     {
         if (it.Kind == Kind.Text)
         {
-            // Righe impaginate nello spazio di Source, stirate sul riquadro attuale.
+            // Lines laid out in Source's space, stretched onto the current box.
             var fit = ToSk(it.Fit);
             canvas.Save();
             canvas.Concat(in fit);
@@ -260,7 +260,7 @@ static class SceneRenderer
         else canvas.DrawRect(r, paint);
     }
 
-    // Item.From gira a ogni frame: l'immagine si decodifica una volta sola per ogni array di byte.
+    // Item.From runs on every frame: the image is decoded only once for each byte array.
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<byte[], SKImage?> Decoded = new();
 
     public static SKImage? Decode(byte[] data)
@@ -272,7 +272,7 @@ static class SceneRenderer
         }
     }
 
-    // Pixel RGBA non premoltiplicati, ridotti (se serve) a maxSide sul lato lungo.
+    // Non-premultiplied RGBA pixels, downscaled (if needed) to maxSide on the longest side.
     public static (int Width, int Height, byte[] Rgba)? Pixels(byte[] data, int maxSide)
     {
         using var src = SKBitmap.Decode(data);
@@ -289,7 +289,7 @@ static class SceneRenderer
         return codec is null ? null : (codec.Info.Width, codec.Info.Height);
     }
 
-    // Formato del documento: "#RRGGBB" o "#RRGGBBAA" (diverso da quello ARGB di Skia).
+    // Document format: "#RRGGBB" or "#RRGGBBAA" (different from Skia's ARGB).
     public static SKColor? ParseColor(string? s)
     {
         if (s is not { Length: 7 or 9 } || s[0] != '#' || !s[1..].All(Uri.IsHexDigit)) return null;
@@ -300,7 +300,7 @@ static class SceneRenderer
     }
 }
 
-/// <summary>Il PNG che vede l'LLM: stesso disegno della finestra, su una superficie fuori schermo.</summary>
+/// <summary>The PNG the LLM sees: same drawing as the window, on an off-screen surface.</summary>
 sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
 {
     public RenderedImage Render(Box? area, int maxSize, string? background, bool labels, bool showPage)
@@ -308,7 +308,7 @@ sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
         var (items, names, pageSize) = bus.Read(d => (d.RenderObjects.Select(Item.From).ToList(), d.Objects.ToDictionary(o => o.Id, o => o.Name), (d.Pages[0].Width, d.Pages[0].Height)));
         var page = new Box(0, 0, pageSize.Width, pageSize.Height);
 
-        // Senza area: la pagina e tutto il contenuto (anche se esce dalla pagina), con un po' di margine.
+        // Without an area: the page and all the content (even if it goes beyond the page), with a small margin.
         Box box;
         if (area is { } a) box = a;
         else
@@ -334,7 +334,7 @@ sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
         using var paint = new SKPaint { IsAntialias = true };
         if (showPage)
         {
-            // Il contorno della pagina, così chi guarda l'immagine sa dove finisce la pagina.
+            // The page outline, so whoever looks at the image knows where the page ends.
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = (float)Math.Max(1, 1.2 / scale);
             paint.Color = new SKColor(0x94, 0xA3, 0xB8);
@@ -344,7 +344,7 @@ sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
 
         if (labels)
         {
-            // Etichette di dimensione costante in pixel: id e (se c'è) nome, in alto a sinistra di ogni oggetto.
+            // Labels of constant size in pixels: id and (if any) name, at the top-left of each object.
             using var font = new SKFont(SKTypeface.Default, (float)(12 / scale));
             using var bg = new SKPaint { Color = new SKColor(255, 255, 255, 215), IsAntialias = true };
             using var fg = new SKPaint { Color = new SKColor(0x1F, 0x29, 0x37), IsAntialias = true };

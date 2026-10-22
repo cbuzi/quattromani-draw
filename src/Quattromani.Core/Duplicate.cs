@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Quattromani.Core;
 
-/// <summary>Duplica degli oggetti: la copia sta subito sopra l'originale, spostata di (dx, dy) nello spazio pagina. Id nuovi; i nomi diventano "nome 2", "nome 3"...</summary>
+/// <summary>Duplicates objects: the copy sits right above the original, shifted by (dx, dy) in page space. New ids; names become "name 2", "name 3"...</summary>
 public sealed class DuplicateObjects : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -20,7 +20,7 @@ public sealed class DuplicateObjects : Command
         {
             if (Targets.Count == 0) throw new CommandException("object.duplicate: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
             var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
-            // Se un gruppo e un suo figlio sono entrambi indicati, basta duplicare il gruppo.
+            // If a group and one of its children are both given, duplicating the group is enough.
             objs = objs.Where(o => !objs.Any(p => p != o && Document.SelfAndDescendants(p).Contains(o))).ToList();
             _placed = objs.Select(o => (doc.ContainerOf(o)!, o, DocumentFile.ImportObjects(DocumentFile.ExportObjects([o]), doc)[0])).ToList();
         }
@@ -38,7 +38,7 @@ public sealed class DuplicateObjects : Command
     }
 }
 
-/// <summary>Incolla oggetti serializzati da <see cref="DocumentFile.ExportObjects"/> in cima al primo layer, spostati di (dx, dy).</summary>
+/// <summary>Pastes objects serialized by <see cref="DocumentFile.ExportObjects"/> on top of the first layer, shifted by (dx, dy).</summary>
 public sealed class PasteObjects : Command
 {
     public string Data { get; set; } = "";

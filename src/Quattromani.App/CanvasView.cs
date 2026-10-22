@@ -17,17 +17,17 @@ namespace Quattromani.App;
 
 public enum Tool { Select, Node, Rectangle, Ellipse, Pen, Text, Fill }
 
-/// <summary>Come si vede la pagina nell'area di lavoro.</summary>
+/// <summary>How the page is shown in the work area.</summary>
 public enum PageView { White, Outline, Hidden }
 
-/// <summary>Richiesta di modificare un testo: un oggetto esistente (Id) oppure un testo nuovo in un punto, con larghezza d'a capo opzionale.</summary>
+/// <summary>Request to edit a text: an existing object (Id) or a new text at a point, with optional wrapping width.</summary>
 public sealed record TextEditRequest(string? Id, Point At, double? WrapWidth);
 
 public enum NodeOp { ToLine, ToCurve, Cusp, Smooth, Symmetric, Delete }
 
 /// <summary>
-/// Canvas Skia con pan/zoom, selezione (anche multipla), spostamento, ridimensionamento, rotazione e penna.
-/// Le modifiche passano solo dal CommandBus.
+/// Skia canvas with pan/zoom, selection (also multiple), move, resize, rotation and pen.
+/// Changes go only through the CommandBus.
 /// </summary>
 public sealed class CanvasView : Control
 {
@@ -35,18 +35,18 @@ public sealed class CanvasView : Control
     enum FillPart { Start, End, Stop, Center, RadX, RadY }
     enum NodePart { Node, In, Out }
 
-    Point _pan = new(120, 90); // posizione schermo dell'origine del documento
+    Point _pan = new(120, 90); // screen position of the document origin
     double _zoom = 1;
     Drag _drag;
     Point _last, _start;
-    Avalonia.Vector _moveOffset; // spostamento in corso, in coordinate documento (anteprima)
-    Point _createStart, _createEnd; // rettangolo in creazione, in coordinate documento
-    Point _marqueeStart, _marqueeEnd; // selezione a rettangolo, in coordinate documento
+    Avalonia.Vector _moveOffset; // move in progress, in document coordinates (preview)
+    Point _createStart, _createEnd; // rectangle being created, in document coordinates
+    Point _marqueeStart, _marqueeEnd; // rectangle selection, in document coordinates
     bool _marqueeAdd;
     Tool _tool;
 
     readonly List<string> _selection = [];
-    /// <summary>Nodo della penna (coordinate documento); In/Out sono le maniglie della curva, assenti se il nodo è angolare.</summary>
+    /// <summary>Pen node (document coordinates); In/Out are the curve handles, absent if the node is a corner.</summary>
     sealed class PenNode(Point p)
     {
         public Point P = p;
@@ -55,17 +55,17 @@ public sealed class CanvasView : Control
 
     readonly List<PenNode> _pen = [];
 
-    // Strumento Nodi: selezione dei nodi (sottopath, indice) del path selezionato; durante un trascinamento
-    // _nodeOrig è il modello a inizio gesto e _nodeWork quello modificato (anteprima: il documento cambia al rilascio).
-    // Strumento di riempimento: _fillWork è il gradiente in modifica durante un trascinamento (anteprima; il documento
-    // cambia al rilascio), _fillBase quello a inizio gesto; _fillSel è la sosta di colore selezionata.
+    // Node tool: selection of the nodes (subpath, index) of the selected path; during a drag
+    // _nodeOrig is the model at the start of the gesture and _nodeWork the edited one (preview: the document changes on release).
+    // Fill tool: _fillWork is the gradient being edited during a drag (preview; the document
+    // changes on release), _fillBase the one at the start of the gesture; _fillSel is the selected color stop.
     GradientSpec? _fillWork, _fillBase;
     FillHandle? _fillHit;
     Item? _fillItem;
     Point _fillStart;
     int _fillSel = -1;
 
-    /// <summary>Soste di colore con cui nasce un nuovo gradiente trascinando sull'oggetto (le fornisce il pannello).</summary>
+    /// <summary>Color stops a new gradient starts with when dragging over the object (provided by the panel).</summary>
     public Func<List<GradientStop>>? DefaultStops { get; set; }
     public int FillSelectedStop => _fillSel;
 
@@ -75,39 +75,39 @@ public sealed class CanvasView : Control
     double _nodeHandleX, _nodeHandleY;
     Point _penHover;
 
-    // Ridimensionamento / rotazione in corso (anteprima: il documento cambia solo al rilascio).
+    // Resize / rotation in progress (preview: the document changes only on release).
     Item? _dragItem;
-    double _handleX, _handleY; // maniglia trascinata, in frazioni del rettangolo
+    double _handleX, _handleY; // dragged handle, as fractions of the rectangle
     double _newW, _newH;
     Vector2 _rotCenter;
     double _startAngle, _rotDelta;
 
-    // Griglia, guide e aggancio (le guide stanno nel documento; il resto è stato di vista).
+    // Grid, guides and snapping (guides live in the document; the rest is view state).
     const double RulerSize = 20;
     bool _showGrid;
     public bool ShowGrid { get => _showGrid; set { _showGrid = value; InvalidateVisual(); } }
-    /// <summary>Passo della griglia in px di documento.</summary>
+    /// <summary>Grid step in document px.</summary>
     public double GridSize { get; set; } = 10;
     public bool SnapOn { get; set; } = true;
     public bool SnapToGrid { get; set; } = true;
     public bool SnapToGuides { get; set; } = true;
     public bool SnapToObjects { get; set; } = true;
-    readonly List<double> _snapXs = [], _snapYs = []; // guide, bordi e centri degli altri oggetti e della pagina
-    double? _snapLineX, _snapLineY; // obiettivi agganciati dal gesto in corso, mostrati come linee
+    readonly List<double> _snapXs = [], _snapYs = []; // guides, edges and centers of the other objects and of the page
+    double? _snapLineX, _snapLineY; // targets snapped to by the current gesture, shown as lines
     Box _moveBounds;
     string _guideAxis = "x";
     double _guidePos, _guideFrom;
-    bool _guideOut; // la guida è sopra un righello: al rilascio si elimina
+    bool _guideOut; // the guide is over a ruler: on release it is deleted
 
     const long HighlightMs = 3000;
-    readonly Dictionary<string, (long Stamp, string Agent)> _highlights = []; // id oggetto -> TickCount64 e agente della modifica
+    readonly Dictionary<string, (long Stamp, string Agent)> _highlights = []; // object id -> TickCount64 and agent of the change
     readonly DispatcherTimer _fade;
 
-    // Un pill per agente, sull'ultimo oggetto che ha toccato: resta fermo, poi sfuma.
+    // One pill per agent, on the last object it touched: it stays still, then fades.
     const long PillHoldMs = 1500, PillFadeMs = 500;
     const int MaxPills = 4;
     readonly Dictionary<string, (string Id, long Stamp)> _pills = [];
-    readonly Dictionary<string, SKColor> _agentColors = []; // colore assegnato all'agente al suo primo intervento
+    readonly Dictionary<string, SKColor> _agentColors = []; // color assigned to the agent at its first intervention
     static readonly SKColor[] AgentPalette =
         [new(0xA8, 0x55, 0xF7), new(0x14, 0xB8, 0xA6), new(0xF9, 0x73, 0x16), new(0xEC, 0x48, 0x99), new(0x84, 0xCC, 0x16)];
 
@@ -123,28 +123,28 @@ public sealed class CanvasView : Control
 
     public CommandBus? Bus { get; set; }
     public IReadOnlyList<string> SelectedIds => _selection;
-    /// <summary>L'id selezionato, solo se la selezione è esattamente un oggetto.</summary>
+    /// <summary>The selected id, only if the selection is exactly one object.</summary>
     public string? SelectedId => _selection.Count == 1 ? _selection[0] : null;
     public double Zoom => _zoom;
     public int NodeSelectionCount => _nodeSel.Count;
 
     PageView _pageView = PageView.Outline;
-    /// <summary>Pagina bianca con ombra, solo il contorno, oppure nascosta.</summary>
+    /// <summary>White page with shadow, outline only, or hidden.</summary>
     public PageView PageViewMode { get => _pageView; set { _pageView = value; InvalidateVisual(); } }
 
-    /// <summary>Misure mostrate all'utente: numero nell'unità scelta (le fornisce la finestra) e nome dell'unità.</summary>
+    /// <summary>Measures shown to the user: number in the chosen unit (provided by the window) and the unit's name.</summary>
     public Func<double, string> FormatLength { get; set; } = v => v.ToString("0.##");
     public string UnitLabel { get; set; } = "px";
 
-    /// <summary>Testo informativo durante un gesto (dimensioni, posizione, angolo); null = fine del gesto.</summary>
+    /// <summary>Informational text during a gesture (size, position, angle); null = end of the gesture.</summary>
     public event Action<string?>? InfoChanged;
-    /// <summary>Posizione del cursore in coordinate documento; null quando esce dal canvas.</summary>
+    /// <summary>Cursor position in document coordinates; null when it leaves the canvas.</summary>
     public event Action<Point?>? CursorMoved;
 
-    /// <summary>Riquadro della pagina in coordinate documento.</summary>
+    /// <summary>Box of the page in document coordinates.</summary>
     Box PageBox() => Bus?.Read(d => new Box(0, 0, d.Pages[0].Width, d.Pages[0].Height)) ?? new Box(0, 0, 794, 1123);
 
-    /// <summary>Inquadra un riquadro del documento, centrato e con un margine in pixel.</summary>
+    /// <summary>Frames a box of the document, centered and with a margin in pixels.</summary>
     public void ZoomToBox(Box b, double margin = 48)
     {
         if (Bounds.Width < 10 || Bounds.Height < 10 || b.Width <= 0 || b.Height <= 0) return;
@@ -156,7 +156,7 @@ public sealed class CanvasView : Control
 
     public void FitPage() => ZoomToBox(PageBox());
 
-    /// <summary>Zoom al 100%, mantenendo fermo il centro della finestra.</summary>
+    /// <summary>Zoom to 100%, keeping the window's center fixed.</summary>
     public void ZoomActualSize()
     {
         var c = new Point(Bounds.Width / 2, Bounds.Height / 2);
@@ -171,7 +171,7 @@ public sealed class CanvasView : Control
 
     string Size(Box b) => $"{FormatLength(b.Width)} × {FormatLength(b.Height)} {UnitLabel}";
 
-    /// <summary>Oggetto da non disegnare (il testo che si sta modificando sul posto).</summary>
+    /// <summary>Object not to be drawn (the text being edited in place).</summary>
     string? _hiddenId;
     public string? HiddenId { get => _hiddenId; set { _hiddenId = value; InvalidateVisual(); } }
 
@@ -179,7 +179,7 @@ public sealed class CanvasView : Control
 
     public Point DocToScreen(Point p) => new(p.X * _zoom + _pan.X, p.Y * _zoom + _pan.Y);
 
-    /// <summary>Dove mostrare l'editor di un testo: angolo in alto a sinistra sullo schermo e rotazione in gradi.</summary>
+    /// <summary>Where to show a text's editor: top-left corner on screen and rotation in degrees.</summary>
     public (Point TopLeft, double Rotation)? EditorPlacement(string id)
     {
         var it = Bus?.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is { } o ? Item.From(o) : null);
@@ -190,13 +190,13 @@ public sealed class CanvasView : Control
 
     bool IsText(string id) => Bus?.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is TextObject) ?? false;
 
-    /// <summary>Modifica il testo selezionato (Invio / F2).</summary>
+    /// <summary>Edits the selected text (Enter / F2).</summary>
     public void EditSelectedText()
     {
         if (SelectedId is { } id && IsText(id)) TextEditRequested?.Invoke(new TextEditRequest(id, default, null));
     }
 
-    /// <summary>Stile applicato alle nuove forme.</summary>
+    /// <summary>Style applied to new shapes.</summary>
     public string? Fill { get; set; } = "#3B82F6";
     public string? Stroke { get; set; } = "#1F2937";
     public double StrokeWidth { get; set; } = 2;
@@ -207,7 +207,7 @@ public sealed class CanvasView : Control
         set
         {
             if (_tool == value) return;
-            if (_tool == Tool.Pen && _pen.Count >= 2) FinishPen(false, false); // cambiando strumento il path aperto si conserva
+            if (_tool == Tool.Pen && _pen.Count >= 2) FinishPen(false, false); // when switching tool the open path is kept
             _tool = value;
             if (value != Tool.Pen) _pen.Clear();
             _nodeSel.Clear();
@@ -220,10 +220,10 @@ public sealed class CanvasView : Control
         }
     }
 
-    /// <summary>Un comando dell'utente è stato rifiutato (per esempio perché l'oggetto è bloccato): il testo spiega perché.</summary>
+    /// <summary>A user command was rejected (for example because the object is locked): the text explains why.</summary>
     public event Action<string>? Notice;
 
-    // I gesti dell'utente passano da qui: un comando rifiutato diventa un avviso, non un'eccezione nel gestore del mouse.
+    // User gestures go through here: a rejected command becomes a notice, not an exception in the mouse handler.
     BatchResult? Try(params Command[] commands)
     {
         try { return Bus?.Execute(commands); }
@@ -242,7 +242,7 @@ public sealed class CanvasView : Control
         _fade = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Render, (_, _) => FadeTick());
     }
 
-    /// <summary>Evidenzia per qualche secondo gli oggetti creati o modificati dall'agente.</summary>
+    /// <summary>Highlights for a few seconds the objects created or modified by the agent.</summary>
     public void Highlight(IEnumerable<string> ids, string agent)
     {
         var now = Environment.TickCount64;
@@ -264,18 +264,18 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
-    // ---- Barre di scorrimento ------------------------------------------------------------------
+    // ---- Scroll bars ------------------------------------------------------------------
 
-    Box _scrollRange; // area scorrevole in coordinate documento, dall'ultimo ScrollInfo
+    Box _scrollRange; // scrollable area in document coordinates, from the last ScrollInfo
 
     /// <summary>
-    /// Misure per le barre di scorrimento, in pixel schermo. L'area scorrevole è il contenuto allargato di mezza finestra
-    /// per lato (si può sempre uscire un po' dai bordi), unita alla finestra stessa se l'utente è andato oltre.
+    /// Measures for the scroll bars, in screen pixels. The scrollable area is the content enlarged by half a window
+    /// per side (one can always go a bit past the edges), united with the window itself if the user went further.
     /// </summary>
     public (double TotalW, double TotalH, double OffX, double OffY, double ViewW, double ViewH) ScrollInfo()
     {
         var boxes = Bus?.Read(d => d.RenderObjects.Select(o => o.Bounds).ToList()) ?? [];
-        var page = PageBox(); // l'area scorrevole comprende sempre la pagina
+        var page = PageBox(); // the scrollable area always includes the page
         double cx0 = page.X, cy0 = page.Y, cx1 = page.X + page.Width, cy1 = page.Y + page.Height;
         if (boxes.Count > 0)
         {
@@ -289,7 +289,7 @@ public sealed class CanvasView : Control
         return ((x1 - x0) * _zoom, (y1 - y0) * _zoom, (vx - x0) * _zoom, (vy - y0) * _zoom, Bounds.Width, Bounds.Height);
     }
 
-    /// <summary>Porta la finestra a una posizione (in pixel dall'inizio dell'area scorrevole); null = invariato.</summary>
+    /// <summary>Moves the window to a position (in pixels from the start of the scrollable area); null = unchanged.</summary>
     public void ScrollTo(double? offX, double? offY)
     {
         if (offX is { } x) _pan = new(-(_scrollRange.X * _zoom + x), _pan.Y);
@@ -312,10 +312,10 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
-    /// <summary>Toglie dalla selezione gli oggetti che non esistono più.</summary>
+    /// <summary>Removes from the selection the objects that no longer exist.</summary>
     public void PruneSelection(ICollection<string> valid) => SetSelection(_selection.Where(valid.Contains));
 
-    /// <summary>Raccoglie gli obiettivi dell'aggancio per il gesto che inizia (gli oggetti in <paramref name="exclude"/> non contano: si stanno muovendo).</summary>
+    /// <summary>Collects the snap targets for the gesture that starts (objects in <paramref name="exclude"/> do not count: they are moving).</summary>
     void BeginSnap(IReadOnlyCollection<string>? exclude = null)
     {
         _snapXs.Clear(); _snapYs.Clear();
@@ -342,7 +342,7 @@ public sealed class CanvasView : Control
         });
     }
 
-    /// <summary>Correzione da sommare a <paramref name="v"/> per agganciarla all'obiettivo più vicino (entro 6 px schermo), e coordinata dell'obiettivo.</summary>
+    /// <summary>Correction to add to <paramref name="v"/> to snap it to the nearest target (within 6 screen px), and the target's coordinate.</summary>
     (double Delta, double Line)? SnapAxis(double v, List<double> targets)
     {
         if (!SnapOn) return null;
@@ -358,7 +358,7 @@ public sealed class CanvasView : Control
         return best;
     }
 
-    /// <summary>Aggancia un punto (x e y indipendenti) e ricorda gli obiettivi trovati per mostrarli.</summary>
+    /// <summary>Snaps a point (x and y independent) and remembers the targets found to show them.</summary>
     Point SnapPoint(Point p)
     {
         var sx = SnapAxis(p.X, _snapXs);
@@ -380,7 +380,7 @@ public sealed class CanvasView : Control
         BeginSnap(ids);
     }
 
-    // Spostamento: il riquadro della selezione aggancia bordo sinistro/centro/destro e alto/centro/basso.
+    // Move: the selection's box snaps left/center/right edge and top/center/bottom.
     void SnapMove()
     {
         _snapLineX = _snapLineY = null;
@@ -393,7 +393,7 @@ public sealed class CanvasView : Control
         _moveOffset = new(o.X + (sx?.Delta ?? 0), o.Y + (sy?.Delta ?? 0));
     }
 
-    // ---- Righelli e guide ----
+    // ---- Rulers and guides ----
 
     bool InRuler(Point p) => p.X < RulerSize || p.Y < RulerSize;
 
@@ -401,13 +401,13 @@ public sealed class CanvasView : Control
         Bus?.Read(d => d.Pages[0].Guides.FirstOrDefault(g =>
             Math.Abs(g.Axis == "x" ? g.Position * _zoom + _pan.X - screen.X : g.Position * _zoom + _pan.Y - screen.Y) <= 4));
 
-    // Dai righelli si tirano fuori le guide; con lo strumento Selezione si spostano quelle esistenti.
+    // Guides are pulled out of the rulers; with the Select tool existing ones are moved.
     bool StartGuideDrag(Point pos)
     {
         if (InRuler(pos))
         {
-            if (pos.X < RulerSize && pos.Y < RulerSize) return true; // angolo: niente
-            _guideAxis = pos.Y < RulerSize ? "y" : "x"; // dal righello in alto una guida orizzontale
+            if (pos.X < RulerSize && pos.Y < RulerSize) return true; // corner: nothing
+            _guideAxis = pos.Y < RulerSize ? "y" : "x"; // a horizontal guide from the top ruler
             _drag = Drag.GuideNew;
             BeginSnap();
             GuideDragMove(pos);
@@ -432,7 +432,7 @@ public sealed class CanvasView : Control
         _guideOut = InRuler(pos);
     }
 
-    /// <summary>Punto del documento sotto un punto dello schermo, e centro della vista.</summary>
+    /// <summary>Document point under a screen point, and center of the view.</summary>
     public Point DocPoint(Point screen) => ToDoc(screen);
     public Point ViewCenter => ToDoc(new(Bounds.Width / 2, Bounds.Height / 2));
 
@@ -441,7 +441,7 @@ public sealed class CanvasView : Control
     string? HitTest(Point doc) =>
         Bus?.Read(d => d.PickableObjects.Reverse().FirstOrDefault(o => Contains(o, new((float)doc.X, (float)doc.Y), 5 / _zoom))?.Id);
 
-    // Il punto viene portato nello spazio locale dell'oggetto, così funziona anche con oggetti ruotati e dentro i gruppi.
+    // The point is brought into the object's local space, so it also works with rotated objects and inside groups.
     static bool Contains(SceneObject o, Vector2 p, double tolerance)
     {
         if (!Matrix3x2.Invert(o.Transform, out var inv)) return false;
@@ -456,12 +456,12 @@ public sealed class CanvasView : Control
             {
                 using var path = SceneRenderer.BuildPath(po.Segments, po.Fit);
                 if (po.Fill != null && path.Contains(l.X, l.Y)) return true;
-                // Il tratto si "clicca" con una tolleranza minima, anche se è sottile o assente.
+                // The stroke is "clickable" with a minimum tolerance, even if it is thin or absent.
                 using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)(2 * Math.Max(tolerance, po.StrokeWidth / 2)) };
                 using var outline = paint.GetFillPath(path);
                 return outline != null && outline.Contains(l.X, l.Y);
             }
-            case TextObject { PathGlyphs: { } glyphs } t: // testo su tracciato: si clicca sulle lettere e tra una lettera e l'altra
+            case TextObject { PathGlyphs: { } glyphs } t: // text on a path: one clicks on the letters and between one letter and the next
             {
                 using var path = SceneRenderer.BuildPath(glyphs, t.Fit);
                 using var paint = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = (float)(2 * Math.Max(tolerance, t.FontSize * 0.3)) };
@@ -482,7 +482,7 @@ public sealed class CanvasView : Control
     Item? SnapshotSelected() =>
         SelectedId is { } id ? Bus?.Read(d => d.Objects.FirstOrDefault(o => o.Id == id) is { } o ? Item.From(o) : null) : null;
 
-    /// <summary>Maniglia sotto il cursore (tolleranza in pixel schermo), se c'è un solo oggetto selezionato.</summary>
+    /// <summary>Handle under the cursor (tolerance in screen pixels), if a single object is selected.</summary>
     (Handle Handle, Item Item)? HitHandle(Point screen)
     {
         if (SnapshotSelected() is not { } it) return null;
@@ -521,11 +521,11 @@ public sealed class CanvasView : Control
         {
             if (HitTest(ToDoc(pt.Position)) is { } textHit && IsText(textHit))
             {
-                Select(textHit); // click su un testo esistente: lo si modifica
+                Select(textHit); // click on an existing text: edit it
                 TextEditRequested?.Invoke(new TextEditRequest(textHit, default, null));
                 return;
             }
-            // Click = testo "artistico" in quel punto; trascinando si disegna la larghezza per l'a capo automatico.
+            // Click = "artistic" text at that point; dragging draws the width for automatic wrapping.
             BeginSnap();
             _createStart = _createEnd = SnapPoint(ToDoc(pt.Position));
             _drag = Drag.TextBox;
@@ -570,24 +570,24 @@ public sealed class CanvasView : Control
             }
             else if (HitTest(ToDoc(pt.Position)) is { } hit)
             {
-                if (e.ClickCount >= 2 && !shift && IsText(hit)) // doppio click su un testo: modifica
+                if (e.ClickCount >= 2 && !shift && IsText(hit)) // double-click on a text: edit
                 {
                     Select(hit);
                     TextEditRequested?.Invoke(new TextEditRequest(hit, default, null));
                     return;
                 }
-                if (shift) // Shift+click: aggiunge o toglie dalla selezione
+                if (shift) // Shift+click: adds to or removes from the selection
                     SetSelection(_selection.Contains(hit) ? _selection.Where(i => i != hit) : _selection.Append(hit));
                 else
                 {
                     if (!_selection.Contains(hit)) SetSelection([hit]);
-                    _drag = Drag.Move; // sposta tutta la selezione
+                    _drag = Drag.Move; // moves the whole selection
                     BeginMove();
                 }
             }
             else
             {
-                // Sfondo: selezione a rettangolo (Shift per aggiungere).
+                // Background: rectangle selection (Shift to add).
                 if (!shift) SetSelection([]);
                 _marqueeAdd = shift;
                 _marqueeStart = _marqueeEnd = ToDoc(pt.Position);
@@ -597,15 +597,15 @@ public sealed class CanvasView : Control
         if (_drag != Drag.None) e.Pointer.Capture(this);
     }
 
-    // Penna (come lo strumento Bézier degli editor vettoriali classici): click = nodo angolare; click e trascina = nodo liscio, con le
-    // maniglie della curva simmetriche; click sul primo nodo chiude; doppio click o Invio termina il path aperto.
+    // Pen (like the Bézier tool of classic vector editors): click = corner node; click and drag = smooth node, with symmetric
+    // curve handles; click on the first node closes; double-click or Enter ends the open path.
     void PenPress(Point screen, int clickCount)
     {
         if (clickCount >= 2) { FinishPen(false); return; }
         if (_pen.Count >= 2 && NearFirstNode(screen)) { FinishPen(true); return; }
         BeginSnap();
         _pen.Add(new PenNode(SnapPoint(ToDoc(screen))));
-        _drag = Drag.PenNode; // trascinando si tirano fuori le maniglie
+        _drag = Drag.PenNode; // dragging pulls out the handles
         InvalidateVisual();
     }
 
@@ -623,7 +623,7 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
-    /// <summary>Toglie l'ultimo nodo.</summary>
+    /// <summary>Removes the last node.</summary>
     public void PenBack()
     {
         if (_pen.Count > 0) _pen.RemoveAt(_pen.Count - 1);
@@ -648,25 +648,25 @@ public sealed class CanvasView : Control
         for (var i = 1; i < nodes.Count; i++) Segment(nodes[i - 1], nodes[i]);
         if (closed)
         {
-            if (nodes[^1].Out != null || nodes[0].In != null) Segment(nodes[^1], nodes[0]); // chiusura curva
+            if (nodes[^1].Out != null || nodes[0].In != null) Segment(nodes[^1], nodes[0]); // curve closing
             sb.Append(" Z");
         }
 
         if (Try(new CreateShape
         {
             Type = "path", D = sb.ToString(),
-            Fill = closed ? Fill ?? "none" : "none", // un path aperto non si riempie
+            Fill = closed ? Fill ?? "none" : "none", // an open path is not filled
             Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
         }) is { } r) Select(r.CreatedIds[0]);
         if (select) Tool = Tool.Select;
     }
 
-    // ---- Strumento di riempimento -------------------------------------------------------------
+    // ---- Fill tool -------------------------------------------------------------
 
     sealed record FillHandle(FillPart Part, int Index, Vector2 Pos, string Color);
     sealed record FillView(List<FillHandle> Handles, List<(Vector2 A, Vector2 B)> Lines, List<Vector2>? Ellipse, int Selected);
 
-    // Il gradiente è relativo a questo riquadro, nello spazio locale dell'oggetto (per il testo: quello impaginato, poi stirato da Fit).
+    // The gradient is relative to this box, in the object's local space (for text: the laid-out one, then stretched by Fit).
     static Box GradBox(Item it) => it.Kind == Kind.Text ? it.Source : new Box(it.X, it.Y, it.W, it.H);
 
     static Vector2 FracToPage(Item it, double fx, double fy)
@@ -754,23 +754,23 @@ public sealed class CanvasView : Control
         }
 
         var hit = HitTest(ToDoc(screen));
-        if (hit != null && hit != SelectedId) { Select(hit); return; } // un altro oggetto: si lavora su quello
+        if (hit != null && hit != SelectedId) { Select(hit); return; } // another object: we work on that one
         if (it != null && it.Kind != Kind.Group && hit == it.Id)
         {
-            // Trascinando sull'oggetto si disegna un nuovo gradiente (come lo strumento di riempimento interattivo degli editor vettoriali classici).
+            // Dragging over the object draws a new gradient (like the interactive fill tool of classic vector editors).
             _fillItem = it; _fillBase = g; _fillHit = null;
             _fillStart = ToDoc(screen);
             _drag = Drag.FillDraw;
         }
     }
 
-    // Doppio click sulla linea del gradiente: aggiunge una sosta di colore in quel punto.
+    // Double-click on the gradient line: adds a color stop at that point.
     bool AddStopAt(Item it, GradientSpec g, Point screen)
     {
         var box = GradBox(it);
         var d = ToDoc(screen);
         if (PageToFrac(it, new Vector2((float)d.X, (float)d.Y)) is not { } f) return false;
-        double ax, ay, bx, by; // linea su cui stanno le soste, in frazioni del riquadro
+        double ax, ay, bx, by; // line the stops lie on, as fractions of the box
         if (!g.Radial)
         {
             var (x1, y1, x2, y2) = Gradient.LinearPoints(g, box);
@@ -801,7 +801,7 @@ public sealed class CanvasView : Control
     void FillDragMove(Point pos, bool shift)
     {
         if (_fillItem is not { } it) return;
-        var g0 = _fillBase; // null se l'oggetto non aveva ancora un gradiente (si sta disegnando il primo)
+        var g0 = _fillBase; // null if the object did not have a gradient yet (the first one is being drawn)
         var box = GradBox(it);
         var d = ToDoc(pos);
         if (PageToFrac(it, new Vector2((float)d.X, (float)d.Y)) is not { } f) return;
@@ -814,7 +814,7 @@ public sealed class CanvasView : Control
             var stops = (_fillBase?.Stops ?? DefaultStops?.Invoke() ?? [new("#3B82F6", 0), new("#FFFFFF", 1)]).ToList();
             if (_fillBase is { Radial: true } rb)
             {
-                var r = Math.Sqrt(Math.Pow((f.X - s.X) * w, 2) + Math.Pow((f.Y - s.Y) * h, 2)); // raggio in unità documento
+                var r = Math.Sqrt(Math.Pow((f.X - s.X) * w, 2) + Math.Pow((f.Y - s.Y) * h, 2)); // radius in document units
                 _fillWork = rb with { CenterX = s.X, CenterY = s.Y, Circle = false, Rx = r / w, Ry = r / h, Stops = stops };
             }
             else
@@ -838,7 +838,7 @@ public sealed class CanvasView : Control
                     var start = hit.Part == FillPart.Start;
                     var (ox, oy) = start ? (x2, y2) : (x1, y1);
                     var (nx, ny) = (f.X, f.Y);
-                    if (shift && w > 0 && h > 0) // Shift: angolo a scatti di 15°
+                    if (shift && w > 0 && h > 0) // Shift: angle in steps of 15°
                     {
                         double vx = (nx - ox) * w, vy = (ny - oy) * h, len = Math.Sqrt(vx * vx + vy * vy);
                         var ang = Math.Round(Math.Atan2(vy, vx) / (Math.PI / 12)) * (Math.PI / 12);
@@ -864,7 +864,7 @@ public sealed class CanvasView : Control
             switch (hit.Part)
             {
                 case FillPart.Center:
-                    _fillWork = g with { CenterX = f.X, CenterY = f.Y, Circle = false, Rx = rx, Ry = ry }; // il raggio resta lo stesso
+                    _fillWork = g with { CenterX = f.X, CenterY = f.Y, Circle = false, Rx = rx, Ry = ry }; // the radius stays the same
                     break;
                 case FillPart.RadX:
                     _fillWork = g with { Circle = false, Rx = Math.Max(0.005, Math.Abs(f.X - g.CenterX)), Ry = ry };
@@ -889,7 +889,7 @@ public sealed class CanvasView : Control
             try { Bus.Execute([new SetStyle { Targets = [id], Fill = fill }]); } catch (CommandException) { }
     }
 
-    /// <summary>Con la sosta selezionata sul canvas, un colore della tavolozza la cambia. False se non c'è una sosta selezionata.</summary>
+    /// <summary>With the stop selected on the canvas, a palette color changes it. False if no stop is selected.</summary>
     public bool TrySetSelectedStopColor(string color)
     {
         if (Tool != Tool.Fill || _fillSel < 0 || SnapshotSelected() is not { } it || ParseFill(it.Fill) is not { } g || _fillSel >= g.Stops.Count) return false;
@@ -899,7 +899,7 @@ public sealed class CanvasView : Control
         return true;
     }
 
-    /// <summary>Toglie la sosta selezionata (ne servono almeno due).</summary>
+    /// <summary>Removes the selected stop (at least two are needed).</summary>
     public bool DeleteSelectedStop()
     {
         if (Tool != Tool.Fill || _fillSel < 0 || SnapshotSelected() is not { } it || ParseFill(it.Fill) is not { } g || g.Stops.Count <= 2 || _fillSel >= g.Stops.Count) return false;
@@ -910,9 +910,9 @@ public sealed class CanvasView : Control
         return true;
     }
 
-    // ---- Strumento Nodi ------------------------------------------------------------------------
+    // ---- Node tool ------------------------------------------------------------------------
 
-    // Modello a nodi del path in coordinate pagina (la trasformazione è già applicata).
+    // Node model of the path in page coordinates (the transform is already applied).
     static List<SubPath> ModelOf(Item it) => PathNodes.FromSegments(PathData.Transform(it.Segments!, it.Fit * it.M), it.NodeKinds);
 
     List<SubPath>? CurrentModel() =>
@@ -923,7 +923,7 @@ public sealed class CanvasView : Control
 
     (int Sub, int Idx, NodePart Part)? HitNodePart(List<SubPath> model, Point screen)
     {
-        // Le maniglie dei nodi selezionati stanno sopra i nodi.
+        // The handles of the selected nodes sit above the nodes.
         foreach (var (si, ni) in _nodeSel)
         {
             if (si >= model.Count || ni >= model[si].Nodes.Count) continue;
@@ -946,7 +946,7 @@ public sealed class CanvasView : Control
             {
                 if (hit.Part == NodePart.Node)
                 {
-                    if (clickCount >= 2) // doppio click su un nodo: lo elimina
+                    if (clickCount >= 2) // double-click on a node: deletes it
                     {
                         _nodeSel.Clear(); _nodeSel.Add((hit.Sub, hit.Idx));
                         ApplyNodeOp(NodeOp.Delete);
@@ -962,7 +962,7 @@ public sealed class CanvasView : Control
                 return;
             }
 
-            // Doppio click sul tracciato: aggiunge un nodo senza cambiare la forma.
+            // Double-click on the path: adds a node without changing the shape.
             var d = ToDoc(screen);
             if (clickCount >= 2 && PathNodes.Nearest(model, new((float)d.X, (float)d.Y)) is { } near && near.Dist * _zoom <= 6)
             {
@@ -977,7 +977,7 @@ public sealed class CanvasView : Control
 
         if (HitTest(ToDoc(screen)) is { } obj)
         {
-            if (obj != SelectedId) Select(obj); // un altro oggetto: mostra i suoi nodi
+            if (obj != SelectedId) Select(obj); // another object: show its nodes
             return;
         }
         if (!shift) _nodeSel.Clear();
@@ -986,7 +986,7 @@ public sealed class CanvasView : Control
         _drag = Drag.Marquee;
     }
 
-    // Anteprima del trascinamento di nodi o maniglie, a partire dal modello a inizio gesto.
+    // Preview of the drag of nodes or handles, starting from the model at the start of the gesture.
     void NodeDragMove(Point pos, bool alt)
     {
         if (_nodeOrig == null) return;
@@ -1008,7 +1008,7 @@ public sealed class CanvasView : Control
         {
             var d = ToDoc(pos);
             var n = work[_nodeHit.Sub].Nodes[_nodeHit.Idx];
-            PathNodes.MoveHandle(n, _nodeHit.Part == NodePart.Out, new((float)d.X, (float)d.Y), alt); // Alt: maniglie indipendenti
+            PathNodes.MoveHandle(n, _nodeHit.Part == NodePart.Out, new((float)d.X, (float)d.Y), alt); // Alt: independent handles
         }
         _nodeWork = work;
     }
@@ -1023,7 +1023,7 @@ public sealed class CanvasView : Control
         catch (CommandException) { }
     }
 
-    /// <summary>Applica un'operazione ai nodi selezionati del path (un solo undo).</summary>
+    /// <summary>Applies an operation to the selected nodes of the path (a single undo).</summary>
     public void ApplyNodeOp(NodeOp op)
     {
         if (CurrentModel() is not { } model || _nodeSel.Count == 0) return;
@@ -1046,18 +1046,18 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
-    // Cursori standard di Avalonia: li traduce per Windows, macOS e Linux.
+    // Avalonia's standard cursors: it translates them for Windows, macOS and Linux.
     static readonly Cursor SizeWE = new(StandardCursorType.SizeWestEast), SizeNS = new(StandardCursorType.SizeNorthSouth),
         SizeNWSE = new(StandardCursorType.TopLeftCorner), SizeNESW = new(StandardCursorType.TopRightCorner),
         RotateCursor = new(StandardCursorType.Hand);
 
-    // Cursore di ridimensionamento in base alla direzione reale della maniglia (anche per oggetti ruotati).
+    // Resize cursor based on the handle's real direction (also for rotated objects).
     static Cursor CursorFor(Handle h, Item it)
     {
         if (h.Rotate) return RotateCursor;
         var v = h.Pos - PointOn(it, .5, .5);
-        var deg = Math.Atan2(v.Y, v.X) * 180 / Math.PI; // 0 = destra, 90 = giù
-        var sector = (int)Math.Round((deg % 180 + 180) % 180 / 45) % 4; // 0=orizz., 1=diag. \, 2=vert., 3=diag. /
+        var deg = Math.Atan2(v.Y, v.X) * 180 / Math.PI; // 0 = right, 90 = down
+        var sector = (int)Math.Round((deg % 180 + 180) % 180 / 45) % 4; // 0=horiz., 1=diag. \, 2=vert., 3=diag. /
         return sector switch
         {
             0 => SizeWE, 1 => SizeNWSE, 2 => SizeNS, _ => SizeNESW,
@@ -1066,7 +1066,7 @@ public sealed class CanvasView : Control
 
     protected override void OnPointerExited(PointerEventArgs e) => CursorMoved?.Invoke(null);
 
-    // Misure in tempo reale durante un gesto: dimensioni mentre si disegna o ridimensiona, posizione mentre si sposta.
+    // Live measures during a gesture: size while drawing or resizing, position while moving.
     void UpdateLiveInfo()
     {
         switch (_drag)
@@ -1105,7 +1105,7 @@ public sealed class CanvasView : Control
             _penHover = d;
             if (Math.Abs(d.X - n.P.X) * _zoom + Math.Abs(d.Y - n.P.Y) * _zoom > 3)
             {
-                n.Out = d; // la maniglia segue il mouse, l'altra è il suo specchio rispetto al nodo
+                n.Out = d; // the handle follows the mouse, the other is its mirror with respect to the node
                 n.In = new Point(2 * n.P.X - d.X, 2 * n.P.Y - d.Y);
             }
             else n.In = n.Out = null;
@@ -1134,7 +1134,7 @@ public sealed class CanvasView : Control
             InvalidateVisual();
             return;
         }
-        if (_drag == Drag.None && Tool == Tool.Select) // nessun gesto: cursore in base a cosa c'è sotto
+        if (_drag == Drag.None && Tool == Tool.Select) // no gesture: cursor based on what is underneath
         {
             Cursor = HitHandle(pos) is var (hh, hit) ? CursorFor(hh, hit)
                 : HitGuide(pos) is { } hg ? new Cursor(hg.Axis == "x" ? StandardCursorType.SizeWestEast : StandardCursorType.SizeNorthSouth) : null;
@@ -1159,17 +1159,17 @@ public sealed class CanvasView : Control
             if (!Matrix3x2.Invert(it.M, out var inv)) return;
             var d = ToDoc(pos);
             _snapLineX = _snapLineY = null;
-            if (Math.Abs(it.M.M12) < 1e-4 && Math.Abs(it.M.M21) < 1e-4) // l'aggancio vale solo per oggetti non ruotati
+            if (Math.Abs(it.M.M12) < 1e-4 && Math.Abs(it.M.M21) < 1e-4) // snapping applies only to non-rotated objects
             {
                 if (_handleX != .5 && SnapAxis(d.X, _snapXs) is { } sx) { d = new(d.X + sx.Delta, d.Y); _snapLineX = sx.Line; }
                 if (_handleY != .5 && SnapAxis(d.Y, _snapYs) is { } sy) { d = new(d.X, d.Y + sy.Delta); _snapLineY = sy.Line; }
             }
             var p = Vector2.Transform(new((float)d.X, (float)d.Y), inv);
-            // L'ancora (lato o angolo opposto alla maniglia) resta ferma; la nuova dimensione è la distanza del mouse da essa.
+            // The anchor (side or corner opposite the handle) stays fixed; the new size is the mouse's distance from it.
             double ax = 1 - _handleX, ay = 1 - _handleY;
             double nw = _handleX == .5 ? it.W : Math.Max(1, (p.X - (it.X + ax * it.W)) * (_handleX == 1 ? 1 : -1));
             double nh = _handleY == .5 ? it.H : Math.Max(1, (p.Y - (it.Y + ay * it.H)) * (_handleY == 1 ? 1 : -1));
-            if (shift && _handleX != .5 && _handleY != .5 && it.W > 0 && it.H > 0) // Shift: mantiene le proporzioni
+            if (shift && _handleX != .5 && _handleY != .5 && it.W > 0 && it.H > 0) // Shift: keeps the proportions
             {
                 var s = Math.Max(nw / it.W, nh / it.H);
                 (nw, nh) = (it.W * s, it.H * s);
@@ -1180,7 +1180,7 @@ public sealed class CanvasView : Control
         {
             var delta = AngleFromCenter(ToDoc(pos)) - _startAngle;
             delta = (delta % 360 + 540) % 360 - 180; // in (-180, 180]
-            _rotDelta = shift ? Math.Round(delta / 15) * 15 : delta; // Shift: scatti di 15°
+            _rotDelta = shift ? Math.Round(delta / 15) * 15 : delta; // Shift: steps of 15°
         }
         else
             return;
@@ -1202,7 +1202,7 @@ public sealed class CanvasView : Control
                 else if (del) Bus?.Execute([new DeleteGuide { Axis = axis, Position = from }]);
                 else if (Math.Abs(pos - from) > 1e-6) Bus?.Execute([new MoveGuide { Axis = axis, From = from, To = pos }]);
             }
-            catch (CommandException) { } // per esempio una guida già presente nello stesso punto
+            catch (CommandException) { } // for example a guide already present at the same point
             InvalidateVisual();
             return;
         }
@@ -1242,7 +1242,7 @@ public sealed class CanvasView : Control
                     X = b.X, Y = b.Y, Width = b.Width, Height = b.Height,
                     Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth,
                 }) is { } r) Select(r.CreatedIds[0]);
-                Tool = Tool.Select; // dopo aver disegnato si torna alla selezione
+                Tool = Tool.Select; // after drawing we go back to selection
             }
         }
         else if (_drag == Drag.TextBox)
@@ -1255,7 +1255,7 @@ public sealed class CanvasView : Control
         }
         else if (_drag == Drag.Marquee && Tool == Tool.Node)
         {
-            // Selezione a rettangolo dei nodi del path.
+            // Rectangle selection of the path's nodes.
             var m = MarqueeBox();
             if (CurrentModel() is { } model && (m.Width * _zoom >= 3 || m.Height * _zoom >= 3))
             {
@@ -1273,7 +1273,7 @@ public sealed class CanvasView : Control
             var m = MarqueeBox();
             if ((m.Width * _zoom >= 3 || m.Height * _zoom >= 3) && Bus != null)
             {
-                // Vengono selezionati gli oggetti interamente dentro il rettangolo, come negli editor vettoriali classici.
+                // Objects entirely inside the rectangle are selected, as in classic vector editors.
                 var hits = Bus.Read(d => d.PickableObjects.Where(o =>
                 {
                     var b = o.Bounds;
@@ -1286,8 +1286,8 @@ public sealed class CanvasView : Control
         {
             var (dx, dy) = (_moveOffset.X, _moveOffset.Y);
             var ids = _selection.ToList();
-            _drag = Drag.None; // l'anteprima non serve più: il documento sta per cambiare
-            Try(new MoveObjects { Targets = ids, Dx = dx, Dy = dy }); // un drag = un solo undo
+            _drag = Drag.None; // the preview is no longer needed: the document is about to change
+            Try(new MoveObjects { Targets = ids, Dx = dx, Dy = dy }); // one drag = one undo
         }
         else if (_drag == Drag.Resize && _dragItem is { } it)
         {
@@ -1326,7 +1326,7 @@ public sealed class CanvasView : Control
     Box CreateBox() => BoxOf(_createStart, _createEnd);
     Box MarqueeBox() => BoxOf(_marqueeStart, _marqueeEnd);
 
-    // L'oggetto selezionato come apparirà a fine gesto (anteprima).
+    // The selected object as it will appear at the end of the gesture (preview).
     Item Preview(Item it) => _drag switch
     {
         Drag.Move => it with { M = it.M * Matrix3x2.CreateTranslation((float)_moveOffset.X, (float)_moveOffset.Y) },
@@ -1347,14 +1347,14 @@ public sealed class CanvasView : Control
     public override void Render(DrawingContext context)
     {
         if (Bus == null) return;
-        // Senza uno sfondo (anche trasparente) il controllo non riceve gli eventi del mouse.
+        // Without a background (even transparent) the control does not receive mouse events.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var items = Bus.Read(d => d.RenderObjects.Select(Item.From).ToList());
         if (_hiddenId != null) items.RemoveAll(i => i.Id == _hiddenId);
         for (var i = 0; i < items.Count; i++)
             if (_selection.Contains(items[i].Id)) items[i] = Preview(items[i]);
 
-        // Strumento Nodi: modello da mostrare (quello in modifica, se c'è) e anteprima del path modificato.
+        // Node tool: model to show (the one being edited, if any) and preview of the edited path.
         List<SubPath>? nodeModel = null;
         if (Tool == Tool.Node && SelectedId != null)
         {
@@ -1370,7 +1370,7 @@ public sealed class CanvasView : Control
             }
         }
 
-        // Strumento di riempimento: anteprima del gradiente in modifica e maniglie.
+        // Fill tool: preview of the gradient being edited and handles.
         FillView? fillView = null;
         if (Tool == Tool.Fill && SelectedId != null && items.FindIndex(i => i.Id == SelectedId) is var fk and >= 0 && items[fk].Kind != Kind.Group)
         {
@@ -1379,7 +1379,7 @@ public sealed class CanvasView : Control
             if (spec != null) fillView = BuildFillView(items[fk], spec);
         }
 
-        // L'alone di un oggetto modificato dentro un gruppo si mostra sul gruppo.
+        // The halo of a modified object inside a group is shown on the group.
         var now = Environment.TickCount64;
         var glow = new Dictionary<string, (float Alpha, SKColor Color)>();
         foreach (var it in items)
@@ -1390,7 +1390,7 @@ public sealed class CanvasView : Control
             if (best.Alpha > 0) glow[it.Id] = (best.Alpha, ColorOf(best.Agent));
         }
 
-        // Pill: al massimo MaxPills, i più recenti; sullo stesso oggetto si impilano.
+        // Pills: at most MaxPills, the most recent; on the same object they stack.
         var pills = new List<AgentPill>();
         if (_showPill)
         {
@@ -1428,13 +1428,13 @@ public sealed class CanvasView : Control
             ActualThemeVariant == ThemeVariant.Dark, glow, gesture, PageBox(), _pageView, overlay, pills));
     }
 
-    // Gesti in corso da disegnare come anteprima.
+    // Gestures in progress to draw as a preview.
     static Vector2 V(Point p) => new((float)p.X, (float)p.Y);
 
-    /// <summary>Griglia (passo in px, 0 = nascosta), guide, linee d'aggancio in corso e unità dei righelli.</summary>
+    /// <summary>Grid (step in px, 0 = hidden), guides, snap lines in progress and ruler unit.</summary>
     sealed record Overlay(List<Guide> Guides, double Grid, double? SnapX, double? SnapY, string Unit);
 
-    /// <summary>Etichetta dell'agente: nome, riquadro dell'oggetto (coordinate documento) e opacità.</summary>
+    /// <summary>Agent label: name, object box (document coordinates) and opacity.</summary>
     sealed record AgentPill(string Name, Box Bounds, float Alpha, SKColor Color, int Slot);
 
     sealed record PenNodeView(Vector2 P, Vector2? In, Vector2? Out);
@@ -1444,7 +1444,7 @@ public sealed class CanvasView : Control
     sealed record Gesture(Box? Create, bool CreateEllipse, Box? Marquee, List<PenNodeView>? Pen, Vector2 PenHover,
         bool NodeMode, List<NodeV>? Nodes, bool PenClosing, bool FillMode, FillView? FillOverlay);
 
-    /// <summary>Maniglia di selezione; Hx/Hy sono frazioni del rettangolo locale, Pos è in coordinate documento.</summary>
+    /// <summary>Selection handle; Hx/Hy are fractions of the local rectangle, Pos is in document coordinates.</summary>
     sealed record Handle(double Hx, double Hy, bool Rotate, Vector2 Pos);
 
     static Vector2 PointOn(Item it, double fx, double fy) =>
@@ -1456,7 +1456,7 @@ public sealed class CanvasView : Control
         foreach (var (_, hx, hy) in Anchor.All)
             if (!(hx == .5 && hy == .5)) list.Add(new(hx, hy, false, PointOn(it, hx, hy)));
 
-        // Maniglia di rotazione: sopra il lato alto, a distanza fissa in pixel schermo.
+        // Rotation handle: above the top side, at a fixed distance in screen pixels.
         var top = PointOn(it, .5, 0);
         var dir = top - PointOn(it, .5, .5);
         dir = dir.LengthSquared() < 1e-6f ? new(0, -1) : Vector2.Normalize(dir);
@@ -1477,7 +1477,7 @@ public sealed class CanvasView : Control
 
         static SKPoint ToSk(Vector2 v) => new(v.X, v.Y);
 
-        // Pill di dimensione fissa in pixel schermo, sopra l'angolo in alto a destra dell'oggetto (rientra nel viewport).
+        // Fixed-size pill in screen pixels, above the object's top-right corner (kept inside the viewport).
         void DrawPill(SKCanvas canvas, SKPaint paint, AgentPill pill)
         {
             var z = (float)zoom;
@@ -1489,7 +1489,7 @@ public sealed class CanvasView : Control
             var a = pill.Alpha;
 
             canvas.Save();
-            canvas.Scale(1 / z); // torna in coordinate schermo
+            canvas.Scale(1 / z); // back to screen coordinates
             canvas.Translate(-(float)pan.X, -(float)pan.Y);
             var r = new SKRect(x, y, x + w, y + h);
             paint.Style = SKPaintStyle.Fill;
@@ -1523,7 +1523,7 @@ public sealed class CanvasView : Control
 
             DrawGesture(canvas, paint);
 
-            // Oggetti toccati dagli agenti: alone nel colore dell'agente che sfuma.
+            // Objects touched by agents: halo in the agent's color that fades.
             foreach (var it in items)
             {
                 if (!glow.TryGetValue(it.Id, out var g)) continue;
@@ -1542,16 +1542,16 @@ public sealed class CanvasView : Control
 
             foreach (var pill in pills) DrawPill(canvas, paint, pill);
 
-            // Selezione: un oggetto = contorno orientato e maniglie; più oggetti = contorni e riquadro complessivo.
+            // Selection: one object = oriented outline and handles; several objects = outlines and overall box.
             var sel = items.Where(i => selection.Contains(i.Id)).ToList();
             if (gesture.FillMode)
             {
-                foreach (var it in sel) DrawOutline(canvas, paint, it); // strumento di riempimento: contorno + maniglie del gradiente
+                foreach (var it in sel) DrawOutline(canvas, paint, it); // fill tool: outline + gradient handles
                 if (gesture.FillOverlay is { } fo) DrawFill(canvas, paint, fo);
             }
             else if (gesture.NodeMode)
             {
-                // Strumento Nodi: niente maniglie di trasformazione; per un path si vedono i suoi nodi.
+                // Node tool: no transform handles; for a path its nodes are shown.
                 if (gesture.Nodes != null) DrawNodes(canvas, paint, gesture.Nodes);
                 else foreach (var it in sel) DrawOutline(canvas, paint, it);
             }
@@ -1572,14 +1572,14 @@ public sealed class CanvasView : Control
             DrawRulers(canvas, paint);
         }
 
-        // Area visibile in coordinate documento.
+        // Visible area in document coordinates.
         (float X0, float Y0, float X1, float Y1) Visible() =>
             ((float)(-pan.X / zoom), (float)(-pan.Y / zoom), (float)((bounds.Width - pan.X) / zoom), (float)((bounds.Height - pan.Y) / zoom));
 
         void DrawGrid(SKCanvas canvas, SKPaint paint)
         {
             if (overlay.Grid <= 0) return;
-            var g = overlay.Grid * Math.Max(1, Math.Ceiling(14 / (overlay.Grid * zoom))); // a zoom basso si disegna una linea ogni tante (l'aggancio usa comunque il passo vero)
+            var g = overlay.Grid * Math.Max(1, Math.Ceiling(14 / (overlay.Grid * zoom))); // at low zoom one line out of many is drawn (snapping still uses the real step)
             var (x0, y0, x1, y1) = Visible();
             paint.Style = SKPaintStyle.Stroke;
             paint.StrokeWidth = (float)(1 / zoom);
@@ -1588,7 +1588,7 @@ public sealed class CanvasView : Control
             for (var i = (long)Math.Ceiling(y0 / g); i * g <= y1; i++) canvas.DrawLine(x0, (float)(i * g), x1, (float)(i * g), paint);
         }
 
-        // Guide (ciano) e obiettivi agganciati dal gesto in corso (magenta).
+        // Guides (cyan) and targets snapped to by the current gesture (magenta).
         void DrawGuides(SKCanvas canvas, SKPaint paint)
         {
             var (x0, y0, x1, y1) = Visible();
@@ -1603,7 +1603,7 @@ public sealed class CanvasView : Control
             if (overlay.SnapY is { } sy) canvas.DrawLine(x0, (float)sy, x1, (float)sy, paint);
         }
 
-        // Righelli lungo i bordi alto e sinistro, nell'unità scelta; l'origine è l'angolo della pagina.
+        // Rulers along the top and left edges, in the chosen unit; the origin is the page's corner.
         void DrawRulers(SKCanvas canvas, SKPaint paint)
         {
             var r = (float)RulerSize;
@@ -1619,8 +1619,8 @@ public sealed class CanvasView : Control
             canvas.DrawLine(0, r, w, r, paint);
             canvas.DrawLine(r, 0, r, h, paint);
 
-            var pxPerUnit = Units.ToPx(1, overlay.Unit); // px di documento per unità
-            var raw = 60 / (zoom * pxPerUnit); // unità per almeno 60 px schermo tra due numeri
+            var pxPerUnit = Units.ToPx(1, overlay.Unit); // document px per unit
+            var raw = 60 / (zoom * pxPerUnit); // units for at least 60 screen px between two numbers
             var pow = Math.Pow(10, Math.Floor(Math.Log10(raw)));
             var m = raw / pow;
             var major = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * pow;
@@ -1665,7 +1665,7 @@ public sealed class CanvasView : Control
             canvas.Restore();
         }
 
-        // La pagina: bianca con un'ombra leggera, oppure solo il contorno.
+        // The page: white with a light shadow, or just the outline.
         void DrawPage(SKCanvas canvas, SKPaint paint)
         {
             if (pageView == PageView.Hidden) return;
@@ -1687,7 +1687,7 @@ public sealed class CanvasView : Control
             canvas.DrawRect(r, paint);
         }
 
-        // Ogni elemento d'accento ha un alone bianco sotto: resta visibile su qualsiasi colore, anche azzurro come l'accento.
+        // Every accent element has a white halo underneath: it stays visible on any color, even a light blue like the accent.
         void Haloed(SKPaint paint, float width, Action draw)
         {
             paint.Style = SKPaintStyle.Stroke;
@@ -1720,13 +1720,13 @@ public sealed class CanvasView : Control
                 using var line = new SKPath();
                 line.MoveTo(ToSk(pen[0].P));
                 for (var i = 1; i < pen.Count; i++) PenSegment(line, pen[i - 1], pen[i]);
-                // Segmento "elastico" verso il cursore (o verso il primo nodo, se sta per chiudere): curvo se l'ultimo nodo ha una maniglia.
+                // "Rubber band" segment towards the cursor (or towards the first node, if about to close): curved if the last node has a handle.
                 var target = gesture.PenClosing ? pen[0].P : gesture.PenHover;
                 if (pen[^1].Out is { } lastOut) line.CubicTo(ToSk(lastOut), ToSk(target), ToSk(target));
                 else line.LineTo(ToSk(target));
                 Haloed(paint, w, () => canvas.DrawPath(line, paint));
 
-                // Maniglie dell'ultimo nodo, come negli editor vettoriali classici.
+                // Handles of the last node, as in classic vector editors.
                 var size = (float)(8 / zoom);
                 var last = pen[^1];
                 foreach (var h in new[] { last.In, last.Out })
@@ -1761,7 +1761,7 @@ public sealed class CanvasView : Control
             else path.CubicTo(ToSk(a.Out ?? a.P), ToSk(b.In ?? b.P), ToSk(b.P));
         }
 
-        // Maniglie del gradiente: linee, ellisse del raggio e punti riempiti col colore della sosta.
+        // Gradient handles: lines, radius ellipse and points filled with the stop's color.
         void DrawFill(SKCanvas canvas, SKPaint paint, FillView v)
         {
             var w = (float)(1.5 / zoom);
@@ -1796,11 +1796,11 @@ public sealed class CanvasView : Control
             }
         }
 
-        // La sosta selezionata ha un solo punto evidenziato: quello con lo stesso indice (per gli estremi, il primo che lo porta).
+        // The selected stop has a single highlighted point: the one with the same index (for the ends, the first that carries it).
         static bool IsSelectedHandle(FillView v, FillHandle h) => v.Handles.First(x => x.Index == v.Selected) == h;
 
-        // Nodi del path: la forma indica il tipo (quadrato = cuspide, cerchio = liscio, rombo = simmetrico);
-        // i nodi selezionati sono pieni e mostrano le loro maniglie.
+        // Path nodes: the shape shows the kind (square = cusp, circle = smooth, diamond = symmetric);
+        // selected nodes are filled and show their handles.
         void DrawNodes(SKCanvas canvas, SKPaint paint, List<NodeV> nodes)
         {
             var size = (float)(8 / zoom);
@@ -1841,7 +1841,7 @@ public sealed class CanvasView : Control
             }
         }
 
-        // Contorno orientato del rettangolo dell'oggetto.
+        // Oriented outline of the object's rectangle.
         void DrawOutline(SKCanvas canvas, SKPaint paint, Item it)
         {
             using var outline = new SKPath();

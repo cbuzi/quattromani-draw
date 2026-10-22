@@ -3,7 +3,7 @@ using Quattromani.Mcp;
 
 namespace Quattromani.App;
 
-/// <summary>Selezione del canvas esposta all'MCP: le richieste arrivano da thread non-UI e passano dal dispatcher.</summary>
+/// <summary>Canvas selection exposed to MCP: requests arrive from non-UI threads and go through the dispatcher.</summary>
 sealed class CanvasSelection(CanvasView canvas) : ISelectionService
 {
     public IReadOnlyList<string> Get() => Dispatcher.UIThread.Invoke(() => canvas.SelectedIds.ToList());

@@ -5,12 +5,12 @@ using Avalonia.Media;
 
 namespace Quattromani.App;
 
-/// <summary>Finestra "Salvare le modifiche?": Salva, Non salvare, Annulla.</summary>
+/// <summary>"Save changes?" window: Save, Don't save, Cancel.</summary>
 sealed class ConfirmWindow : Window
 {
     public enum Choice { Save, Discard, Cancel }
 
-    Choice _choice = Choice.Cancel; // chiudere con la X equivale ad Annulla
+    Choice _choice = Choice.Cancel; // closing with the X is the same as Cancel
 
     ConfirmWindow(string title, string detail, string saveText, string discardText, string cancelText)
     {

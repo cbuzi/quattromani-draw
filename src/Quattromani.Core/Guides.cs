@@ -2,13 +2,13 @@ using System.Text.Json.Serialization;
 
 namespace Quattromani.Core;
 
-/// <summary>Linea guida: Axis "x" = linea verticale a x = Position, "y" = linea orizzontale a y = Position (px di pagina).</summary>
+/// <summary>Guide line: Axis "x" = vertical line at x = Position, "y" = horizontal line at y = Position (page px).</summary>
 public sealed record Guide(string Axis, double Position)
 {
     public bool Is(string axis, double position) => Axis == axis && Math.Abs(Position - position) < 1e-6;
 }
 
-/// <summary>Comandi sulle guide. Una guida è identificata da asse e posizione (due guide uguali non esistono).</summary>
+/// <summary>Commands on guides. A guide is identified by axis and position (two identical guides cannot exist).</summary>
 public abstract class GuideCommand : Command
 {
     List<Guide> _old = [];
@@ -42,7 +42,7 @@ public abstract class GuideCommand : Command
     [JsonIgnore] protected abstract string CmdName { get; }
 }
 
-/// <summary>Aggiunge una guida: {"cmd":"guide.add","axis":"x","position":100}.</summary>
+/// <summary>Adds a guide: {"cmd":"guide.add","axis":"x","position":100}.</summary>
 public sealed class AddGuide : GuideCommand
 {
     public string Axis { get; set; } = "";
@@ -58,7 +58,7 @@ public sealed class AddGuide : GuideCommand
     }
 }
 
-/// <summary>Sposta una guida da <c>from</c> a <c>to</c>: {"cmd":"guide.move","axis":"x","from":100,"to":150}.</summary>
+/// <summary>Moves a guide from <c>from</c> to <c>to</c>: {"cmd":"guide.move","axis":"x","from":100,"to":150}.</summary>
 public sealed class MoveGuide : GuideCommand
 {
     public string Axis { get; set; } = "";
@@ -79,7 +79,7 @@ public sealed class MoveGuide : GuideCommand
     internal static string Describe(List<Guide> guides) => guides.Count == 0 ? "nessuna" : string.Join(", ", guides.Select(g => $"{g.Axis}={g.Position:0.##}"));
 }
 
-/// <summary>Elimina una guida ({"cmd":"guide.delete","axis":"x","position":100}), oppure tutte se manca 'axis'.</summary>
+/// <summary>Deletes a guide ({"cmd":"guide.delete","axis":"x","position":100}), or all of them if 'axis' is missing.</summary>
 public sealed class DeleteGuide : GuideCommand
 {
     public string? Axis { get; set; }

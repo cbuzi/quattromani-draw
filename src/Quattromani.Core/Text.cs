@@ -5,32 +5,32 @@ namespace Quattromani.Core;
 
 public sealed record TextStyle(string Family, double Size, bool Bold, bool Italic, string Align, double LineHeight);
 
-/// <summary>Una riga già impaginata: X è lo scostamento orizzontale, Y la linea di base, entrambi dall'angolo in alto a sinistra del testo.</summary>
+/// <summary>An already laid-out line: X is the horizontal offset, Y the baseline, both from the top-left corner of the text.</summary>
 public sealed record TextLine(string Text, double X, double Y);
 
 public sealed record TextLayout(List<TextLine> Lines, double Width, double Height);
 
 /// <summary>
-/// Misura e contorni dei glifi, forniti dall'app (che ha i font). Core non dipende da nessuna libreria grafica:
-/// i comandi chiamano il motore quando impaginano un testo, e il risultato (righe e ingombro) resta nel documento.
+/// Measurement and glyph outlines, provided by the app (which has the fonts). Core does not depend on any graphics library:
+/// commands call the engine when they lay out a text, and the result (lines and extent) stays in the document.
 /// </summary>
 public interface ITextEngine
 {
-    /// <summary>Famiglie di font disponibili.</summary>
+    /// <summary>Available font families.</summary>
     IReadOnlyList<string> Families { get; }
     string DefaultFamily { get; }
-    /// <param name="wrapWidth">Larghezza oltre cui andare a capo; null = nessun a capo automatico.</param>
+    /// <param name="wrapWidth">Width beyond which to wrap; null = no automatic wrapping.</param>
     TextLayout Layout(TextStyle style, string text, double? wrapWidth);
-    /// <summary>Contorni dei glifi delle righe, in coordinate del layout (stesse di <see cref="TextLine"/>).</summary>
+    /// <summary>Glyph outlines of the lines, in layout coordinates (the same as <see cref="TextLine"/>).</summary>
     List<PathSeg> Outline(TextStyle style, IReadOnlyList<TextLine> lines);
-    /// <summary>Un glifo per carattere di una sola riga (senza a capo): serve a disporre il testo su un tracciato.</summary>
+    /// <summary>One glyph per character of a single line (no line breaks): used to lay out text on a path.</summary>
     List<GlyphShape> Glyphs(TextStyle style, string text);
 }
 
 /// <summary>
-/// Testo. Il colore è il Fill (e Stroke/StrokeWidth un eventuale contorno). Le righe sono impaginate al momento della
-/// creazione o della modifica; come per i path, (X, Y, Width, Height) è il riquadro su cui il testo impaginato (Source)
-/// viene stirato, quindi ridimensionare con le maniglie stira il testo.
+/// Text. The color is the Fill (and Stroke/StrokeWidth an optional outline). Lines are laid out when created or
+/// edited; as with paths, (X, Y, Width, Height) is the box the laid-out text (Source)
+/// is stretched onto, so resizing with the handles stretches the text.
 /// </summary>
 public sealed class TextObject : SceneObject
 {
@@ -41,15 +41,15 @@ public sealed class TextObject : SceneObject
     public double FontSize { get; internal set; } = 24;
     public bool Bold { get; internal set; }
     public bool Italic { get; internal set; }
-    /// <summary>"left", "center" o "right".</summary>
+    /// <summary>"left", "center" or "right".</summary>
     public string Align { get; internal set; } = "left";
-    /// <summary>Moltiplicatore dell'interlinea (1 = quella del font).</summary>
+    /// <summary>Line spacing multiplier (1 = the font's own).</summary>
     public double LineHeight { get; internal set; } = 1;
-    /// <summary>Larghezza per l'a capo automatico (testo "a paragrafo"); null = testo "artistico", una riga per ogni a capo.</summary>
+    /// <summary>Width for automatic wrapping ("paragraph" text); null = "artistic" text, one line per line break.</summary>
     public double? WrapWidth { get; internal set; }
 
     public List<TextLine> Lines { get; internal set; } = [];
-    /// <summary>Se non è null il testo segue un tracciato: i glifi sono in <see cref="PathGlyphs"/> (ricalcolati dal documento) e <see cref="Lines"/> non si usa.</summary>
+    /// <summary>If not null the text follows a path: the glyphs are in <see cref="PathGlyphs"/> (recomputed by the document) and <see cref="Lines"/> is not used.</summary>
     public TextOnPath? OnPath { get; internal set; }
     public List<PathSeg>? PathGlyphs { get; internal set; }
     internal string? PathKey { get; set; }
@@ -58,7 +58,7 @@ public sealed class TextObject : SceneObject
 
     public TextStyle Style => new(FontFamily, FontSize, Bold, Italic, Align, LineHeight);
 
-    /// <summary>Reimpagina il testo tenendo fermo l'angolo in alto a sinistra; un eventuale stiramento viene azzerato.</summary>
+    /// <summary>Lays the text out again keeping the top-left corner fixed; any stretching is reset.</summary>
     internal void Relayout(Document doc)
     {
         var engine = doc.TextEngine ?? throw new CommandException("The font engine is not available: the text cannot be laid out.");
@@ -85,7 +85,7 @@ public sealed class TextObject : SceneObject
     }
 }
 
-/// <summary>Modifica il contenuto o lo stile di testi esistenti; i campi omessi restano invariati. Reimpagina il testo.</summary>
+/// <summary>Changes the content or style of existing texts; omitted fields stay unchanged. Lays the text out again.</summary>
 public sealed class SetText : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -96,7 +96,7 @@ public sealed class SetText : Command
     public bool? Italic { get; set; }
     public string? Align { get; set; }
     public double? LineHeight { get; set; }
-    /// <summary>Larghezza per l'a capo automatico; 0 lo toglie.</summary>
+    /// <summary>Width for automatic wrapping; 0 removes it.</summary>
     public double? Width { get; set; }
 
     record Snapshot(TextObject Obj, string Text, string Family, double Size, bool Bold, bool Italic, string Align, double LineHeight,

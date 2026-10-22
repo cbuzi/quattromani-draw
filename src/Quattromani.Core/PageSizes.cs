@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Quattromani.Core;
 
-/// <summary>Unità di misura: il documento lavora in "px" a 96 dpi (come CSS); le altre servono per mostrare e inserire misure.</summary>
+/// <summary>Units of measure: the document works in "px" at 96 dpi (like CSS); the others are for showing and entering measures.</summary>
 public static class Units
 {
     public static readonly string[] All = ["px", "mm", "cm", "in", "pt"];
@@ -17,13 +17,13 @@ public static class Units
         _ => throw new CommandException($"unit '{unit}' is not valid. Values: {string.Join(", ", All.Select(u => $"\"{u}\""))}."),
     };
 
-    /// <summary>Da un valore nell'unità indicata a px.</summary>
+    /// <summary>From a value in the given unit to px.</summary>
     public static double ToPx(double value, string unit) => value * PerPx(unit);
 
     public static double FromPx(double px, string unit) => px / PerPx(unit);
 }
 
-/// <summary>Formati di pagina standard.</summary>
+/// <summary>Standard page formats.</summary>
 public static class PageSizes
 {
     public sealed record Preset(string Name, double Width, double Height, string Unit)
@@ -44,17 +44,17 @@ public static class PageSizes
 
     public static Preset? Find(string name) => All.FirstOrDefault(p => p.Name.Equals(name.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Il formato che corrisponde alle dimensioni (anche ruotato), se c'è.</summary>
+    /// <summary>The format matching the size (also rotated), if any.</summary>
     public static Preset? Match(double widthPx, double heightPx) => All.FirstOrDefault(p =>
         Math.Abs(p.WidthPx - widthPx) < 0.05 && Math.Abs(p.HeightPx - heightPx) < 0.05 ||
         Math.Abs(p.WidthPx - heightPx) < 0.05 && Math.Abs(p.HeightPx - widthPx) < 0.05);
 }
 
-/// <summary>Imposta la pagina: un formato standard, oppure larghezza e/o altezza (nell'unità indicata, px se omessa), e l'orientamento.</summary>
+/// <summary>Sets the page: a standard format, or width and/or height (in the given unit, px if omitted), and the orientation.</summary>
 public sealed class SetPage : Command
 {
     public string? Preset { get; set; }
-    /// <summary>"portrait" (verticale) o "landscape" (orizzontale).</summary>
+    /// <summary>"portrait" or "landscape".</summary>
     public string? Orientation { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }

@@ -4,9 +4,9 @@ using Avalonia.Controls;
 namespace Quattromani.App;
 
 /// <summary>
-/// Workaround macOS: Avalonia non imposta il colorspace del CAMetalLayer, e a volte la finestra viene composta con uno
-/// spazio colore diverso (tinte che si schiariscono/scuriscono muovendo il mouse, finché non si ridimensiona).
-/// Lo fissiamo a sRGB sul layer della finestra.
+/// macOS workaround: Avalonia does not set the colorspace of the CAMetalLayer, and sometimes the window is composited with a
+/// different color space (tints that lighten/darken when moving the mouse, until it is resized).
+/// We pin it to sRGB on the window's layer.
 /// </summary>
 static class MacColorSpace
 {
@@ -24,8 +24,8 @@ static class MacColorSpace
 
     static bool _logged;
 
-    /// <summary>Idempotente: il CAMetalLayer compare solo dopo il primo ridisegno e può essere ricreato, quindi va richiamato finché non lo trova e poi periodicamente.</summary>
-    /// <returns>true se ha trovato un layer su cui impostarlo.</returns>
+    /// <summary>Idempotent: the CAMetalLayer appears only after the first redraw and can be recreated, so it must be called until it finds it and then periodically.</summary>
+    /// <returns>true if it found a layer to set it on.</returns>
     public static bool Apply(TopLevel top)
     {
         if (!OperatingSystem.IsMacOS()) return true;
@@ -46,7 +46,7 @@ static class MacColorSpace
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { return true; }
     }
 
-    /// <summary>Imposta il colorspace sul layer della vista e delle sottoviste che lo supportano (il CAMetalLayer sta in una sottovista).</summary>
+    /// <summary>Sets the colorspace on the view's layer and on the subviews that support it (the CAMetalLayer lives in a subview).</summary>
     static int SetOnLayers(IntPtr view, IntPtr colorSpace)
     {
         var count = 0;

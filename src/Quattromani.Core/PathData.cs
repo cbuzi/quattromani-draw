@@ -4,17 +4,17 @@ using System.Text;
 
 namespace Quattromani.Core;
 
-/// <summary>Segmento di path in coordinate assolute: M (X,Y), L (X,Y), C (X1,Y1,X2,Y2,X,Y), Z.</summary>
+/// <summary>Path segment in absolute coordinates: M (X,Y), L (X,Y), C (X1,Y1,X2,Y2,X,Y), Z.</summary>
 public readonly record struct PathSeg(char Op, double X1 = 0, double Y1 = 0, double X2 = 0, double Y2 = 0, double X = 0, double Y = 0);
 
-/// <summary>Path bezier: lettura/scrittura dei dati SVG ("d") e geometria. Tutto viene normalizzato a M, L, C, Z assoluti.</summary>
+/// <summary>Bezier path: reading/writing SVG data ("d") and geometry. Everything is normalized to absolute M, L, C, Z.</summary>
 public static class PathData
 {
     public static List<PathSeg> Parse(string d)
     {
         var s = new Scanner(d);
         var segs = new List<PathSeg>();
-        double cx = 0, cy = 0, sx = 0, sy = 0, lx = 0, ly = 0; // punto corrente, inizio subpath, ultimo punto di controllo
+        double cx = 0, cy = 0, sx = 0, sy = 0, lx = 0, ly = 0; // current point, subpath start, last control point
         char cmd = '\0', prev = '\0';
 
         while (true)
@@ -38,7 +38,7 @@ public static class PathData
             var rel = char.IsLower(cmd);
             var u = char.ToUpperInvariant(cmd);
             if (segs.Count == 0 && u != 'M') throw s.Error("the path must start with M, e.g. \"M 0 0 L 100 0 L 50 80 Z\"");
-            if (prev == 'Z' && u != 'M') segs.Add(new('M', X: sx, Y: sy)); // dopo Z si riparte dall'inizio del subpath
+            if (prev == 'Z' && u != 'M') segs.Add(new('M', X: sx, Y: sy)); // after Z we restart from the start of the subpath
             double ox = rel ? cx : 0, oy = rel ? cy : 0;
             double x = 0, y = 0;
 
@@ -48,7 +48,7 @@ public static class PathData
                     x = s.Number() + ox; y = s.Number() + oy;
                     segs.Add(new('M', X: x, Y: y));
                     sx = x; sy = y;
-                    cmd = rel ? 'l' : 'L'; // le coppie successive sono segmenti L
+                    cmd = rel ? 'l' : 'L'; // the following pairs are L segments
                     break;
                 case 'L':
                     x = s.Number() + ox; y = s.Number() + oy;
@@ -120,7 +120,7 @@ public static class PathData
         new('M', X: x, Y: y), new('L', X: x + w, Y: y), new('L', X: x + w, Y: y + h), new('L', X: x, Y: y + h), new('Z'),
     ];
 
-    /// <summary>Ellisse come quattro curve cubiche (approssimazione standard con k = 0.5523).</summary>
+    /// <summary>Ellipse as four cubic curves (standard approximation with k = 0.5523).</summary>
     public static List<PathSeg> EllipseSegments(double x, double y, double w, double h)
     {
         const double k = 0.5522847498;
@@ -139,7 +139,7 @@ public static class PathData
     static PathSeg QuadToCubic(double x0, double y0, double qx, double qy, double x, double y) =>
         new('C', x0 + 2.0 / 3 * (qx - x0), y0 + 2.0 / 3 * (qy - y0), x + 2.0 / 3 * (qx - x), y + 2.0 / 3 * (qy - y), x, y);
 
-    // Arco SVG -> curve cubiche (parametrizzazione dal centro, SVG spec F.6.5), al massimo 90° per curva.
+    // SVG arc -> cubic curves (center parametrization, SVG spec F.6.5), at most 90° per curve.
     static void ArcTo(List<PathSeg> segs, double x0, double y0, double rx, double ry, double phiDeg,
         bool large, bool sweep, double x, double y)
     {
@@ -189,7 +189,7 @@ public static class PathData
         string F(double v)
         {
             v = Math.Round(v, decimals);
-            if (v == 0) v = 0; // niente "-0"
+            if (v == 0) v = 0; // no "-0"
             return v.ToString(format, CultureInfo.InvariantCulture);
         }
 
@@ -229,7 +229,7 @@ public static class PathData
         }).ToList();
     }
 
-    /// <summary>Riquadro esatto del path (considera gli estremi delle curve, non i punti di controllo).</summary>
+    /// <summary>Exact box of the path (considers the curve extremes, not the control points).</summary>
     public static Box? Bounds(IEnumerable<PathSeg> segs)
     {
         double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
@@ -268,7 +268,7 @@ public static class PathData
         return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
     }
 
-    // Valori di t in (0,1) dove la derivata della cubica si annulla.
+    // Values of t in (0,1) where the derivative of the cubic vanishes.
     static IEnumerable<double> Extrema(double p0, double p1, double p2, double p3)
     {
         double d0 = p1 - p0, d1 = p2 - p1, d2 = p3 - p2;
@@ -325,7 +325,7 @@ public static class PathData
             return double.Parse(d.AsSpan(start, _i - start), NumberStyles.Float, CultureInfo.InvariantCulture);
         }
 
-        // I flag degli archi sono un solo carattere e possono essere attaccati al numero successivo ("a1 1 0 011 1").
+        // Arc flags are a single character and may be attached to the next number ("a1 1 0 011 1").
         public bool Flag()
         {
             SkipSeparators();

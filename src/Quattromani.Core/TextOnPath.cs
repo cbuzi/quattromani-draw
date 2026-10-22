@@ -3,20 +3,20 @@ using System.Text.Json.Serialization;
 
 namespace Quattromani.Core;
 
-/// <summary>Un glifo: avanzamento e contorno con l'origine sulla linea di base, a sinistra del glifo.</summary>
+/// <summary>A glyph: advance and outline with the origin on the baseline, at the left of the glyph.</summary>
 public sealed record GlyphShape(double Advance, List<PathSeg> Outline);
 
 /// <summary>
-/// Testo su tracciato: i glifi seguono un path, un rettangolo o un'ellisse (<c>PathId</c>). Offset = distanza lungo il tracciato
-/// dal punto d'ancoraggio (px); Align = ancoraggio ("start", "center", "end"); Distance = scostamento dal tracciato verso
-/// il lato "alto" rispetto alla direzione di percorrenza (negativo = dal lato opposto); Reverse percorre il tracciato al contrario.
+/// Text on a path: the glyphs follow a path, a rectangle or an ellipse (<c>PathId</c>). Offset = distance along the path
+/// from the anchor point (px); Align = anchoring ("start", "center", "end"); Distance = offset from the path towards
+/// the "upper" side with respect to the direction of travel (negative = from the opposite side); Reverse runs the path backwards.
 /// </summary>
 public sealed record TextOnPath(string PathId, double Offset, string Align, double Distance, bool Reverse);
 
-/// <summary>Calcolo dei glifi lungo il tracciato. Il risultato (contorni nello spazio locale del testo) resta nel documento.</summary>
+/// <summary>Computation of the glyphs along the path. The result (outlines in the text's local space) stays in the document.</summary>
 static class TextOnPathLayout
 {
-    /// <summary>Il tracciato in coordinate pagina (path, rettangolo o ellisse), oppure null se l'oggetto non può fare da tracciato.</summary>
+    /// <summary>The path in page coordinates (path, rectangle or ellipse), or null if the object cannot serve as a path.</summary>
     internal static List<PathSeg>? PageSegments(Document doc, SceneObject o)
     {
         var world = o.Transform * doc.ParentMatrix(o);
@@ -29,12 +29,12 @@ static class TextOnPathLayout
         };
     }
 
-    // Tutto ciò da cui dipende il risultato: se non cambia, non si ricalcola.
+    // Everything the result depends on: if it does not change, nothing is recomputed.
     static string KeyOf(Document doc, TextObject t, List<PathSeg>? pageSegs) =>
         string.Join('|', t.Text, t.Style, t.OnPath, t.Transform, doc.ParentMatrix(t), t.X, t.Y, t.Width, t.Height,
             pageSegs == null ? "-" : PathData.ToString(pageSegs, 3));
 
-    /// <summary>Ricalcola i glifi del testo se qualcosa è cambiato. Se il tracciato non c'è più il testo torna orizzontale (e si riaggancia se il tracciato torna).</summary>
+    /// <summary>Recomputes the text's glyphs if something changed. If the path is gone the text goes back to horizontal (and reattaches if the path returns).</summary>
     internal static void Update(Document doc, TextObject t)
     {
         var op = t.OnPath!;
@@ -48,13 +48,13 @@ static class TextOnPathLayout
         var glyphs = pageSegs == null ? null : Place(engine, t, op, pageSegs);
         if (glyphs == null)
         {
-            // Senza tracciato (cancellato, o troppo corto): testo normale, dritto, finché il tracciato non torna.
+            // Without a path (deleted, or too short): normal, straight text, until the path returns.
             t.PathGlyphs = null;
             t.Relayout(doc);
         }
         else
         {
-            // I contorni sono in pagina: li porto nello spazio locale del testo (contenitore e trasformazione inclusi).
+            // The outlines are in page space: I bring them into the text's local space (container and transform included).
             Matrix3x2.Invert(t.Transform * doc.ParentMatrix(t), out var inv);
             var local = PathData.Transform(glyphs, inv);
             var box = PathData.Bounds(local) ?? new Box(t.X, t.Y, 1, 1);
@@ -65,7 +65,7 @@ static class TextOnPathLayout
         t.PathKey = KeyOf(doc, t, pageSegs);
     }
 
-    // ---- Geometria ----
+    // ---- Geometry ----
 
     static (List<Vector2> Pts, bool Closed) Flatten(List<PathSeg> segs)
     {
@@ -94,15 +94,15 @@ static class TextOnPathLayout
                 break;
             }
         }
-        // Via i punti doppi.
+        // Remove duplicate points.
         for (var i = pts.Count - 1; i > 0; i--)
             if (Vector2.DistanceSquared(pts[i], pts[i - 1]) < 1e-10f) pts.RemoveAt(i);
         return (pts, closed);
     }
 
     /// <summary>
-    /// Parametri del testo dopo uno spostamento di <paramref name="delta"/> (in pagina): il centro del testo viene proiettato sul tracciato
-    /// prima e dopo, la differenza lungo il tracciato diventa offset e quella perpendicolare diventa distanza. Null se il tracciato non c'è.
+    /// Text parameters after a move by <paramref name="delta"/> (in page space): the center of the text is projected onto the path
+    /// before and after, the difference along the path becomes offset and the perpendicular one becomes distance. Null if the path is gone.
     /// </summary>
     internal static TextOnPath? Slide(Document doc, TextObject t, Vector2 delta)
     {
@@ -117,7 +117,7 @@ static class TextOnPathLayout
         var length = cum[^1];
         if (length < 1e-3) return null;
 
-        // Posizione lungo il tracciato e distanza (positiva dal lato "alto") del punto più vicino.
+        // Position along the path and distance (positive on the "upper" side) of the closest point.
         (double S, double D) Nearest(Vector2 p)
         {
             double best = double.MaxValue, bs = 0, bd = 0;
@@ -143,11 +143,11 @@ static class TextOnPathLayout
         var (s0, d0) = Nearest(c);
         var (s1, d1) = Nearest(c + delta);
         var ds = s1 - s0;
-        if (closed) { ds = ((ds % length) + length) % length; if (ds > length / 2) ds -= length; } // sul giro il percorso più corto
+        if (closed) { ds = ((ds % length) + length) % length; if (ds > length / 2) ds -= length; } // on a closed loop, the shortest way
         return op with { Offset = op.Offset + ds, Distance = op.Distance + (d1 - d0) };
     }
 
-    /// <summary>Contorni dei glifi disposti sul tracciato, in coordinate pagina; null se non si può (tracciato troppo corto o testo senza glifi).</summary>
+    /// <summary>Outlines of the glyphs laid out on the path, in page coordinates; null if not possible (path too short or text without glyphs).</summary>
     static List<PathSeg>? Place(ITextEngine engine, TextObject t, TextOnPath op, List<PathSeg> pageSegs)
     {
         var (pts, closed) = Flatten(pageSegs);
@@ -163,7 +163,7 @@ static class TextOnPathLayout
         if (glyphs.Count == 0) return null;
         var start = op.Align switch { "center" => length / 2 - total / 2, "end" => length - total, _ => 0 } + op.Offset;
 
-        // Punto alla distanza s dall'inizio (con giro completo se chiuso); null fuori dal tracciato aperto.
+        // Point at distance s from the start (wrapping around if closed); null beyond an open path.
         Vector2? At(double s)
         {
             if (closed) s = ((s % length) + length) % length;
@@ -183,14 +183,14 @@ static class TextOnPathLayout
             pos += g.Advance;
             if (g.Outline.Count == 0) continue;
             var centre = At(mid);
-            if (centre is null) continue; // il glifo cade fuori dal tracciato
-            // L'inclinazione è quella della corda sotto il glifo: sta bene anche sulle curve strette.
+            if (centre is null) continue; // the glyph falls outside the path
+            // The slope is that of the chord under the glyph: it also works well on tight curves.
             var a = At(mid - g.Advance / 2) ?? centre.Value;
             var b = At(mid + g.Advance / 2) ?? centre.Value;
             var dir = b - a;
             if (dir.LengthSquared() < 1e-10f) continue;
             dir = Vector2.Normalize(dir);
-            var up = new Vector2(dir.Y, -dir.X); // "sopra" rispetto alla direzione di percorrenza
+            var up = new Vector2(dir.Y, -dir.X); // "above" with respect to the direction of travel
             var origin = centre.Value + up * (float)op.Distance;
             var angle = Math.Atan2(dir.Y, dir.X);
             var m = Matrix3x2.CreateTranslation((float)(-g.Advance / 2), 0) * Matrix3x2.CreateRotation((float)angle) * Matrix3x2.CreateTranslation(origin);
@@ -201,16 +201,16 @@ static class TextOnPathLayout
 }
 
 /// <summary>
-/// Mette un testo su un tracciato: {"cmd":"text.onPath","targets":["titolo"],"path":"arco","align":"center","distance":4}.
-/// Con "detach":true il testo torna orizzontale. I campi omessi restano invariati (o prendono il valore predefinito la prima volta).
+/// Puts a text on a path: {"cmd":"text.onPath","targets":["title"],"path":"arc","align":"center","distance":4}.
+/// With "detach":true the text goes back to horizontal. Omitted fields stay unchanged (or take the default value the first time).
 /// </summary>
 public sealed class SetTextOnPath : Command
 {
     public List<string> Targets { get; set; } = [];
-    /// <summary>Id o nome di un path, rettangolo o ellisse.</summary>
+    /// <summary>Id or name of a path, rectangle or ellipse.</summary>
     public string? Path { get; set; }
     public double? Offset { get; set; }
-    /// <summary>"start" (predefinito), "center" o "end".</summary>
+    /// <summary>"start" (default), "center" or "end".</summary>
     public string? Align { get; set; }
     public double? Distance { get; set; }
     public bool? Reverse { get; set; }

@@ -4,8 +4,8 @@ using SkiaSharp;
 namespace Quattromani.App;
 
 /// <summary>
-/// Il font di uno stile più i font di riserva per i caratteri che il font scelto non ha (frecce, simboli, emoji...):
-/// il testo si divide in "run" e ognuno si misura e si disegna col font che ha i suoi glifi.
+/// The font of a style plus the fallback fonts for the characters the chosen font lacks (arrows, symbols, emoji...):
+/// the text is split into "runs" and each one is measured and drawn with the font that has its glyphs.
 /// </summary>
 sealed class GlyphFonts(TextStyle style) : IDisposable
 {
@@ -67,7 +67,7 @@ sealed class GlyphFonts(TextStyle style) : IDisposable
         return path;
     }
 
-    /// <summary>Un glifo per carattere (Unicode, non per unità UTF-16): avanzamento e contorno con l'origine sulla linea di base.</summary>
+    /// <summary>One glyph per character (Unicode, not per UTF-16 unit): advance and outline with the origin on the baseline.</summary>
     public List<(double Advance, SKPath Outline)> Glyphs(string text)
     {
         var list = new List<(double, SKPath)>();
@@ -87,7 +87,7 @@ sealed class GlyphFonts(TextStyle style) : IDisposable
     }
 }
 
-/// <summary>Misura, impaginazione e contorni del testo con i font di sistema, via Skia.</summary>
+/// <summary>Measurement, layout and outlines of text with the system fonts, via Skia.</summary>
 sealed class SkiaTextEngine : ITextEngine
 {
     readonly Lazy<List<string>> _families = new(() =>
@@ -111,7 +111,7 @@ sealed class SkiaTextEngine : ITextEngine
         var style = new SKFontStyle(s.Bold ? SKFontStyleWeight.Bold : SKFontStyleWeight.Normal, SKFontStyleWidth.Normal,
             s.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright);
         var typeface = SKTypeface.FromFamilyName(s.Family, style) ?? SKTypeface.Default;
-        // Senza hinting né arrotondamenti: il testo vive in unità documento e viene scalato dallo zoom.
+        // Without hinting or rounding: the text lives in document units and is scaled by the zoom.
         return new SKFont(typeface, (float)s.Size) { Subpixel = true, LinearMetrics = true, Hinting = SKFontHinting.None };
     }
 
@@ -122,7 +122,7 @@ sealed class SkiaTextEngine : ITextEngine
         font.GetFontMetrics(out var m);
         double asc = -m.Ascent, desc = m.Descent, advance = (asc + desc + m.Leading) * s.LineHeight;
 
-        // Righe: ogni '\n' è un a capo; con wrapWidth si va a capo anche tra le parole.
+        // Lines: every '\n' is a line break; with wrapWidth it also wraps between words.
         var lines = new List<string>();
         foreach (var para in text.Replace("\r\n", "\n").Split('\n'))
         {
@@ -147,7 +147,7 @@ sealed class SkiaTextEngine : ITextEngine
         return new TextLayout(result, width, (lines.Count - 1) * advance + asc + desc);
     }
 
-    /// <summary>Un SKPath come segmenti M/L/C/Z (le quadratiche diventano cubiche).</summary>
+    /// <summary>An SKPath as M/L/C/Z segments (quadratics become cubics).</summary>
     static List<PathSeg> ToSegments(SKPath path)
     {
         var segs = new List<PathSeg>();
@@ -160,8 +160,8 @@ sealed class SkiaTextEngine : ITextEngine
             {
                 case SKPathVerb.Move: segs.Add(new('M', X: p[0].X, Y: p[0].Y)); cur = p[0]; break;
                 case SKPathVerb.Line: segs.Add(new('L', X: p[1].X, Y: p[1].Y)); cur = p[1]; break;
-                case SKPathVerb.Quad: // quadratica -> cubica
-                case SKPathVerb.Conic: // (peso ignorato: nei glifi è quasi sempre 1)
+                case SKPathVerb.Quad: // quadratic -> cubic
+                case SKPathVerb.Conic: // (weight ignored: in glyphs it is almost always 1)
                     segs.Add(new('C', cur.X + 2f / 3 * (p[1].X - cur.X), cur.Y + 2f / 3 * (p[1].Y - cur.Y),
                         p[2].X + 2f / 3 * (p[1].X - p[2].X), p[2].Y + 2f / 3 * (p[1].Y - p[2].Y), p[2].X, p[2].Y));
                     cur = p[2];

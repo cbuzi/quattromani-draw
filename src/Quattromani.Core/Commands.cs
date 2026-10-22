@@ -10,13 +10,13 @@ public static class Json
     {
         AllowOutOfOrderMetadataProperties = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        // Un campo sbagliato dall'LLM deve dare errore, non essere ignorato in silenzio.
+        // A wrong field from the LLM must give an error, not be silently ignored.
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 }
 
 /// <summary>
-/// Comando serializzabile, annullabile. Lo stato necessario all'undo sta in campi privati (non serializzati).
+/// Serializable, undoable command. The state needed for undo lives in private fields (not serialized).
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "cmd")]
 [JsonDerivedType(typeof(CreateShape), "shape.create")]
@@ -54,12 +54,12 @@ public static class Json
 [JsonDerivedType(typeof(SetObjectState), "object.state")]
 public abstract class Command
 {
-    /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
+    /// <summary>"human" or "llm:&lt;name&gt;". Set by the CommandBus.</summary>
     [JsonIgnore] public string Author { get; set; } = "human";
 
     [JsonIgnore] public virtual IEnumerable<string> CreatedIds => [];
 
-    /// <summary>Id degli oggetti toccati dal comando (validi dopo Apply).</summary>
+    /// <summary>Ids of the objects touched by the command (valid after Apply).</summary>
     [JsonIgnore] public virtual IEnumerable<string> AffectedIds => CreatedIds;
 
     public abstract void Apply(Document doc);
@@ -77,11 +77,11 @@ public sealed class CreateShape : Command
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double? StrokeWidth { get; set; }
-    /// <summary>Solo per type "path": dati SVG (M L H V C S Q T A Z, assoluti o relativi).</summary>
+    /// <summary>Only for type "path": SVG data (M L H V C S Q T A Z, absolute or relative).</summary>
     public string? D { get; set; }
-    /// <summary>Posizionamento relativo ad altri oggetti, al posto di x e y.</summary>
+    /// <summary>Relative positioning to other objects, instead of x and y.</summary>
     public Placement? Rel { get; set; }
-    /// <summary>Solo per type "text": il contenuto ('\n' = a capo) e lo stile. Per il testo, width è la larghezza per l'a capo automatico.</summary>
+    /// <summary>Only for type "text": the content ('\n' = line break) and the style. For text, width is the width for automatic wrapping.</summary>
     public string? Text { get; set; }
     public string? FontFamily { get; set; }
     public double? FontSize { get; set; }
@@ -89,9 +89,9 @@ public sealed class CreateShape : Command
     public bool? Italic { get; set; }
     public string? Align { get; set; }
     public double? LineHeight { get; set; }
-    /// <summary>Solo per type "image": percorso assoluto di un file o data URI base64. Dopo l'applicazione, un data URI viene accorciato.</summary>
+    /// <summary>Only for type "image": absolute file path or base64 data URI. After applying, a data URI is shortened.</summary>
     public string? Src { get; set; }
-    /// <summary>Nome del layer dove creare l'oggetto; senza, il layer attivo.</summary>
+    /// <summary>Name of the layer where to create the object; without it, the active layer.</summary>
     public string? Layer { get; set; }
 
     const int MaxImageBytes = 30 * 1024 * 1024;
@@ -99,7 +99,7 @@ public sealed class CreateShape : Command
     SceneObject? _obj;
     Layer? _layer;
 
-    /// <summary>Solo in uscita: id assegnato dopo l'applicazione (visibile in get_changes).</summary>
+    /// <summary>Output only: id assigned after applying (visible in get_changes).</summary>
     public string? Id => _obj?.Id;
 
     [JsonIgnore] public override IEnumerable<string> CreatedIds => _obj is null ? [] : [_obj.Id];
@@ -161,9 +161,9 @@ public sealed class CreateShape : Command
             obj.Name = Name;
             obj.Fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
             obj.Stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
-            // Un testo senza colore sarebbe invisibile: nero.
+            // A text without color would be invisible: black.
             if (obj is TextObject && Fill is null && Stroke is null) obj.Fill = "#000000";
-            // Un path senza fill né stroke sarebbe invisibile: gli do un tratto nero.
+            // A path with neither fill nor stroke would be invisible: give it a black stroke.
             if (obj is PathObject && obj.Fill is null && obj.Stroke is null && Fill is null && Stroke is null) obj.Stroke = "#000000";
             obj.StrokeWidth = StrokeWidth ?? (obj.Stroke is null ? 0 : 1);
             _obj = obj;
@@ -191,7 +191,7 @@ public sealed class CreateShape : Command
                 throw new CommandException("shape.create: 'src' as a data URI must be \"data:image/png;base64,...\".");
             try { data = Convert.FromBase64String(Src[(comma + 1)..]); }
             catch (FormatException) { throw new CommandException("shape.create: the base64 in 'src' is not valid."); }
-            Src = $"data:image (base64, {data.Length / 1024} KB)"; // il redo riusa l'oggetto: il dato non serve piu' nel comando
+            Src = $"data:image (base64, {data.Length / 1024} KB)"; // redo reuses the object: the data is no longer needed in the command
         }
         else
         {
@@ -206,7 +206,7 @@ public sealed class CreateShape : Command
         if (data.Length > MaxImageBytes) throw new CommandException($"shape.create: the image exceeds {MaxImageBytes / 1024 / 1024} MB.");
         var size = probe(data) is { Width: > 0, Height: > 0 } sz ? sz : throw new CommandException("shape.create: 'src' is not a readable image. Formats: PNG, JPEG, GIF, WebP, BMP.");
 
-        // Dimensione nativa se non indicata; con una sola misura l'altra segue le proporzioni.
+        // Native size if not given; with a single measure the other follows the proportions.
         double w = Width, h = Height;
         if (w <= 0 && h <= 0) (w, h) = (size.Width, size.Height);
         else if (h <= 0) h = w * size.Height / size.Width;
@@ -217,7 +217,7 @@ public sealed class CreateShape : Command
 
 public sealed class MoveObjects : Command
 {
-    /// <summary>Id o nomi degli oggetti.</summary>
+    /// <summary>Ids or names of the objects.</summary>
     public List<string> Targets { get; set; } = [];
     public double Dx { get; set; }
     public double Dy { get; set; }
@@ -235,8 +235,8 @@ public sealed class MoveObjects : Command
         {
             if (obj is TextObject { OnPath: { } op } text)
             {
-                if (_old.Any(e => e.Obj.Id == op.PathId)) continue; // si muove anche il tracciato: il testo lo segue da solo
-                // Un testo su tracciato non ha una posizione propria: spostarlo lo fa scorrere lungo il tracciato (offset) e lo avvicina o allontana (distanza).
+                if (_old.Any(e => e.Obj.Id == op.PathId)) continue; // the path moves too: the text follows it by itself
+                // A text on a path has no position of its own: moving it slides it along the path (offset) and moves it closer or farther (distance).
                 var delta = System.Numerics.Vector2.TransformNormal(new((float)Dx, (float)Dy), doc.ParentMatrix(text));
                 if (TextOnPathLayout.Slide(doc, text, delta) is { } moved)
                 {
@@ -261,7 +261,7 @@ public sealed class MoveObjects : Command
 public sealed class SetStyle : Command
 {
     public List<string> Targets { get; set; } = [];
-    /// <summary>Campi null = invariati. "none" rimuove il colore.</summary>
+    /// <summary>Null fields = unchanged. "none" removes the color.</summary>
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
     public double? StrokeWidth { get; set; }
@@ -277,7 +277,7 @@ public sealed class SetStyle : Command
         if (Targets.Count == 0) throw new CommandException("object.style: 'targets' is empty. Pass ids or names, e.g. [\"o1\"].");
         var fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
         var stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
-        // Su un gruppo lo stile si applica a tutte le forme che contiene.
+        // On a group the style applies to all the shapes it contains.
         _old = Targets.Select(t => doc.FindEditable(t)).SelectMany(Leaves).Distinct()
             .Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth)).ToList();
         foreach (var (obj, _, _, _) in _old)
@@ -317,7 +317,7 @@ public sealed class DeleteObjects : Command
 
     public override void Undo(Document doc)
     {
-        // Indici crescenti: ogni reinserimento ripristina la posizione originale.
+        // Ascending indexes: each reinsertion restores the original position.
         foreach (var (container, index, obj) in _removed) container.Insert(index, obj);
     }
 }
@@ -325,17 +325,17 @@ public sealed class DeleteObjects : Command
 public sealed class ResizeObject : Command
 {
     public List<string> Targets { get; set; } = [];
-    /// <summary>Nuova dimensione propria dell'oggetto (prima della rotazione). Null = invariata.</summary>
+    /// <summary>New own size of the object (before the rotation). Null = unchanged.</summary>
     public double? Width { get; set; }
     public double? Height { get; set; }
-    /// <summary>Punto che resta fermo durante il ridimensionamento.</summary>
+    /// <summary>Point that stays fixed during the resize.</summary>
     public string Anchor { get; set; } = "top-left";
 
     List<(SceneObject Obj, Box Old)> _old = [];
 
     [JsonIgnore] public override IEnumerable<string> AffectedIds => _old.Select(e => e.Obj.Id);
 
-    /// <summary>Nuovo rettangolo locale con il punto (ax, ay) fermo.</summary>
+    /// <summary>New local rectangle with the point (ax, ay) fixed.</summary>
     public static Box Resized(Box b, double ax, double ay, double newW, double newH) =>
         new(b.X + ax * (b.Width - newW), b.Y + ay * (b.Height - newH), newW, newH);
 
@@ -352,7 +352,7 @@ public sealed class ResizeObject : Command
         {
             if (obj is TextObject { OnPath: not null } text && old.Width > 0 && old.Height > 0)
             {
-                // Un testo su tracciato non si stira: il suo ingombro lo decide il tracciato. Ridimensionarlo cambia il corpo del carattere.
+                // A text on a path is not stretched: its extent is decided by the path. Resizing it changes the font size.
                 var kw = (Width ?? old.Width) / old.Width;
                 var kh = (Height ?? old.Height) / old.Height;
                 _oldFonts.Add((text, text.FontSize));
@@ -376,7 +376,7 @@ public sealed class ResizeObject : Command
 public sealed class RotateObjects : Command
 {
     public List<string> Targets { get; set; } = [];
-    /// <summary>Angolo da aggiungere, in gradi; positivo = senso orario. Ogni oggetto ruota attorno al proprio centro.</summary>
+    /// <summary>Angle to add, in degrees; positive = clockwise. Each object rotates around its own center.</summary>
     public double Degrees { get; set; }
 
     List<(SceneObject Obj, Matrix3x2 Old)> _old = [];
@@ -409,7 +409,7 @@ public sealed class GroupObjects : Command
     List<SceneObject>? _container;
     List<(int Index, SceneObject Obj)> _entries = [];
 
-    /// <summary>Solo in uscita: id del gruppo creato.</summary>
+    /// <summary>Output only: id of the created group.</summary>
     public string? Id => _group?.Id;
 
     [JsonIgnore] public override IEnumerable<string> CreatedIds => _group is null ? [] : [_group.Id];
@@ -435,7 +435,7 @@ public sealed class GroupObjects : Command
         }
 
         foreach (var (_, obj) in _entries) container.Remove(obj);
-        // Il gruppo prende il posto (z-order) dell'oggetto più in alto tra quelli raggruppati.
+        // The group takes the place (z-order) of the topmost of the grouped objects.
         container.Insert(_entries[^1].Index - (_entries.Count - 1), _group);
         _container = container;
     }
@@ -468,7 +468,7 @@ public sealed class UngroupObjects : Command
             var container = doc.ContainerOf(g)!;
             var index = container.IndexOf(g);
             var old = g.Children.Select(c => c.Transform).ToList();
-            // I figli assorbono la trasformazione del gruppo, così restano dove sono.
+            // The children absorb the group's transform, so they stay where they are.
             var fit = g.Fit;
             foreach (var c in g.Children) c.Transform = c.Transform * fit * g.Transform;
             container.RemoveAt(index);
@@ -489,13 +489,13 @@ public sealed class UngroupObjects : Command
     }
 }
 
-/// <summary>Sostituisce la geometria di un path (nodi spostati, aggiunti, eliminati...). La rotazione/spostamento accumulati vengono incorporati nei dati.</summary>
+/// <summary>Replaces the geometry of a path (nodes moved, added, removed...). The accumulated rotation/translation are embedded in the data.</summary>
 public sealed class SetPath : Command
 {
     public string Target { get; set; } = "";
-    /// <summary>Nuovi dati SVG, nello spazio della pagina (come in get_document).</summary>
+    /// <summary>New SVG data, in page space (as in get_document).</summary>
     public string D { get; set; } = "";
-    /// <summary>Opzionale (lo scrive lo strumento Nodi): un carattere per nodo, 'c' cuspide, 's' liscio, 'y' simmetrico. Ignorato se non corrisponde ai nodi di <c>d</c>.</summary>
+    /// <summary>Optional (written by the Node tool): one character per node, 'c' cusp, 's' smooth, 'y' symmetric. Ignored if it does not match the nodes of <c>d</c>.</summary>
     public string? Kinds { get; set; }
 
     PathObject? _obj;
@@ -540,7 +540,7 @@ public sealed class SetPath : Command
     }
 }
 
-/// <summary>Converte rettangoli, ellissi e testi in path (stesso id, nome, stile e trasformazione), per poterne modificare i nodi.</summary>
+/// <summary>Converts rectangles, ellipses and texts to paths (same id, name, style and transform), so their nodes can be edited.</summary>
 public sealed class ConvertToPath : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -566,8 +566,8 @@ public sealed class ConvertToPath : Command
                 List<PathSeg> segs;
                 if (o is TextObject t)
                 {
-                    // I glifi diventano curve: posizionati e stirati come il testo, poi la trasformazione resta quella dell'oggetto.
-                    if (t.PathGlyphs != null) segs = PathData.Transform(t.PathGlyphs, t.Fit); // testo su tracciato: i glifi sono gia' disposti
+                    // The glyphs become curves: positioned and stretched like the text, then the transform stays that of the object.
+                    if (t.PathGlyphs != null) segs = PathData.Transform(t.PathGlyphs, t.Fit); // text on a path: the glyphs are already laid out
                     else
                     {
                         var engine = doc.TextEngine ?? throw new CommandException("The font engine is not available.");
@@ -595,7 +595,7 @@ public sealed class ConvertToPath : Command
     }
 }
 
-/// <summary>Cambia il nome di un oggetto (nome vuoto = nessun nome). I nomi come "o12" sono riservati agli id.</summary>
+/// <summary>Changes the name of an object (empty name = no name). Names like "o12" are reserved for ids.</summary>
 public sealed partial class RenameObject : Command
 {
     public string Target { get; set; } = "";

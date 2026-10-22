@@ -4,32 +4,32 @@ using System.Text.Json.Serialization;
 namespace Quattromani.Core;
 
 /// <summary>
-/// Posizionamento relativo ad altri oggetti, pensato per l'LLM. Si indica esattamente UN riferimento tra
-/// inside, rightOf, leftOf, above, below, alignTo (id o nome dell'oggetto di riferimento).
-/// Il punto <c>anchor</c> dell'oggetto (default dipende dal riferimento) viene portato sul punto <c>refAnchor</c>
-/// del riferimento, poi si applica <c>margin</c>. Gli anchor sono quelli di <see cref="Anchor"/>
+/// Positioning relative to other objects, designed for the LLM. Exactly ONE reference is given among
+/// inside, rightOf, leftOf, above, below, alignTo (id or name of the reference object).
+/// The object's <c>anchor</c> point (default depends on the reference) is brought onto the <c>refAnchor</c> point
+/// of the reference, then <c>margin</c> is applied. Anchors are those of <see cref="Anchor"/>
 /// (top-left, top, top-right, left, center, right, bottom-left, bottom, bottom-right).
 /// </summary>
 public sealed class Placement
 {
-    /// <summary>Dentro il riferimento, con l'anchor (default center) a filo del riferimento, rientrando di margin.</summary>
+    /// <summary>Inside the reference, with the anchor (default center) flush with the reference, inset by margin.</summary>
     public string? Inside { get; set; }
-    /// <summary>A destra del riferimento, a distanza margin, centrato in verticale (o secondo anchor/refAnchor).</summary>
+    /// <summary>To the right of the reference, at distance margin, vertically centered (or per anchor/refAnchor).</summary>
     public string? RightOf { get; set; }
     public string? LeftOf { get; set; }
     public string? Above { get; set; }
     public string? Below { get; set; }
-    /// <summary>Allinea l'anchor dell'oggetto a quello del riferimento (refAnchor, se diverso).</summary>
+    /// <summary>Aligns the object's anchor with the reference's (refAnchor, if different).</summary>
     public string? AlignTo { get; set; }
 
-    /// <summary>Punto dell'oggetto da posizionare.</summary>
+    /// <summary>Point of the object to position.</summary>
     public string? Anchor { get; set; }
-    /// <summary>Punto del riferimento a cui agganciarlo; di default quello del riferimento è lo stesso di anchor (inside, alignTo) o il lato opposto (rightOf, leftOf, above, below).</summary>
+    /// <summary>Point of the reference to attach to; by default the reference's is the same as anchor (inside, alignTo) or the opposite side (rightOf, leftOf, above, below).</summary>
     public string? RefAnchor { get; set; }
-    /// <summary>Distanza in unità documento: rientro per inside e alignTo, spazio vuoto per rightOf, leftOf, above, below.</summary>
+    /// <summary>Distance in document units: inset for inside and alignTo, empty space for rightOf, leftOf, above, below.</summary>
     public double Margin { get; set; }
 
-    /// <summary>Spostamento (dx, dy) da applicare all'oggetto che occupa <paramref name="own"/> (spazio pagina) per rispettare il posizionamento.</summary>
+    /// <summary>Shift (dx, dy) to apply to the object occupying <paramref name="own"/> (page space) to satisfy the positioning.</summary>
     internal (double Dx, double Dy) Resolve(Document doc, Box own, ICollection<SceneObject>? exclude = null)
     {
         var given = new[] { ("inside", Inside), ("rightOf", RightOf), ("leftOf", LeftOf), ("above", Above), ("below", Below), ("alignTo", AlignTo) }
@@ -44,16 +44,16 @@ public sealed class Placement
             throw new CommandException($"rel: '{refName}' is among the objects to place: it cannot be its own reference.");
         var rb = doc.PageBounds(reference);
 
-        // Anchor di default e direzione del margine per ogni tipo di riferimento.
+        // Default anchor and margin direction for each kind of reference.
         string defAnchor, defRef;
-        (double X, double Y) dir; // direzione in cui agisce il margine
+        (double X, double Y) dir; // direction in which the margin acts
         switch (kind)
         {
             case "rightOf": (defAnchor, defRef, dir) = ("left", "right", (1, 0)); break;
             case "leftOf": (defAnchor, defRef, dir) = ("right", "left", (-1, 0)); break;
             case "below": (defAnchor, defRef, dir) = ("top", "bottom", (0, 1)); break;
             case "above": (defAnchor, defRef, dir) = ("bottom", "top", (0, -1)); break;
-            default: (defAnchor, defRef, dir) = ("center", "center", (0, 0)); break; // inside e alignTo: la direzione dipende dall'anchor, sotto
+            default: (defAnchor, defRef, dir) = ("center", "center", (0, 0)); break; // inside and alignTo: the direction depends on the anchor, below
         }
 
         var (ax, ay) = Core.Anchor.Parse(Anchor ?? defAnchor);
@@ -67,9 +67,9 @@ public sealed class Placement
         var (rx, ry) = Core.Anchor.Parse(refAnchorName);
 
         if (kind == "inside" || kind == "alignTo" && RefAnchor == null)
-            dir = (ax == 0 ? 1 : ax == 1 ? -1 : 0, ay == 0 ? 1 : ay == 1 ? -1 : 0); // rientro verso l'interno
+            dir = (ax == 0 ? 1 : ax == 1 ? -1 : 0, ay == 0 ? 1 : ay == 1 ? -1 : 0); // inset towards the inside
         else if (kind == "alignTo")
-            dir = (rx == 0 ? -1 : rx == 1 ? 1 : 0, ry == 0 ? -1 : ry == 1 ? 1 : 0);   // verso l'esterno del riferimento
+            dir = (rx == 0 ? -1 : rx == 1 ? 1 : 0, ry == 0 ? -1 : ry == 1 ? 1 : 0);   // towards the outside of the reference
 
         var tx = rb.X + rx * rb.Width + Margin * dir.X;
         var ty = rb.Y + ry * rb.Height + Margin * dir.Y;
@@ -79,7 +79,7 @@ public sealed class Placement
     }
 }
 
-/// <summary>Sposta oggetti esistenti con un posizionamento relativo; più oggetti si muovono insieme, come un blocco unico.</summary>
+/// <summary>Moves existing objects with a relative positioning; several objects move together, as a single block.</summary>
 public sealed class PlaceObjects : Command
 {
     public List<string> Targets { get; set; } = [];
@@ -99,7 +99,7 @@ public sealed class PlaceObjects : Command
         var union = new Box(x0, y0, boxes.Max(b => b.X + b.Width) - x0, boxes.Max(b => b.Y + b.Height) - y0);
         var (dx, dy) = Rel.Resolve(doc, union, objs);
 
-        // Lo spostamento è in spazio pagina: per gli oggetti dentro un gruppo va riportato nello spazio del gruppo.
+        // The shift is in page space: for objects inside a group it must be brought back to the group's space.
         _old = objs.Select(o => (o, o.Transform)).ToList();
         foreach (var (obj, _) in _old) obj.Transform = Shift.Apply(doc, obj, dx, dy);
     }

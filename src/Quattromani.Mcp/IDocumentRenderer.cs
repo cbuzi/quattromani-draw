@@ -2,16 +2,16 @@ using Quattromani.Core;
 
 namespace Quattromani.Mcp;
 
-/// <param name="Area">Zona del documento mostrata, in unità documento.</param>
+/// <param name="Area">Part of the document shown, in document units.</param>
 public sealed record RenderedImage(byte[] Png, int PixelWidth, int PixelHeight, Box Area);
 
-/// <summary>Disegna il documento in un PNG. Lo implementa l'app (che ha già Skia), così Mcp non dipende da librerie grafiche.</summary>
+/// <summary>Draws the document into a PNG. Implemented by the app (which already has Skia), so Mcp does not depend on graphics libraries.</summary>
 public interface IDocumentRenderer
 {
-    /// <param name="area">Zona da mostrare; null = la pagina e tutto il contenuto.</param>
-    /// <param name="maxSize">Lato maggiore dell'immagine, in pixel.</param>
-    /// <param name="background">"#RRGGBB", "#RRGGBBAA" oppure "transparent"; null = bianco.</param>
-    /// <param name="labels">Scrive id e nome sopra ogni oggetto.</param>
-    /// <param name="showPage">Disegna il contorno della pagina.</param>
+    /// <param name="area">Region to show; null = the page and all the content.</param>
+    /// <param name="maxSize">Longest side of the image, in pixels.</param>
+    /// <param name="background">"#RRGGBB", "#RRGGBBAA" or "transparent"; null = white.</param>
+    /// <param name="labels">Writes id and name above each object.</param>
+    /// <param name="showPage">Draws the outline of the page.</param>
     RenderedImage Render(Box? area, int maxSize, string? background, bool labels, bool showPage);
 }

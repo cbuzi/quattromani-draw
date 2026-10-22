@@ -5,13 +5,13 @@ using System.Text.RegularExpressions;
 
 namespace Quattromani.Core;
 
-/// <summary>Formato di file del documento (.quattromani): JSON leggibile, con tutto il necessario per ricostruire il disegno identico.</summary>
+/// <summary>Document file format (.quattromani): readable JSON, with everything needed to rebuild the identical drawing.</summary>
 public static partial class DocumentFile
 {
     public const string Extension = ".quattromani";
     public const int CurrentVersion = 1;
 
-    // ---- DTO (la forma del file) ---------------------------------------------------------------
+    // ---- DTOs (the shape of the file) ---------------------------------------------------------------
 
     sealed class FileDto
     {
@@ -28,7 +28,7 @@ public static partial class DocumentFile
         public double Height { get; set; }
         public List<Guide>? Guides { get; set; }
         public List<LayerDto> Layers { get; set; } = [];
-        /// <summary>Indice del layer attivo; omesso se è il primo.</summary>
+        /// <summary>Index of the active layer; omitted if it is the first.</summary>
         public int? ActiveLayer { get; set; }
     }
 
@@ -56,7 +56,7 @@ public static partial class DocumentFile
         public double Y { get; set; }
         public double Width { get; set; }
         public double Height { get; set; }
-        /// <summary>Matrice affine [m11, m12, m21, m22, m31, m32]; omessa se è l'identità.</summary>
+        /// <summary>Affine matrix [m11, m12, m21, m22, m31, m32]; omitted if it is the identity.</summary>
         public float[]? Transform { get; set; }
         public string? Fill { get; set; }
         public string? Stroke { get; set; }
@@ -67,11 +67,11 @@ public static partial class DocumentFile
         // path
         public string? D { get; set; }
         public string? NodeKinds { get; set; }
-        // path, gruppo, testo: riquadro dei contenuti prima dello stiramento su (X, Y, Width, Height)
+        // path, group, text: box of the contents before stretching onto (X, Y, Width, Height)
         public double[]? Source { get; set; }
-        // gruppo
+        // group
         public List<ObjDto>? Children { get; set; }
-        // testo
+        // text
         public string? Text { get; set; }
         public string? FontFamily { get; set; }
         public double? FontSize { get; set; }
@@ -82,7 +82,7 @@ public static partial class DocumentFile
         public double? LineHeight { get; set; }
         public double? WrapWidth { get; set; }
         public List<LineDto>? Lines { get; set; }
-        // immagine: file originale in base64 e dimensioni in pixel
+        // image: original file as base64 and size in pixels
         public string? Image { get; set; }
         public int? PixelWidth { get; set; }
         public int? PixelHeight { get; set; }
@@ -94,7 +94,7 @@ public static partial class DocumentFile
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    // ---- Salvataggio ---------------------------------------------------------------------------
+    // ---- Saving ---------------------------------------------------------------------------
 
     public static string Save(Document doc) => JsonSerializer.Serialize(new FileDto
     {
@@ -135,18 +135,18 @@ public static partial class DocumentFile
                     (t.Text, t.FontFamily, t.FontSize, t.Bold ? true : null, t.Italic ? true : null, t.Align, t.LineHeight, t.WrapWidth);
                 dto.Source = [t.Source.X, t.Source.Y, t.Source.Width, t.Source.Height];
                 dto.Lines = t.Lines.Select(l => new LineDto { Text = l.Text, X = l.X, Y = l.Y }).ToList();
-                dto.OnPath = t.OnPath; // i glifi sul tracciato si ricalcolano all'apertura
+                dto.OnPath = t.OnPath; // the glyphs on the path are recomputed on opening
                 break;
         }
         return dto;
     }
 
-    // ---- Copia e incolla -----------------------------------------------------------------------
+    // ---- Copy and paste -----------------------------------------------------------------------
 
-    /// <summary>Serializza degli oggetti (figli compresi) per Copia/Duplica; si ricreano con <see cref="ImportObjects"/>.</summary>
+    /// <summary>Serializes objects (children included) for Copy/Duplicate; they are recreated with <see cref="ImportObjects"/>.</summary>
     public static string ExportObjects(IEnumerable<SceneObject> objects) => JsonSerializer.Serialize(objects.Select(ToDto).ToList(), Options);
 
-    /// <summary>Ricrea gli oggetti di <see cref="ExportObjects"/> con id nuovi; i nomi già in uso diventano "nome 2", "nome 3"... (devono restare univoci).</summary>
+    /// <summary>Recreates the objects of <see cref="ExportObjects"/> with new ids; names already in use become "name 2", "name 3"... (they must stay unique).</summary>
     internal static List<SceneObject> ImportObjects(string json, Document doc)
     {
         List<ObjDto> dtos;
@@ -168,15 +168,15 @@ public static partial class DocumentFile
             while (!taken.Add($"{stem} {n}")) n++;
             o.Name = $"{stem} {n}";
         }
-        // Un testo su tracciato che ha copiato anche il suo tracciato segue la copia.
+        // A text on a path that copied its path too follows the copy.
         foreach (var t in objs.SelectMany(Document.SelfAndDescendants).OfType<TextObject>())
             if (t.OnPath is { } p && renamed.TryGetValue(p.PathId, out var newPath)) t.OnPath = p with { PathId = newPath };
         return objs;
     }
 
-    // ---- Apertura ------------------------------------------------------------------------------
+    // ---- Opening ------------------------------------------------------------------------------
 
-    /// <summary>Legge un documento; se il file non è valido solleva un errore che dice cosa non va.</summary>
+    /// <summary>Reads a document; if the file is not valid it raises an error saying what is wrong.</summary>
     public static Document Load(string json)
     {
         FileDto dto;
@@ -215,7 +215,7 @@ public static partial class DocumentFile
             doc.Pages.Add(page);
         }
 
-        // Il contatore degli id riparte oltre il più alto già usato: gli id nuovi non collidono mai.
+        // The id counter restarts beyond the highest one already used: new ids never collide.
         var max = ids.Select(i => IdNumber().Match(i)).Where(m => m.Success).Select(m => int.Parse(m.Groups[1].Value)).DefaultIfEmpty(0).Max();
         doc.NextIdValue = Math.Max(dto.NextId, max);
         return doc;
@@ -299,10 +299,10 @@ public static partial class DocumentFile
     }
 }
 
-/// <summary>Voce del registro delle modifiche che segnala la sostituzione dell'intero documento (apri, nuovo): non è un comando eseguibile.</summary>
+/// <summary>Change-log entry that signals the replacement of the whole document (open, new): not an executable command.</summary>
 public sealed class DocumentReset : Command
 {
-    /// <summary>"new" oppure "open".</summary>
+    /// <summary>"new" or "open".</summary>
     public string Reason { get; set; } = "";
     public string? File { get; set; }
 

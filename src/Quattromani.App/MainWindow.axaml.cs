@@ -19,23 +19,23 @@ public partial class MainWindow : Window
     bool _syncing, _syncingScroll, _syncingText, _syncingGrad, _syncingPage, _fitted;
     string _unit = "px";
     string? _renamingId;
-    string? _liveInfo; // misure del gesto in corso: hanno la precedenza sulle informazioni della selezione
+    string? _liveInfo; // measures of the gesture in progress: they take precedence over the selection's information
     (double W, double H) _lastPage;
-    // Pannello "FILL TYPE": 0 = tinta unita, 1 = lineare, 2 = radiale, 3 = motivo. _gradArmed = quale colore sta per essere scelto dalla tavolozza.
+    // "FILL TYPE" panel: 0 = solid, 1 = linear, 2 = radial, 3 = pattern. _gradArmed = which color is about to be chosen from the palette.
     int _fillKind, _gradArmed = -1;
     string _solid = "#3B82F6";
     GradientSpec _spec = new(false, 90, false, 0.5, 0.5, [new("#3B82F6", 0), new("#FFFFFF", 1)]);
     PatternSpec _pat = new("stripes", "#3B82F6", "#FFFFFF", 10, 0);
     TextEditRequest? _edit;
     string _editOriginal = "";
-    TextStyle _textDefaults = new("", 24, false, false, "left", 1); // stile dei testi nuovi; la famiglia si imposta all'avvio
+    TextStyle _textDefaults = new("", 24, false, false, "left", 1); // style of new texts; the family is set at startup
     long _seenVersion;
-    readonly HashSet<string> _aiTouched = []; // oggetti la cui ultima modifica è dell'agente
+    readonly HashSet<string> _aiTouched = []; // objects whose last modification is by the agent
     readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     readonly DispatcherTimer _chipTimer = new() { Interval = TimeSpan.FromSeconds(3) };
-    readonly List<string> _activeAgents = []; // agenti intervenuti dall'ultima scadenza del chip
+    readonly List<string> _activeAgents = []; // agents that intervened since the chip last expired
 
-    /// <summary>Selezione del canvas per l'MCP.</summary>
+    /// <summary>Canvas selection for MCP.</summary>
     public Quattromani.Mcp.ISelectionService Selection { get; }
 
     public MainWindow()
@@ -43,7 +43,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         Opened += (_, _) =>
         {
-            // Il layer Metal compare dopo il primo ridisegno: finché non c'è si controlla spesso, per ridurre il tempo con il colorspace sbagliato.
+            // The Metal layer appears after the first redraw: until it is there we check often, to reduce the time with the wrong colorspace.
             DispatcherTimer? t = null;
             t = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Send, (_, _) =>
             {
@@ -56,7 +56,7 @@ public partial class MainWindow : Window
         InitLayers();
         Canvas.Bus = _bus;
 
-        // Il bus può notificare da qualsiasi thread.
+        // The bus may notify from any thread.
         _seenVersion = _bus.Version;
         _bus.Changed += () => Dispatcher.UIThread.Post(OnBusChanged);
         _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; _activeAgents.Clear(); };
@@ -73,7 +73,7 @@ public partial class MainWindow : Window
         SubtractButton.Click += (_, _) => RunBoolean("subtract");
         _noticeTimer.Tick += (_, _) => { _noticeTimer.Stop(); NoticeText.IsVisible = false; };
 
-        // Pagina, unità di misura e barra di stato.
+        // Page, units of measure and status bar.
         Canvas.FormatLength = Fmt;
         Canvas.UnitLabel = _unit;
         Canvas.InfoChanged += text => { _liveInfo = text; UpdateStatus(); };
@@ -88,10 +88,10 @@ public partial class MainWindow : Window
             SetGridDefault();
             SyncPageBar();
             UpdateStatus();
-            Canvas.InvalidateVisual(); // i righelli cambiano unità
+            Canvas.InvalidateVisual(); // the rulers change unit
         };
 
-        // Griglia e aggancio.
+        // Grid and snapping.
         GridToggle.IsCheckedChanged += (_, _) => Canvas.ShowGrid = GridToggle.IsChecked == true;
         SnapToggle.IsCheckedChanged += (_, _) => Canvas.SnapOn = SnapToggle.IsChecked == true;
         SnapGridCheck.IsCheckedChanged += (_, _) => Canvas.SnapToGrid = SnapGridCheck.IsChecked == true;
@@ -105,12 +105,12 @@ public partial class MainWindow : Window
         Canvas.SnapOn = SnapToggle.IsChecked == true;
         SetGridDefault();
         PageViewCombo.ItemsSource = new[] { "Page: white", "Page: outline", "Page: hidden" };
-        PageViewCombo.SelectedIndex = 1; // di default solo il contorno della pagina
+        PageViewCombo.SelectedIndex = 1; // by default only the page outline
         PageViewCombo.SelectionChanged += (_, _) => Canvas.PageViewMode = (PageView)Math.Max(0, PageViewCombo.SelectedIndex);
         FitPageButton.Click += (_, _) => Canvas.FitPage();
         Canvas.SizeChanged += (_, _) =>
         {
-            if (!_fitted && Canvas.Bounds.Width > 200) { _fitted = true; Canvas.FitPage(); } // alla prima apertura si vede tutta la pagina
+            if (!_fitted && Canvas.Bounds.Width > 200) { _fitted = true; Canvas.FitPage(); } // on first opening the whole page is visible
         };
 
         PagePresetCombo.ItemsSource = PageSizes.All.Select(p => p.Label).Append("Custom").ToList();
@@ -118,7 +118,7 @@ public partial class MainWindow : Window
         {
             var i = PagePresetCombo.SelectedIndex;
             if (_syncingPage || i < 0 || i >= PageSizes.All.Length) return;
-            var landscape = _lastPage.W > _lastPage.H; // il formato scelto mantiene l'orientamento attuale
+            var landscape = _lastPage.W > _lastPage.H; // the chosen format keeps the current orientation
             ExecutePage(new SetPage { Preset = PageSizes.All[i].Name, Orientation = landscape ? "landscape" : "portrait" });
         };
         PageWBox.ValueChanged += (_, e) =>
@@ -132,14 +132,14 @@ public partial class MainWindow : Window
         PortraitButton.Click += (_, _) => ExecutePage(new SetPage { Orientation = "portrait" });
         LandscapeButton.Click += (_, _) => ExecutePage(new SetPage { Orientation = "landscape" });
 
-        // Nome degli oggetti: click su una voce già selezionata (o doppio click) per rinominarla.
+        // Object names: click on an already selected entry (or double-click) to rename it.
         ObjectList.AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (!e.GetCurrentPoint(ObjectList).Properties.IsLeftButtonPressed) return;
             var item = (e.Source as Visual)?.GetSelfAndVisualAncestors().OfType<ListBoxItem>().FirstOrDefault();
             if (item == null) return;
             var index = ObjectList.IndexFromContainer(item);
-            // Tunnel: qui la selezione è ancora quella precedente al click.
+            // Tunnel: here the selection is still the one before the click.
             if (index >= 0 && (e.ClickCount >= 2 || ObjectList.SelectedIndex == index && Canvas.SelectedId == _ids.ElementAtOrDefault(index)))
                 Dispatcher.UIThread.Post(() => BeginRename(index), DispatcherPriority.Background);
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -171,7 +171,7 @@ public partial class MainWindow : Window
             Canvas.Select(i >= 0 ? _ids[i] : null);
         };
 
-        // Strumenti
+        // Tools
         SelectTool.Click += (_, _) => { Canvas.Tool = Tool.Select; SyncToolButtons(); };
         RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
@@ -179,7 +179,7 @@ public partial class MainWindow : Window
         NodeTool.Click += (_, _) => { Canvas.Tool = Tool.Node; SyncToolButtons(); };
         TextTool.Click += (_, _) => { Canvas.Tool = Tool.Text; SyncToolButtons(); };
 
-        // Testo: stile dei nuovi testi, barra del testo ed editor sul posto.
+        // Text: style of new texts, text bar and in-place editor.
         var engine = _bus.Document.TextEngine;
         _textDefaults = _textDefaults with { Family = engine?.DefaultFamily ?? "Sans" };
         FontCombo.ItemsSource = engine?.Families.ToList() ?? [];
@@ -220,18 +220,18 @@ public partial class MainWindow : Window
         Canvas.ToolChanged += SyncToolButtons;
         foreach (var box in new[] { XBox, YBox, WBox, HBox, RotBox }) box.ValueChanged += (_, _) => ApplyXform(box);
 
-        // Tavolozza: stile delle nuove forme e, se c'è una selezione, dell'oggetto selezionato.
+        // Palette: style of new shapes and, if there is a selection, of the selected object.
         void PickColor(string c, bool stroke)
         {
             if (stroke) ApplyStyle(stroke: c);
-            else if (c != "none" && Canvas.TrySetSelectedStopColor(c)) { } // sosta selezionata con lo strumento di riempimento
-            else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // un colore del pannello è "in attesa"
+            else if (c != "none" && Canvas.TrySetSelectedStopColor(c)) { } // stop selected with the fill tool
+            else if (_gradArmed >= 0 && c != "none") PickGradientColor(c); // a color of the panel is "pending"
             else ApplyStyle(fill: c);
         }
         BuildSwatches(PaletteSwatches, PickColor);
         BuildPaletteGrid(PaletteGrid, PickColor);
         PaletteExpandButton.Click += (_, _) => SetPaletteOpen(!PaletteFlyout.IsVisible);
-        // Il pannello esteso si chiude cliccando altrove (il click passa comunque a ciò che c'è sotto).
+        // The expanded panel closes by clicking elsewhere (the click still goes to whatever is underneath).
         AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (!PaletteFlyout.IsVisible) return;
@@ -239,8 +239,8 @@ public partial class MainWindow : Window
             if (!inside) SetPaletteOpen(false);
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
 
-        // Riempimento: tinta unita, gradiente con più colori o motivo. Per gradienti particolari si può scrivere il testo CSS nel campo Fill.
-        // Ordine di sovrapposizione, allineamento e distribuzione.
+        // Fill: solid color, multi-color gradient or pattern. For special gradients the CSS text can be typed in the Fill field.
+        // Stacking order, alignment and distribution.
         var cmdKey = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
         MenuToFront.InputGesture = new KeyGesture(Key.OemCloseBrackets, cmdKey | KeyModifiers.Shift);
         MenuForward.InputGesture = new KeyGesture(Key.OemCloseBrackets, cmdKey);
@@ -277,7 +277,7 @@ public partial class MainWindow : Window
         GradAngleBox.ValueChanged += (_, e) =>
         {
             if (_syncingGrad || e.NewValue is not { } v) return;
-            _spec = _spec with { Angle = (double)v, X1 = null, Y1 = null, X2 = null, Y2 = null }; // l'angolo sostituisce i punti espliciti
+            _spec = _spec with { Angle = (double)v, X1 = null, Y1 = null, X2 = null, Y2 = null }; // the angle replaces the explicit points
             if (_fillKind == 1) ApplyFillFromPanel();
         };
         PatKindCombo.ItemsSource = Pattern.Kinds.ToList();
@@ -300,7 +300,7 @@ public partial class MainWindow : Window
             if (_fillKind == 3) ApplyFillFromPanel();
         };
 
-        // Strumento di riempimento sul canvas.
+        // Fill tool on the canvas.
         FillTool.Click += (_, _) => { Canvas.Tool = Tool.Fill; SyncToolButtons(); };
         Canvas.DefaultStops = () => _fillKind is 1 or 2
             ? _spec.Stops.ToList()
@@ -316,7 +316,7 @@ public partial class MainWindow : Window
         Refresh();
     }
 
-    // Apre o chiude la tavolozza completa; la freccia del bottone indica dove si va ("‹" apre verso il disegno, "›" richiude).
+    // Opens or closes the full palette; the button's arrow shows where we go ("‹" opens towards the drawing, "›" closes it again).
     void SetPaletteOpen(bool open)
     {
         PaletteFlyout.IsVisible = open;
@@ -324,9 +324,9 @@ public partial class MainWindow : Window
         ToolTip.SetTip(PaletteExpandButton, open ? "Close the palette" : "Show the whole palette");
     }
 
-    // ---- Tavolozza: una colonna di campioni tondi lungo il bordo destro, come negli editor vettoriali classici ------------------------
+    // ---- Palette: a column of round swatches along the right edge, as in classic vector editors ------------------------
 
-    // Colore HSL -> "#RRGGBB" (h in gradi, s e l in 0..1).
+    // HSL color -> "#RRGGBB" (h in degrees, s and l in 0..1).
     static string Hsl(double h, double s, double l)
     {
         double c = (1 - Math.Abs(2 * l - 1)) * s, x = c * (1 - Math.Abs(h / 60 % 2 - 1)), m = l - c / 2;
@@ -338,7 +338,7 @@ public partial class MainWindow : Window
         return $"#{B(r + m):X2}{B(g + m):X2}{B(b + m):X2}";
     }
 
-    // Gruppi di colori nell'ordine in cui compaiono: nessun colore, grigi, poi ogni tinta con i suoi toni dal più chiaro al più scuro.
+    // Color groups in the order they appear: no color, grays, then each hue with its tones from lightest to darkest.
     static readonly List<List<string>> PaletteGroups = BuildPalette();
 
     static List<List<string>> BuildPalette()
@@ -352,12 +352,12 @@ public partial class MainWindow : Window
         double[] saturation = [0.90, 0.85, 0.82, 0.80, 0.78, 0.76, 0.72, 0.68];
         foreach (var hue in new double[] { 0, 18, 32, 46, 60, 85, 120, 150, 172, 190, 207, 225, 245, 268, 290, 315, 338 })
             groups.Add(lightness.Select((l, i) => Hsl(hue, saturation[i], l)).ToList());
-        // Marroni e beige: tinte calde poco sature.
+        // Browns and beiges: warm, slightly saturated tints.
         groups.Add(lightness.Select((l, i) => Hsl(28, 0.45 + i * 0.01, Math.Min(0.92, l + 0.02))).ToList());
         return groups;
     }
 
-    // Un campione tondo: click sinistro = fill, click destro = stroke (come negli editor vettoriali classici).
+    // A round swatch: left click = fill, right click = stroke (as in classic vector editors).
     static Button Swatch(string c, int size, double bottomMargin, Action<string, bool> pick)
     {
         var b = new Button
@@ -371,7 +371,7 @@ public partial class MainWindow : Window
                 : null,
         };
         ToolTip.SetTip(b, c == "none" ? "No color" : c);
-        // Button gestisce solo il click sinistro: ascolto il rilascio per distinguere i due tasti.
+        // Button only handles the left click: I listen to the release to tell the two buttons apart.
         b.AddHandler(PointerReleasedEvent, (_, e) =>
         {
             if (!new Rect(b.Bounds.Size).Contains(e.GetPosition(b))) return;
@@ -381,20 +381,20 @@ public partial class MainWindow : Window
         return b;
     }
 
-    // Colonna stretta lungo il bordo: tutti i colori in fila.
+    // Narrow column along the edge: all the colors in a row.
     static void BuildSwatches(Panel panel, Action<string, bool> pick)
     {
         foreach (var group in PaletteGroups)
         {
             foreach (var c in group) panel.Children.Add(Swatch(c, 17, 3, pick));
-            panel.Children.Add(new Border { Height = 6 }); // un po' di aria tra una famiglia e l'altra
+            panel.Children.Add(new Border { Height = 6 }); // a bit of air between one family and the next
         }
     }
 
-    // Pannello esteso: una colonna per ogni tinta (la prima con "nessun colore" e i grigi), un tono per riga.
+    // Expanded panel: one column for each hue (the first with "no color" and the grays), one tone per row.
     static void BuildPaletteGrid(Panel host, Action<string, bool> pick, int size = 24)
     {
-        // Prima colonna: nessun colore e 7 grigi, così ha 8 righe come le altre.
+        // First column: no color and 7 grays, so it has 8 rows like the others.
         var first = new StackPanel();
         var grays = PaletteGroups[1];
         foreach (var c in PaletteGroups[0].Concat(new[] { 0, 2, 3, 4, 5, 7, 9 }.Select(i => grays[i]))) first.Children.Add(Swatch(c, size, 3, pick));
@@ -407,7 +407,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // Accetta "#RRGGBB", "RRGGBB" e "none"; il resto viene rifiutato dal comando con un errore esplicito.
+    // Accepts "#RRGGBB", "RRGGBB" and "none"; anything else is rejected by the command with an explicit error.
     static string NormalizeHex(string? t)
     {
         t = (t ?? "").Trim();
@@ -423,11 +423,11 @@ public partial class MainWindow : Window
         TextTool.IsChecked = Canvas.Tool == Tool.Text;
         FillTool.IsChecked = Canvas.Tool == Tool.Fill;
         NodeTool.IsChecked = Canvas.Tool == Tool.Node;
-        // Con lo strumento Nodi la barra mostra le operazioni sui nodi al posto di quelle booleane.
+        // With the Node tool the bar shows node operations instead of the boolean ones.
         UpdateBars();
     }
 
-    /// <summary>Aggiorna lo stile corrente (nuove forme) e lo applica alla selezione tramite il bus.</summary>
+    /// <summary>Updates the current style (new shapes) and applies it to the selection through the bus.</summary>
     void ApplyStyle(string? fill = null, string? stroke = null, double? width = null)
     {
         if (fill != null) Canvas.Fill = fill == "none" ? null : fill;
@@ -442,13 +442,13 @@ public partial class MainWindow : Window
         catch (CommandException ex)
         {
             ShowNotice(ex.Message);
-            Refresh(); // colore non valido o oggetto bloccato: ripristina i campi dall'oggetto
+            Refresh(); // invalid color or locked object: restore the fields from the object
         }
     }
 
     void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Source is TextBox) return; // Backspace/lettere nei campi di testo non sono scorciatoie
+        if (e.Source is TextBox) return; // Backspace/letters in text fields are not shortcuts
         var cmd = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
         if (cmd && e.Key == Key.Z)
         {
@@ -462,7 +462,7 @@ public partial class MainWindow : Window
         }
         else if (cmd && e.Key == Key.S)
         {
-            _ = SaveAsync(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); // Maiusc = Salva con nome
+            _ = SaveAsync(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); // Shift = Save As
             e.Handled = true;
         }
         else if (cmd && e.Key == Key.O) { _ = OpenAsync(); e.Handled = true; }
@@ -508,12 +508,12 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Enter && Canvas.PenActive)
         {
-            Canvas.FinishPen(false); // termina il path aperto
+            Canvas.FinishPen(false); // ends the open path
             e.Handled = true;
         }
         else if (e.Key is Key.Enter or Key.F2 && Canvas.SelectedId != null)
         {
-            Canvas.EditSelectedText(); // Invio o F2 su un testo selezionato: lo si modifica
+            Canvas.EditSelectedText(); // Enter or F2 on a selected text: edit it
             e.Handled = true;
         }
         else if (e.Key == Key.Escape && PaletteFlyout.IsVisible)
@@ -528,17 +528,17 @@ public partial class MainWindow : Window
         }
         else if (e.Key == Key.Back && Canvas.PenActive)
         {
-            Canvas.PenBack(); // durante il disegno toglie l'ultimo nodo
+            Canvas.PenBack(); // while drawing removes the last node
             e.Handled = true;
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.Tool == Tool.Node && Canvas.NodeSelectionCount > 0)
         {
-            Canvas.ApplyNodeOp(NodeOp.Delete); // con lo strumento Nodi Delete toglie i nodi, non l'oggetto
+            Canvas.ApplyNodeOp(NodeOp.Delete); // with the Node tool Delete removes nodes, not the object
             e.Handled = true;
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.Tool == Tool.Fill && Canvas.DeleteSelectedStop())
         {
-            e.Handled = true; // con lo strumento di riempimento Delete toglie la sosta di colore selezionata
+            e.Handled = true; // with the fill tool Delete removes the selected color stop
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
         {
@@ -560,11 +560,11 @@ public partial class MainWindow : Window
         _syncingScroll = false;
     }
 
-    // Passo della griglia di partenza per l'unità scelta.
+    // Starting grid step for the chosen unit.
     void SetGridDefault() =>
         GridSizeBox.Value = _unit switch { "mm" => 5, "cm" => 0.5m, "in" => 0.25m, _ => 10 };
 
-    // ---- Rinomina nel pannello Objects ---------------------------------------------------------
+    // ---- Rename in the Objects panel ---------------------------------------------------------
 
     void BeginRename(int index)
     {
@@ -587,7 +587,7 @@ public partial class MainWindow : Window
     void CommitRename()
     {
         if (_renamingId is not { } id) return;
-        _renamingId = null; // prima di nascondere la casella: nascondendola scatta LostFocus
+        _renamingId = null; // before hiding the box: hiding it fires LostFocus
         var text = RenameBox.Text ?? "";
         RenameBox.IsVisible = false;
         var current = _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == id)?.Name) ?? "";
@@ -596,9 +596,9 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // ---- Pagina, misure e barra di stato -------------------------------------------------------
+    // ---- Page, measures and status bar -------------------------------------------------------
 
-    // Numero nell'unità scelta: il documento è in px (96 dpi).
+    // Number in the chosen unit: the document is in px (96 dpi).
     string Fmt(double px)
     {
         var v = Units.FromPx(px, _unit);
@@ -611,7 +611,7 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); SyncPageBar(); }
     }
 
-    // Allinea formato, misure e orientamento al documento (e re-inquadra la pagina se è cambiata).
+    // Aligns format, measures and orientation to the document (and reframes the page if it changed).
     void SyncPageBar()
     {
         var (w, h) = _bus.Read(d => (d.Pages[0].Width, d.Pages[0].Height));
@@ -629,10 +629,10 @@ public partial class MainWindow : Window
         LandscapeButton.IsChecked = w > h;
         _syncingPage = false;
 
-        if (changed && !first) Canvas.FitPage(); // pagina nuova: la si vede tutta
+        if (changed && !first) Canvas.FitPage(); // new page: it is shown whole
     }
 
-    // Barra di stato: misure del gesto in corso oppure della selezione.
+    // Status bar: measures of the gesture in progress or of the selection.
     void UpdateStatus()
     {
         if (_liveInfo != null) { StatusInfo.Text = _liveInfo; return; }
@@ -660,14 +660,14 @@ public partial class MainWindow : Window
                           + (Math.Abs(rot) > 0.05 ? $"   ·   {rot:0.#}°" : "");
     }
 
-    // ---- Testo ----------------------------------------------------------------------------------
+    // ---- Text ----------------------------------------------------------------------------------
 
-    /// <summary>Barra in alto: nodi con lo strumento Nodi, stile con lo strumento Testo o un testo selezionato, altrimenti booleane.</summary>
+    /// <summary>Top bar: nodes with the Node tool, style with the Text tool or a selected text, otherwise booleans.</summary>
     void UpdateBars()
     {
         var node = Canvas.Tool == Tool.Node;
         var text = !node && (Canvas.Tool == Tool.Text || SelectedTextStyle() != null);
-        var page = !node && !text && Canvas.SelectedIds.Count == 0; // senza selezione la barra mostra la pagina
+        var page = !node && !text && Canvas.SelectedIds.Count == 0; // without a selection the bar shows the page
         NodeBar.IsVisible = node;
         TextBar.IsVisible = text;
         PageBar.IsVisible = page;
@@ -675,7 +675,7 @@ public partial class MainWindow : Window
         XformBar.IsVisible = BoolBar.IsVisible;
     }
 
-    // ---- Campi numerici di posizione, dimensione e rotazione -----------------------------------
+    // ---- Numeric fields for position, size and rotation -----------------------------------
 
     bool _syncingXform;
 
@@ -703,7 +703,7 @@ public partial class MainWindow : Window
         _syncingXform = false;
     }
 
-    // Applica il valore digitato: X/Y spostano la selezione, W/H ridimensionano, la rotazione porta l'oggetto all'angolo indicato.
+    // Applies the typed value: X/Y move the selection, W/H resize, the rotation brings the object to the given angle.
     void ApplyXform(NumericUpDown box)
     {
         if (_syncingXform || box.Value is not { } val || Canvas.SelectedIds.Count == 0) return;
@@ -717,7 +717,7 @@ public partial class MainWindow : Window
                     var boxes = ids.Select(id => d.Objects.First(o => o.Id == id)).Select(d.PageBounds).ToList();
                     var cur = box == XBox ? boxes.Min(b => b.X) : boxes.Min(b => b.Y);
                     var delta = new Vector2(box == XBox ? (float)(v - cur) : 0, box == YBox ? (float)(v - cur) : 0);
-                    // Ogni oggetto vive nello spazio del suo contenitore: porto lo spostamento da pagina a quello spazio.
+                    // Each object lives in the space of its container: I bring the shift from page space to that space.
                     return ids.Select(id =>
                     {
                         var o = d.Objects.First(x => x.Id == id);
@@ -734,7 +734,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                // La dimensione si cambia con la stessa proporzione del riquadro in pagina, che include l'eventuale scala dei gruppi.
+                // The size is changed with the same proportion as the box on the page, which includes any scale of groups.
                 var (o, b) = _bus.Read(d => { var x = d.Objects.First(o => o.Id == ids[0]); return (x, d.PageBounds(x)); });
                 var k = v / (box == WBox ? b.Width : b.Height);
                 _bus.Execute([new ResizeObject { Targets = ids, Width = box == WBox ? o.Width * k : null, Height = box == HBox ? o.Height * k : null }]);
@@ -744,7 +744,7 @@ public partial class MainWindow : Window
         SyncXformBar();
     }
 
-    /// <summary>Stile del testo selezionato (se è un solo testo).</summary>
+    /// <summary>Style of the selected text (if it is a single text).</summary>
     TextStyle? SelectedTextStyle() =>
         Canvas.SelectedId is { } id ? _bus.Read(d => (d.Objects.FirstOrDefault(o => o.Id == id) as TextObject)?.Style) : null;
 
@@ -759,7 +759,7 @@ public partial class MainWindow : Window
         AlignLeftButton.IsChecked = st.Align == "left";
         AlignCenterButton.IsChecked = st.Align == "center";
         AlignRightButton.IsChecked = st.Align == "right";
-        // Un testo su tracciato mostra le sue opzioni (nell'unità scelta).
+        // A text on a path shows its options (in the chosen unit).
         var op = Canvas.SelectedId is { } sid ? _bus.Read(d => (d.Objects.FirstOrDefault(o => o.Id == sid) as TextObject)?.OnPath) : null;
         TextPathButton.IsVisible = op != null;
         if (op != null)
@@ -772,7 +772,7 @@ public partial class MainWindow : Window
         _syncingText = false;
     }
 
-    // Un testo e un tracciato (path, rettangolo o ellisse) selezionati insieme: il testo si mette sul tracciato.
+    // A text and a path (path, rectangle or ellipse) selected together: the text is put on the path.
     (string Text, string Path)? FitPathPair()
     {
         if (Canvas.SelectedIds.Count != 2) return null;
@@ -799,7 +799,7 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // Cambia lo stile dei testi nuovi e applica la modifica ai testi selezionati (un solo undo).
+    // Changes the style of new texts and applies the change to the selected texts (a single undo).
     void ApplyTextStyle(string? family = null, double? size = null, bool? bold = null, bool? italic = null, string? align = null)
     {
         _textDefaults = _textDefaults with
@@ -816,7 +816,7 @@ public partial class MainWindow : Window
         SyncTextBar();
     }
 
-    // Editor sul posto: una TextBox sopra il canvas, con lo stesso font; l'oggetto originale resta nascosto.
+    // In-place editor: a TextBox above the canvas, with the same font; the original object stays hidden.
     void BeginTextEdit(TextEditRequest r)
     {
         CommitTextEdit();
@@ -868,7 +868,7 @@ public partial class MainWindow : Window
     void CommitTextEdit()
     {
         if (_edit is not { } e) return;
-        _edit = null; // prima di nascondere l'editor: nascondendolo scatta LostFocus
+        _edit = null; // before hiding the editor: hiding it fires LostFocus
         var text = TextEditor.Text ?? "";
         TextEditor.IsVisible = false;
         Canvas.HiddenId = null;
@@ -876,7 +876,7 @@ public partial class MainWindow : Window
         {
             if (e.Id is { } id)
             {
-                if (text.Length == 0) _bus.Execute([new DeleteObjects { Targets = [id] }]); // un testo svuotato sparisce
+                if (text.Length == 0) _bus.Execute([new DeleteObjects { Targets = [id] }]); // an emptied text disappears
                 else if (text != _editOriginal) _bus.Execute([new SetText { Targets = [id], Text = text }]);
             }
             else if (text.Trim().Length > 0)
@@ -889,14 +889,14 @@ public partial class MainWindow : Window
                     Fill = Canvas.Fill ?? "#000000",
                 }]);
                 Canvas.Select(r.CreatedIds[0]);
-                Canvas.Tool = Tool.Select; // dopo aver scritto si torna alla selezione
+                Canvas.Tool = Tool.Select; // after writing we go back to selection
                 SyncToolButtons();
             }
         }
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // ---- Riempimento (tinta unita, gradiente, motivo) -----------------------------------------
+    // ---- Fill (solid, gradient, pattern) -----------------------------------------
 
     string BuildFill() => _fillKind switch
     {
@@ -912,7 +912,7 @@ public partial class MainWindow : Window
         ApplyStyle(fill: BuildFill());
     }
 
-    // Primo e ultimo colore del riempimento attuale: passando da un tipo all'altro i colori restano.
+    // First and last color of the current fill: switching from one type to another the colors stay.
     (string First, string Last) FillColors() => _fillKind switch
     {
         1 or 2 => (_spec.Stops[0].Color, _spec.Stops[^1].Color),
@@ -964,7 +964,7 @@ public partial class MainWindow : Window
         ApplyFillFromPanel();
     }
 
-    // Colore del documento ("#RRGGBB" o "#RRGGBBAA") come colore Avalonia.
+    // Document color ("#RRGGBB" or "#RRGGBBAA") as an Avalonia color.
     static Color DocColor(string s)
     {
         var v = Convert.ToUInt32(s[1..], 16);
@@ -1008,7 +1008,7 @@ public partial class MainWindow : Window
         _syncingGrad = prev;
     }
 
-    // Una riga per ogni colore: campione (si clicca e poi si sceglie dalla tavolozza), posizione in % e rimozione.
+    // One row per color: swatch (click, then choose from the palette), position in % and removal.
     void RebuildStopRows()
     {
         StopsPanel.Children.Clear();
@@ -1075,7 +1075,7 @@ public partial class MainWindow : Window
         return row;
     }
 
-    // Anteprima nel pannello, con la stessa geometria del documento (punti e raggi come frazioni del riquadro).
+    // Preview in the panel, with the same geometry as the document (points and radii as fractions of the box).
     IBrush PreviewBrush()
     {
         var box = new Box(0, 0, 200, 22);
@@ -1102,7 +1102,7 @@ public partial class MainWindow : Window
                     RadiusX = new RelativeScalar(rx, RelativeUnit.Relative), RadiusY = new RelativeScalar(ry, RelativeUnit.Relative),
                 };
             }
-            case 3: // motivo: metà colore del motivo, metà sfondo
+            case 3: // pattern: half pattern color, half background
                 stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Fg), 0));
                 stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Fg), 0.5));
                 stops.Add(new Avalonia.Media.GradientStop(DocColor(_pat.Bg), 0.5));
@@ -1142,7 +1142,7 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // Applica un comando alla selezione corrente; con la selezione vuota non fa nulla, e gli errori diventano un avviso.
+    // Applies a command to the current selection; with an empty selection it does nothing, and errors become a notice.
     void ExecuteOnSelection(Func<List<string>, Command> make)
     {
         var ids = Canvas.SelectedIds.ToList();
@@ -1169,8 +1169,8 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    string? _clipboard; // oggetti copiati (JSON di DocumentFile.ExportObjects); sopravvive alla cancellazione degli originali
-    int _pasteCount;    // ogni incolla successiva si sposta un po' di più, per non cadere sulla precedente
+    string? _clipboard; // copied objects (JSON of DocumentFile.ExportObjects); survives the deletion of the originals
+    int _pasteCount;    // each subsequent paste shifts a bit more, so as not to land on the previous one
 
     void Duplicate()
     {
@@ -1185,7 +1185,7 @@ public partial class MainWindow : Window
         var ids = Canvas.SelectedIds.ToHashSet();
         if (ids.Count == 0) return;
         _clipboard = _bus.Read(d => DocumentFile.ExportObjects(d.Objects.Where(o => ids.Contains(o.Id))));
-        _pasteCount = cut ? 0 : 1; // dopo Copia l'originale c'è ancora; dopo Taglia la prima incolla va nello stesso punto
+        _pasteCount = cut ? 0 : 1; // after Copy the original is still there; after Cut the first paste goes to the same place
         if (cut) Exec(new DeleteObjects { Targets = ids.ToList() });
     }
 
@@ -1199,7 +1199,7 @@ public partial class MainWindow : Window
 
     void Ungroup()
     {
-        // Gli id dei figli vanno letti prima: dopo il comando il gruppo non esiste più.
+        // The children's ids must be read first: after the command the group no longer exists.
         var groups = _bus.Read(d => Canvas.SelectedIds
             .Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<GroupObject>()
             .Select(g => (g.Id, Children: g.Children.Select(c => c.Id).ToList())).ToList());
@@ -1208,7 +1208,7 @@ public partial class MainWindow : Window
             Canvas.SetSelection(groups.SelectMany(g => g.Children));
     }
 
-    /// <summary>Scopre cosa è cambiato dall'ultima volta e segnala il lavoro dell'agente.</summary>
+    /// <summary>Finds out what changed since last time and signals the agent's work.</summary>
     void OnBusChanged()
     {
         var (version, changes) = _bus.GetChanges(_seenVersion);
@@ -1217,7 +1217,7 @@ public partial class MainWindow : Window
         var replaced = false;
         foreach (var change in changes)
         {
-            if (change.Kind == "reset") // documento sostituito (apri/nuovo): si riparte da zero
+            if (change.Kind == "reset") // document replaced (open/new): start from scratch
             {
                 replaced = true;
                 _aiTouched.Clear();
@@ -1241,7 +1241,7 @@ public partial class MainWindow : Window
         Refresh();
     }
 
-    /// <summary>Riallinea elenco oggetti e canvas al documento (thread UI).</summary>
+    /// <summary>Aligns the object list and canvas with the document (UI thread).</summary>
     void Refresh()
     {
         var items = _bus.Read(d =>
@@ -1260,7 +1260,7 @@ public partial class MainWindow : Window
         ObjectList.SelectedIndex = Canvas.SelectedId is { } s ? _ids.IndexOf(s) : -1;
         RefreshLayers();
 
-        // Il pannello mostra lo stile dell'oggetto selezionato (e diventa lo stile delle nuove forme).
+        // The panel shows the style of the selected object (and becomes the style of new shapes).
         if (Canvas.SelectedId is { } cur &&
             _bus.Read(d => d.Objects.FirstOrDefault(o => o.Id == cur)) is { } obj)
         {
@@ -1273,7 +1273,7 @@ public partial class MainWindow : Window
         else SyncFillPanel(Canvas.Fill);
         _syncing = false;
 
-        // Group e Ungroup sono sempre sulla barra; si accendono quando hanno senso.
+        // Group and Ungroup are always on the bar; they light up when they make sense.
         GroupButton.IsEnabled = Canvas.SelectedIds.Count >= 2;
         ArrangeButton.IsEnabled = AlignButton.IsEnabled = Canvas.SelectedIds.Count >= 1;
         MenuDistributeX.IsEnabled = MenuDistributeY.IsEnabled = MenuDistributeCX.IsEnabled = MenuDistributeCY.IsEnabled = Canvas.SelectedIds.Count >= 3;
@@ -1283,12 +1283,12 @@ public partial class MainWindow : Window
         WeldButton.IsEnabled = TrimButton.IsEnabled = IntersectButton.IsEnabled = SubtractButton.IsEnabled = many;
 
         Canvas.InvalidateVisual();
-        UpdateScrollBars(); // il contenuto può essere cambiato
+        UpdateScrollBars(); // the content may have changed
         UpdateBars();
         SyncTextBar();
         SyncPageBar();
         SyncXformBar();
         UpdateStatus();
-        UpdateTitle(); // il titolo mostra "*" se ci sono modifiche non salvate
+        UpdateTitle(); // the title shows "*" if there are unsaved changes
     }
 }

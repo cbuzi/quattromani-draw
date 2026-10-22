@@ -7,7 +7,7 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // Errori fuori dall'interfaccia: l'app può chiudersi, ma prima si registra l'errore e si salva una copia del lavoro.
+        // Errors outside the UI: the app may close, but first the error is logged and a copy of the work is saved.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             if (e.ExceptionObject is Exception ex) CrashLog.Write("Fatal error", ex);
@@ -23,6 +23,6 @@ internal static class Program
 
     static AppBuilder BuildApp() =>
         AppBuilder.Configure<App>().UsePlatformDetect()
-            // Il menu dell'applicazione su macOS lo costruisce App (senza le voci predefinite di Avalonia: About Avalonia, Services...).
+            // The application menu on macOS is built by App (without Avalonia's default entries: About Avalonia, Services...).
             .With(new MacOSPlatformOptions { DisableDefaultApplicationMenuItems = true });
 }

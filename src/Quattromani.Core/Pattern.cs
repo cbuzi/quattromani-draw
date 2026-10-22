@@ -4,14 +4,14 @@ using System.Text.RegularExpressions;
 namespace Quattromani.Core;
 
 /// <summary>
-/// Riempimento a motivo: <c>pattern(stripes, #FF0000, #FFFFFF, 8, 45)</c> = tipo, colore del motivo, colore dello sfondo,
-/// passo in unità documento e angolo opzionale. Il motivo parte dall'angolo in alto a sinistra dell'oggetto e lo segue.
+/// Pattern fill: <c>pattern(stripes, #FF0000, #FFFFFF, 8, 45)</c> = kind, pattern color, background color,
+/// step in document units and optional angle. The pattern starts at the object's top-left corner and follows it.
 /// </summary>
 public sealed record PatternSpec(string Kind, string Fg, string Bg, double Size, double Angle);
 
 public static partial class Pattern
 {
-    /// <summary>stripes = righe, dots = pois, checker = scacchi, grid = griglia.</summary>
+    /// <summary>stripes, dots (polka dots), checker (checkerboard), grid.</summary>
     public static readonly string[] Kinds = ["stripes", "dots", "checker", "grid"];
 
     public static bool IsPattern(string s) => s.StartsWith("pattern(", StringComparison.Ordinal);

@@ -7,7 +7,7 @@ using Avalonia.Platform.Storage;
 
 namespace Quattromani.App;
 
-/// <summary>Nuovo, apri, salva, esporta PDF: menu File, scorciatoie, conferme per le modifiche non salvate.</summary>
+/// <summary>New, open, save, export PDF: File menu, shortcuts, confirmations for unsaved changes.</summary>
 public partial class MainWindow
 {
     readonly FileSession _files = App.Files;
@@ -18,7 +18,7 @@ public partial class MainWindow
         _files.StateChanged += UpdateTitle;
         _files.StateChanged += RefreshRecent;
         Opened += (_, _) => _ = OfferRecoveryAsync();
-        var mod = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control; // Cmd su Mac, Ctrl altrove
+        var mod = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control; // Cmd on Mac, Ctrl elsewhere
         MenuNew.InputGesture = new KeyGesture(Key.N, mod);
         MenuOpen.InputGesture = new KeyGesture(Key.O, mod);
         MenuSave.InputGesture = new KeyGesture(Key.S, mod);
@@ -44,7 +44,7 @@ public partial class MainWindow
         Closing += (_, e) =>
         {
             if (_closeConfirmed || !_files.IsDirty) return;
-            e.Cancel = true; // prima si chiede cosa fare delle modifiche
+            e.Cancel = true; // first we ask what to do with the changes
             _ = CloseAfterConfirmAsync();
         };
         UpdateTitle();
@@ -54,7 +54,7 @@ public partial class MainWindow
 
     NativeMenuItem? _recentNative;
 
-    // Il menu "Open recent" (nella finestra o nella barra di sistema) segue l'elenco dei documenti recenti.
+    // The "Open recent" menu (in the window or in the system bar) follows the list of recent documents.
     void RefreshRecent()
     {
         var recent = RecentFiles.Load();
@@ -79,7 +79,7 @@ public partial class MainWindow
         }
     }
 
-    // Se l'app non si è chiusa bene l'ultima volta, offre la copia di sicurezza del lavoro non salvato.
+    // If the app did not close properly last time, offers the backup of the unsaved work.
     async Task OfferRecoveryAsync()
     {
         if (_files.IsDirty || Recovery.FindStale() is not { } stale) return;
@@ -91,7 +91,7 @@ public partial class MainWindow
             if (choice == ConfirmWindow.Choice.Save)
             {
                 _files.Recover(stale.File, stale.OriginalPath);
-                App.Recovery.Write(); // la copia nuova prima di togliere la vecchia
+                App.Recovery.Write(); // the new copy before removing the old one
                 Recovery.Discard(stale.File);
             }
             else if (choice == ConfirmWindow.Choice.Discard) Recovery.Discard(stale.File);
@@ -112,11 +112,11 @@ public partial class MainWindow
         }
     }
 
-    // Su macOS i menu stanno nella barra di sistema, con il nome dell'applicazione: File e Edit (Undo/Redo senza scorciatoia
-    // nel menu, per non togliere Cmd+Z alle caselle di testo).
+    // On macOS the menus live in the system bar, with the application's name: File and Edit (Undo/Redo without a shortcut
+    // in the menu, so as not to take Cmd+Z away from text boxes).
     void BuildNativeMenu()
     {
-        FileButton.IsVisible = false; // il menu File nella finestra serve solo su Windows e Linux
+        FileButton.IsVisible = false; // the File menu in the window is only needed on Windows and Linux
         var mod = KeyModifiers.Meta;
         NativeMenuItem Entry(string header, Action action, Key? key = null, KeyModifiers extra = KeyModifiers.None)
         {
@@ -153,7 +153,7 @@ public partial class MainWindow
                 Entry("Duplicate", Duplicate, Key.D),
             },
         };
-        // Menu Object: raggruppa, ordine di sovrapposizione, allinea e distribuisci (stessi comandi dei pulsanti in alto).
+        // Object menu: group, stacking order, align and distribute (same commands as the buttons at the top).
         var obj = new NativeMenuItem("Object")
         {
             Menu = new NativeMenu
@@ -202,12 +202,12 @@ public partial class MainWindow
     async Task CloseAfterConfirmAsync()
     {
         if (!await ConfirmDiscardAsync()) return;
-        App.Recovery.Delete(); // chiusura voluta (salvato o scartato): niente da recuperare
+        App.Recovery.Delete(); // deliberate close (saved or discarded): nothing to recover
         _closeConfirmed = true;
         Close();
     }
 
-    // Se ci sono modifiche non salvate chiede cosa farne; false = l'utente ha annullato.
+    // If there are unsaved changes asks what to do with them; false = the user cancelled.
     async Task<bool> ConfirmDiscardAsync()
     {
         if (!_files.IsDirty) return true;
@@ -253,7 +253,7 @@ public partial class MainWindow
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    /// <returns>true se il documento è stato salvato.</returns>
+    /// <returns>true if the document was saved.</returns>
     public async Task<bool> SaveAsync(bool saveAs)
     {
         CommitTextEdit();
@@ -299,7 +299,7 @@ public partial class MainWindow
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    // Pagina intera a 192 dpi (il doppio della misura a schermo), sfondo trasparente.
+    // Whole page at 192 dpi (twice the on-screen size), transparent background.
     public async Task ExportPngAsync()
     {
         CommitTextEdit();
@@ -326,7 +326,7 @@ public partial class MainWindow
         for (var i = 0; i < paths.Count; i++) ImportImage(paths[i], new(c.X + 20 * i, c.Y + 20 * i));
     }
 
-    // Dimensione nativa, ridotta se non entra in 80% della pagina; centrata su `center` (punto del documento).
+    // Native size, reduced if it does not fit in 80% of the page; centered on `center` (a document point).
     void ImportImage(string path, Point center)
     {
         if (path.EndsWith(SvgFile.Extension, StringComparison.OrdinalIgnoreCase)) { ImportSvgFile(path, center); return; }
@@ -342,7 +342,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
     }
 
-    // Come per le immagini: ridotto se non entra in 80% della pagina, centrato su `center`.
+    // As for images: reduced if it does not fit in 80% of the page, centered on `center`.
     void ImportSvgFile(string path, Point center)
     {
         try
@@ -359,7 +359,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
     }
 
-    // Vettorializza l'immagine selezionata con i valori di default; il risultato (un path) sta sopra l'originale.
+    // Vectorizes the selected image with the default values; the result (a path) sits above the original.
     async Task TraceSelectedAsync()
     {
         var id = _bus.Read(d => Canvas.SelectedIds.Select(i => d.AllObjects.FirstOrDefault(o => o.Id == i)).OfType<ImageObject>().FirstOrDefault()?.Id);

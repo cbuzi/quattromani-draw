@@ -9,10 +9,10 @@ using System.Xml.Linq;
 namespace Quattromani.Core;
 
 /// <summary>
-/// Export e import SVG. L'export scrive sempre un file che altri programmi aprono senza perdite: gradienti e motivi diventano
-/// <c>linearGradient</c>/<c>radialGradient</c>/<c>pattern</c>, il testo resta testo, i tracciati restano curve.
-/// L'import legge il sottoinsieme che serve alle illustrazioni (forme, path, gruppi, testo, immagini incorporate, gradienti, use, CSS a classi);
-/// quello che il modello non sa rappresentare (clip, maschere, filtri, tratteggi...) viene saltato e segnalato nelle note.
+/// SVG export and import. Export always writes a file that other programs open without losses: gradients and patterns become
+/// <c>linearGradient</c>/<c>radialGradient</c>/<c>pattern</c>, text stays text, paths stay curves.
+/// Import reads the subset illustrations need (shapes, paths, groups, text, embedded images, gradients, use, class-based CSS);
+/// what the model cannot represent (clips, masks, filters, dashes...) is skipped and reported in the notes.
 /// </summary>
 public static class SvgFile
 {
@@ -128,7 +128,7 @@ public static class SvgFile
             return e;
         }
 
-        // Sfondo (fill) sotto l'immagine, cornice (stroke) sopra: come nel disegno a schermo.
+        // Background (fill) under the image, frame (stroke) above: like the on-screen drawing.
         XElement Image(ImageObject im)
         {
             var e = new XElement(Svg + "g");
@@ -173,7 +173,7 @@ public static class SvgFile
             }
         }
 
-        // "#RRGGBBAA" diventa colore + opacità, che è quello che SVG capisce.
+        // "#RRGGBBAA" becomes color + opacity, which is what SVG understands.
         static void Color(XElement e, string attr, string color)
         {
             e.SetAttributeValue(attr, color[..7]);
@@ -203,7 +203,7 @@ public static class SvgFile
                 var (fx, fy) = Gradient.RadialRadii(g, b);
                 double cx = b.X + g.CenterX * b.Width, cy = b.Y + g.CenterY * b.Height, rx = Math.Max(fx * b.Width, 1e-6), ry = fy * b.Height;
                 def = new XElement(Svg + "radialGradient", new XAttribute("cx", N(cx)), new XAttribute("cy", N(cy)), new XAttribute("r", N(rx)));
-                // L'ellisse è un cerchio di raggio rx stirato in verticale attorno al centro.
+                // The ellipse is a circle of radius rx stretched vertically around the center.
                 if (Math.Abs(ry - rx) > 1e-6)
                     def.SetAttributeValue("gradientTransform", $"translate({N(cx)} {N(cy)}) scale(1 {N(ry / rx, 6)}) translate({N(-cx)} {N(-cy)})");
             }
@@ -219,7 +219,7 @@ public static class SvgFile
             return id;
         }
 
-        // Stessa unità di MakePatternShader: parte dall'angolo in alto a sinistra dell'oggetto e ruota dell'angolo indicato.
+        // Same unit as MakePatternShader: starts at the object's top-left corner and rotates by the given angle.
         string PatternDef(PatternSpec p, Box b)
         {
             var id = $"pat{++_n}";
@@ -255,10 +255,10 @@ public static class SvgFile
 
     // ---- Import --------------------------------------------------------------------------------
 
-    /// <summary>Riquadro che l'illustrazione occuperebbe importandola così com'è (nelle sue coordinate), per poterla centrare o scalare prima di importarla.</summary>
+    /// <summary>Box the artwork would occupy when imported as is (in its own coordinates), to center or scale it before importing.</summary>
     public static Box Measure(Document doc, string svg) => Build(doc, svg, null).Group.Source;
 
-    /// <summary>Costruisce il gruppo con tutto il contenuto dell'SVG (senza id: li assegna chi lo inserisce nel documento).</summary>
+    /// <summary>Builds the group with all the content of the SVG (without ids: whoever inserts it in the document assigns them).</summary>
     internal static (GroupObject Group, List<string> Notes) Build(Document doc, string svg, string? name)
     {
         XDocument xml;
@@ -318,7 +318,7 @@ public static class SvgFile
                 if (e.Name.LocalName == "style") ParseCss(e.Value);
             }
 
-            // Misura e sistema di coordinate: viewBox + width/height (px; un'eventuale unità la converte).
+            // Size and coordinate system: viewBox + width/height (px; any unit is converted).
             var vb = Nums(root.Attribute("viewBox")?.Value);
             var hasVb = vb.Length == 4 && vb[2] > 0 && vb[3] > 0;
             _vw = hasVb ? vb[2] : 100; _vh = hasVb ? vb[3] : 100;
@@ -343,7 +343,7 @@ public static class SvgFile
             return (GroupObject)MakeGroup(kids, Matrix3x2.Identity, name, force: true);
         }
 
-        // ---- CSS e proprietà ----
+        // ---- CSS and properties ----
 
         void ParseCss(string css)
         {
@@ -354,7 +354,7 @@ public static class SvgFile
                 foreach (var sel in rule.Groups[1].Value.Split(','))
                 {
                     var key = sel.Trim();
-                    if (key.Length == 0 || key.Any(c => c is ' ' or '>' or '+' or '~' or '[' or ':' or '#')) continue; // solo .classe e tag
+                    if (key.Length == 0 || key.Any(c => c is ' ' or '>' or '+' or '~' or '[' or ':' or '#')) continue; // only .class and tag
                     if (!_css.TryGetValue(key, out var into)) _css[key] = into = [];
                     foreach (var (k, v) in decls) into[k] = v;
                 }
@@ -370,7 +370,7 @@ public static class SvgFile
             }
         }
 
-        // Attributi di presentazione, poi CSS, poi style="...": l'ultimo vince.
+        // Presentation attributes, then CSS, then style="...": the last one wins.
         Dictionary<string, string> Props(XElement e)
         {
             var p = new Dictionary<string, string>();
@@ -408,12 +408,12 @@ public static class SvgFile
             return s;
         }
 
-        // ---- Numeri, lunghezze, trasformazioni ----
+        // ---- Numbers, lengths, transforms ----
 
         static double[] Nums(string? s) =>
             s is null ? [] : Number.Matches(s).Select(m => double.Parse(m.Value, CultureInfo.InvariantCulture)).ToArray();
 
-        /// <summary>Lunghezza con unità in px; la percentuale si riferisce a <paramref name="pctBase"/>. null se assente o non valida.</summary>
+        /// <summary>Length with unit in px; a percentage refers to <paramref name="pctBase"/>. null if absent or invalid.</summary>
         static double? Len(string? s, double pctBase = 0)
         {
             if (string.IsNullOrWhiteSpace(s)) return null;
@@ -427,7 +427,7 @@ public static class SvgFile
             };
         }
 
-        /// <summary>Frazione: "50%" = 0.5, "0.5" = 0.5.</summary>
+        /// <summary>Fraction: "50%" = 0.5, "0.5" = 0.5.</summary>
         static double? Frac(string? s) => s is null ? null : Len(s, 1);
 
         static Matrix3x2 ParseTransform(string? s)
@@ -448,12 +448,12 @@ public static class SvgFile
                     "skewY" when a.Length >= 1 => new Matrix3x2(1, (float)Math.Tan(rad), 0, 1, 0, 0),
                     _ => Matrix3x2.Identity,
                 };
-                m = x * m; // "A B" applica prima B, poi A
+                m = x * m; // "A B" applies B first, then A
             }
             return m;
         }
 
-        // ---- Colori e gradienti ----
+        // ---- Colors and gradients ----
 
         string? Color(string raw, double alpha)
         {
@@ -505,7 +505,7 @@ public static class SvgFile
                 if (m.Success && _ids.TryGetValue(m.Groups[1].Value, out var el))
                 {
                     if (el.Name.LocalName is "linearGradient" or "radialGradient") return GradientPaint(el, alpha, box);
-                    // Un motivo si approssima col suo colore in primo piano (l'ultimo elemento disegnato).
+                    // A pattern is approximated by its foreground color (the last element drawn).
                     if (el.Name.LocalName == "pattern" && el.Elements().LastOrDefault() is { } fg && Props(fg).GetValueOrDefault("fill") is { } fgFill)
                     {
                         Note("pattern fills (<pattern>) approximated with a solid color");
@@ -513,7 +513,7 @@ public static class SvgFile
                     }
                     Note($"fills with <{el.Name.LocalName}> are not supported and were ignored");
                 }
-                raw = m.Success ? m.Groups[2].Value : "none"; // colore di riserva dopo url(...)
+                raw = m.Success ? m.Groups[2].Value : "none"; // fallback color after url(...)
             }
             return Color(raw, alpha);
         }
@@ -552,7 +552,7 @@ public static class SvgFile
             var gt = ParseTransform(GradAttr(g, "gradientTransform"));
             double Coord(string name, double defFrac, bool horizontal) =>
                 user ? Len(GradAttr(g, name), horizontal ? _vw : _vh) ?? defFrac * (horizontal ? _vw : _vh) : Frac(GradAttr(g, name)) ?? defFrac;
-            // Dal sistema delle unità del gradiente alle frazioni del riquadro.
+            // From the gradient's unit system to fractions of the box.
             (double X, double Y) ToFrac(Vector2 p) => user ? ((p.X - box.X) / box.Width, (p.Y - box.Y) / box.Height) : (p.X, p.Y);
 
             GradientSpec spec;
@@ -574,7 +574,7 @@ public static class SvgFile
             return Gradient.Format(spec);
         }
 
-        // ---- Albero ----
+        // ---- Tree ----
 
         string? NameOf(Dictionary<string, string> p)
         {
@@ -639,7 +639,7 @@ public static class SvgFile
             return kids.Count == 0 ? [] : [MakeGroup(kids, tf, name)];
         }
 
-        // Un gruppo con un solo figlio e senza nome non serve: il figlio assorbe la trasformazione.
+        // A group with a single child and no name is useless: the child absorbs the transform.
         static SceneObject MakeGroup(List<SceneObject> kids, Matrix3x2 tf, string? name, bool force = false)
         {
             if (kids.Count == 1 && name is null && !force)
@@ -657,7 +657,7 @@ public static class SvgFile
 
         static string Fmt(double? v) => (v ?? 0).ToString("0.######", CultureInfo.InvariantCulture);
 
-        // Colori, tratto, trasformazione e nome. false = l'oggetto non si vedrebbe.
+        // Colors, stroke, transform and name. false = the object would not be visible.
         bool Finish(SceneObject obj, St st, Dictionary<string, string> p, Matrix3x2 tf, string? name)
         {
             obj.Transform = tf;
@@ -670,7 +670,7 @@ public static class SvgFile
             return obj.Fill != null || obj.Stroke != null;
         }
 
-        // ---- Forme ----
+        // ---- Shapes ----
 
         SceneObject? MakeRect(Dictionary<string, string> p)
         {
@@ -730,7 +730,7 @@ public static class SvgFile
                     if (n is XText t) cur.Append(t.Value);
                     else if (n is XElement { Name.LocalName: "tspan" } c)
                     {
-                        // Un tspan con y o dy nuovi inizia una nuova riga.
+                        // A tspan with a new y or dy starts a new line.
                         var cp = Props(c);
                         if ((cp.ContainsKey("y") || cp.ContainsKey("dy")) && cur.ToString().Trim().Length > 0) Flush();
                         Walk(c);
@@ -754,7 +754,7 @@ public static class SvgFile
                 Align = st.Anchor switch { "middle" => "center", "end" => "right", _ => "left" }, X = x, Y = y,
             };
             text.Relayout(doc);
-            // (x, y) è la linea di base della prima riga e, con text-anchor, il suo centro o la sua fine.
+            // (x, y) is the baseline of the first line and, with text-anchor, its center or end.
             text.X = x - st.Anchor switch { "middle" => text.Width / 2, "end" => text.Width, _ => 0 };
             text.Y = y - text.Lines[0].Y;
             text.Relayout(doc);
@@ -790,14 +790,14 @@ public static class SvgFile
 }
 
 /// <summary>
-/// Importa un file o un testo SVG come un gruppo (un solo undo). `x`, `y`, `width` e `height` indicano dove va e quanto è grande il
-/// riquadro dell'illustrazione (se ne manca uno si mantiene la proporzione); senza, resta dov'è nell'SVG, in dimensione naturale.
+/// Imports an SVG file or text as a group (a single undo). `x`, `y`, `width` and `height` give where the artwork's box goes and how big it is
+/// (if one is missing the proportion is kept); without them it stays where it is in the SVG, at natural size.
 /// </summary>
 public sealed class ImportSvg : Command
 {
-    /// <summary>Percorso assoluto di un file .svg.</summary>
+    /// <summary>Absolute path of an .svg file.</summary>
     public string? Src { get; set; }
-    /// <summary>In alternativa: il testo SVG. Dopo l'applicazione viene accorciato.</summary>
+    /// <summary>Alternatively: the SVG text. Shortened after applying.</summary>
     public string? Svg { get; set; }
     public string? Name { get; set; }
     public double? X { get; set; }
@@ -805,7 +805,7 @@ public sealed class ImportSvg : Command
     public double? Width { get; set; }
     public double? Height { get; set; }
     public Placement? Rel { get; set; }
-    /// <summary>Nome del layer dove creare il gruppo; senza, il layer attivo.</summary>
+    /// <summary>Name of the layer where to create the group; without it, the active layer.</summary>
     public string? Layer { get; set; }
 
     const int MaxBytes = 20 * 1024 * 1024;
@@ -814,10 +814,10 @@ public sealed class ImportSvg : Command
     Layer? _layer;
     List<string> _notes = [];
 
-    /// <summary>Solo in uscita: id del gruppo creato.</summary>
+    /// <summary>Output only: id of the created group.</summary>
     public string? Id => _group?.Id;
 
-    /// <summary>Solo in uscita: cosa dell'SVG non è stato importato.</summary>
+    /// <summary>Output only: what of the SVG was not imported.</summary>
     public List<string>? Notes => _notes.Count == 0 ? null : _notes;
 
     [JsonIgnore] public override IEnumerable<string> CreatedIds => _group is null ? [] : [_group.Id];
@@ -866,7 +866,7 @@ public sealed class ImportSvg : Command
             SvgFile.AssignIds(doc, group);
             _group = group;
             _notes = notes;
-            if (Svg != null) Svg = $"(svg, {Svg.Length / 1024} KB)"; // il redo riusa l'oggetto: il testo non serve piu'
+            if (Svg != null) Svg = $"(svg, {Svg.Length / 1024} KB)"; // redo reuses the object: the text is no longer needed
         }
         _layer ??= doc.TargetLayer(Layer);
         _layer.Objects.Add(_group);

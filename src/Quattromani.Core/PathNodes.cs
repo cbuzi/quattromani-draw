@@ -2,10 +2,10 @@ using System.Numerics;
 
 namespace Quattromani.Core;
 
-/// <summary>Tipo di nodo, come negli editor vettoriali classici: cuspide = maniglie indipendenti; liscio = maniglie allineate (lunghezze libere); simmetrico = allineate e di uguale lunghezza.</summary>
+/// <summary>Node kind, as in classic vector editors: cusp = independent handles; smooth = aligned handles (free lengths); symmetric = aligned and of equal length.</summary>
 public enum NodeKind { Cusp, Smooth, Symmetric }
 
-/// <summary>Nodo di un path: In/Out sono le maniglie della curva in ingresso e in uscita (assenti = segmento dritto).</summary>
+/// <summary>A path node: In/Out are the handles of the incoming and outgoing curve (absent = straight segment).</summary>
 public sealed class PathNode(Vector2 p)
 {
     public Vector2 P = p;
@@ -14,7 +14,7 @@ public sealed class PathNode(Vector2 p)
 
     public PathNode Clone() => new(P) { In = In, Out = Out, Kind = Kind };
 
-    /// <summary>Tipo ricavato dalla geometria: serve per i path che non ne memorizzano uno (creati con la penna, importati, scritti dall'LLM).</summary>
+    /// <summary>Kind derived from the geometry: needed for paths that do not store one (created with the pen, imported, written by the LLM).</summary>
     public NodeKind Deduce()
     {
         if (In is not { } i || Out is not { } o) return NodeKind.Cusp;
@@ -37,12 +37,12 @@ public sealed class SubPath
     public (PathNode A, PathNode B) Segment(int i) => (Nodes[i], Nodes[(i + 1) % Nodes.Count]);
 }
 
-/// <summary>Modello a nodi di un path, per la modifica con lo strumento Nodi. Le coordinate sono quelle dei segmenti.</summary>
+/// <summary>Node model of a path, for editing with the Node tool. Coordinates are those of the segments.</summary>
 public static class PathNodes
 {
     static Vector2 V(double x, double y) => new((float)x, (float)y);
 
-    /// <param name="kinds">Un carattere per nodo ('c' cuspide, 's' liscio, 'y' simmetrico), nell'ordine dei nodi; se manca il tipo si deduce dalla geometria.</param>
+    /// <param name="kinds">One character per node ('c' cusp, 's' smooth, 'y' symmetric), in node order; if missing the kind is derived from the geometry.</param>
     public static List<SubPath> FromSegments(IEnumerable<PathSeg> segs, string? kinds = null)
     {
         var result = new List<SubPath>();
@@ -66,7 +66,7 @@ public static class PathNodes
                 case 'Z':
                     if (cur == null) break;
                     cur.Closed = true;
-                    // Se l'ultimo segmento torna esattamente al primo nodo, i due nodi sono lo stesso.
+                    // If the last segment returns exactly to the first node, the two nodes are the same.
                     if (cur.Nodes.Count > 2 && Vector2.Distance(cur.Nodes[^1].P, cur.Nodes[0].P) < 1e-4f)
                     {
                         cur.Nodes[0].In = cur.Nodes[^1].In;
@@ -86,7 +86,7 @@ public static class PathNodes
         return result;
     }
 
-    /// <summary>I tipi dei nodi, un carattere per nodo, nel formato accettato da FromSegments.</summary>
+    /// <summary>The kinds of the nodes, one character per node, in the format accepted by FromSegments.</summary>
     public static string KindsOf(IEnumerable<SubPath> subs) =>
         new(subs.SelectMany(sp => sp.Nodes).Select(n => n.Kind switch { NodeKind.Smooth => 's', NodeKind.Symmetric => 'y', _ => 'c' }).ToArray());
 
@@ -109,7 +109,7 @@ public static class PathNodes
             for (var i = 1; i < sp.Nodes.Count; i++) Seg(sp.Nodes[i - 1], sp.Nodes[i]);
             if (sp.Closed)
             {
-                // Il segmento di chiusura è esplicito solo se è una curva; altrimenti lo fa Z.
+                // The closing segment is explicit only if it is a curve; otherwise Z does it.
                 if (sp.Nodes[^1].Out != null || sp.Nodes[0].In != null) Seg(sp.Nodes[^1], sp.Nodes[0]);
                 segs.Add(new('Z'));
             }
@@ -119,7 +119,7 @@ public static class PathNodes
 
     public static List<SubPath> Clone(IEnumerable<SubPath> subs) => subs.Select(s => s.Clone()).ToList();
 
-    // ---- Geometria dei segmenti ---------------------------------------------------------------
+    // ---- Segment geometry ---------------------------------------------------------------
 
     static Vector2 Eval(PathNode a, PathNode b, float t)
     {
@@ -129,7 +129,7 @@ public static class PathNodes
         return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
     }
 
-    /// <summary>Punto del path più vicino a <paramref name="p"/>: (sottopath, segmento, parametro t, distanza).</summary>
+    /// <summary>Point of the path closest to <paramref name="p"/>: (subpath, segment, parameter t, distance).</summary>
     public static (int Sub, int Seg, float T, float Dist)? Nearest(List<SubPath> subs, Vector2 p)
     {
         (int, int, float, float)? best = null;
@@ -148,7 +148,7 @@ public static class PathNodes
         return best;
     }
 
-    /// <summary>Inserisce un nodo sul segmento senza cambiare la forma (de Casteljau per le curve). Restituisce l'indice del nuovo nodo.</summary>
+    /// <summary>Inserts a node on the segment without changing the shape (de Casteljau for curves). Returns the index of the new node.</summary>
     public static int InsertNode(SubPath sp, int seg, float t)
     {
         var (a, b) = sp.Segment(seg);
@@ -163,13 +163,13 @@ public static class PathNodes
             a.Out = q0 == a.P ? null : q0;
             b.In = q2 == b.P ? null : q2;
         }
-        n.Kind = n.In != null ? NodeKind.Smooth : NodeKind.Cusp; // sulla curva i due semi-segmenti sono allineati
+        n.Kind = n.In != null ? NodeKind.Smooth : NodeKind.Cusp; // on the curve the two half-segments are aligned
         var index = seg + 1;
         sp.Nodes.Insert(index, n);
         return index;
     }
 
-    /// <summary>Toglie un nodo (la forma si richiude tra i vicini). False se resterebbero troppo pochi nodi.</summary>
+    /// <summary>Removes a node (the shape closes up between the neighbors). False if too few nodes would remain.</summary>
     public static bool RemoveNode(SubPath sp, int index)
     {
         if (sp.Nodes.Count <= (sp.Closed ? 3 : 2)) return false;
@@ -177,9 +177,9 @@ public static class PathNodes
         return true;
     }
 
-    // ---- Operazioni sui nodi selezionati ------------------------------------------------------
+    // ---- Operations on the selected nodes ------------------------------------------------------
 
-    /// <summary>Segmenti tra due nodi selezionati; con un solo nodo selezionato, i due segmenti adiacenti.</summary>
+    /// <summary>Segments between two selected nodes; with a single selected node, the two adjacent segments.</summary>
     static IEnumerable<(SubPath Sp, int Seg)> SelectedSegments(List<SubPath> subs, ISet<(int Sub, int Idx)> sel)
     {
         for (var si = 0; si < subs.Count; si++)
@@ -217,7 +217,7 @@ public static class PathNodes
         }
     }
 
-    /// <summary>Rende lisci i nodi selezionati: maniglie allineate (create dai vicini se mancano), lunghezze conservate.</summary>
+    /// <summary>Makes the selected nodes smooth: aligned handles (created from the neighbors if missing), lengths preserved.</summary>
     public static void MakeSmooth(List<SubPath> subs, ISet<(int Sub, int Idx)> sel)
     {
         foreach (var (si, ni) in sel)
@@ -227,7 +227,7 @@ public static class PathNodes
             var prev = ni > 0 ? sp.Nodes[ni - 1] : sp.Closed ? sp.Nodes[cnt - 1] : null;
             var next = ni < cnt - 1 ? sp.Nodes[ni + 1] : sp.Closed ? sp.Nodes[0] : null;
 
-            // Direzione della tangente: dalle maniglie esistenti, altrimenti dai vicini.
+            // Tangent direction: from the existing handles, otherwise from the neighbors.
             Vector2 dir;
             if (n.In is { } i0 && n.Out is { } o0) dir = o0 - i0;
             else if (n.Out is { } o1) dir = o1 - n.P;
@@ -243,10 +243,10 @@ public static class PathNodes
         }
     }
 
-    /// <summary>Imposta il tipo dei nodi selezionati, adattando le maniglie (le crea dai nodi vicini se mancano).</summary>
+    /// <summary>Sets the kind of the selected nodes, adapting the handles (creating them from the neighbor nodes if missing).</summary>
     public static void SetKind(List<SubPath> subs, ISet<(int Sub, int Idx)> sel, NodeKind kind)
     {
-        if (kind != NodeKind.Cusp) MakeSmooth(subs, sel); // maniglie allineate, lunghezze conservate
+        if (kind != NodeKind.Cusp) MakeSmooth(subs, sel); // aligned handles, lengths preserved
         foreach (var (si, ni) in sel)
         {
             if (si >= subs.Count || ni >= subs[si].Nodes.Count) continue;
@@ -263,8 +263,8 @@ public static class PathNodes
     }
 
     /// <summary>
-    /// Sposta una maniglia. Cuspide: l'altra non si muove. Liscio: l'altra resta allineata conservando la lunghezza.
-    /// Simmetrico: l'altra è lo specchio. Con <paramref name="independent"/> (Alt) il nodo diventa una cuspide.
+    /// Moves a handle. Cusp: the other does not move. Smooth: the other stays aligned keeping its length.
+    /// Symmetric: the other is the mirror. With <paramref name="independent"/> (Alt) the node becomes a cusp.
     /// </summary>
     public static void MoveHandle(PathNode n, bool isOut, Vector2 pos, bool independent)
     {

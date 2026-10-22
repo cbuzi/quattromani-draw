@@ -1,19 +1,19 @@
 namespace Quattromani.Mcp;
 
-/// <summary>File e documento corrente: lo implementa l'app (che sa dov'è il documento, se ha modifiche non salvate e come esportare).</summary>
+/// <summary>Files and current document: implemented by the app (which knows where the document is, whether it has unsaved changes and how to export).</summary>
 public interface IFileService
 {
     string? CurrentPath { get; }
-    /// <summary>Il documento ha modifiche non ancora salvate.</summary>
+    /// <summary>The document has changes not yet saved.</summary>
     bool IsDirty { get; }
-    /// <summary>Salva in <paramref name="path"/> (o nel file corrente se null). Restituisce il percorso usato.</summary>
+    /// <summary>Saves to <paramref name="path"/> (or to the current file if null). Returns the path used.</summary>
     string Save(string? path);
     void Open(string path);
-    /// <summary>Nuovo documento vuoto.</summary>
+    /// <summary>New empty document.</summary>
     void New();
     void ExportPdf(string path);
     void ExportSvg(string path);
-    /// <summary>PNG della pagina: <paramref name="scale"/> pixel per unità documento (1 = 96 dpi); sfondo "#RRGGBB", "#RRGGBBAA" o "transparent" (null = trasparente).</summary>
-    /// <returns>Dimensioni dell'immagine in pixel.</returns>
+    /// <summary>PNG of the page: <paramref name="scale"/> pixels per document unit (1 = 96 dpi); background "#RRGGBB", "#RRGGBBAA" or "transparent" (null = transparent).</summary>
+    /// <returns>Size of the image in pixels.</returns>
     (int Width, int Height) ExportPng(string path, double scale, string? background);
 }

@@ -3,8 +3,8 @@ using System.Text.Json.Serialization;
 namespace Quattromani.Core;
 
 /// <summary>
-/// Vettorializza una maschera di pixel: contorni lungo i bordi dei pixel (i buchi hanno verso opposto, quindi il riempimento "nonzero"
-/// li lascia vuoti), poi curve bezier adattate ai contorni (adattamento ai minimi quadrati, con angoli netti dove il contorno gira di colpo).
+/// Vectorizes a pixel mask: outlines along pixel edges (holes have the opposite direction, so the "nonzero" fill
+/// leaves them empty), then bezier curves fitted to the outlines (least-squares fit, with sharp corners where the outline turns abruptly).
 /// </summary>
 public static class ImageTrace
 {
@@ -20,10 +20,10 @@ public static class ImageTrace
 
     static readonly (int Dx, int Dy)[] Dirs = [(1, 0), (0, 1), (-1, 0), (0, -1)]; // E, S, W, N
 
-    /// <param name="mask">w*h valori, true = da riempire.</param>
-    /// <param name="minArea">I contorni (e i buchi) più piccoli, in pixel², vengono scartati.</param>
-    /// <param name="tolerance">Errore massimo delle curve rispetto al contorno, in pixel.</param>
-    /// <returns>Segmenti M/C/Z in coordinate pixel (0..w, 0..h); vuoto se non c'è nulla.</returns>
+    /// <param name="mask">w*h values, true = to fill.</param>
+    /// <param name="minArea">Outlines (and holes) smaller than this, in pixel², are discarded.</param>
+    /// <param name="tolerance">Maximum error of the curves with respect to the outline, in pixels.</param>
+    /// <returns>M/C/Z segments in pixel coordinates (0..w, 0..h); empty if there is nothing.</returns>
     public static List<PathSeg> Trace(bool[] mask, int w, int h, double minArea, double tolerance)
     {
         var result = new List<PathSeg>();
@@ -32,13 +32,13 @@ public static class ImageTrace
 
         bool Fg(int x, int y) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x];
 
-        // Il bordo che parte dall'angolo (x, y) nella direzione d: tiene il pieno alla sua sinistra.
+        // The edge starting at corner (x, y) in direction d: keeps the filled area on its left.
         bool Edge(int x, int y, int d) => d switch
         {
-            0 => Fg(x, y - 1) && !Fg(x, y),         // E: lato basso del pixel in alto a destra
-            1 => Fg(x, y) && !Fg(x - 1, y),         // S: lato sinistro del pixel in basso a destra
-            2 => Fg(x - 1, y) && !Fg(x - 1, y - 1), // W: lato alto del pixel in basso a sinistra
-            _ => Fg(x - 1, y - 1) && !Fg(x, y - 1), // N: lato destro del pixel in alto a sinistra
+            0 => Fg(x, y - 1) && !Fg(x, y),         // E: bottom side of the pixel at the top right
+            1 => Fg(x, y) && !Fg(x - 1, y),         // S: left side of the pixel at the bottom right
+            2 => Fg(x - 1, y) && !Fg(x - 1, y - 1), // W: top side of the pixel at the bottom left
+            _ => Fg(x - 1, y - 1) && !Fg(x, y - 1), // N: right side of the pixel at the top left
         };
 
         for (var y = 0; y <= h; y++)
@@ -47,7 +47,7 @@ public static class ImageTrace
                 {
                     if ((visited[y * stride + x] & (1 << d0)) != 0 || !Edge(x, y, d0)) continue;
 
-                    // Percorre il contorno un passo alla volta; ai punti di sella (due uscite) gira a destra.
+                    // Walks the outline one step at a time; at saddle points (two exits) it turns right.
                     var ring = new List<V>();
                     int cx = x, cy = y, d = d0;
                     double area = 0;
@@ -55,7 +55,7 @@ public static class ImageTrace
                     {
                         visited[cy * stride + cx] |= (byte)(1 << d);
                         int nx = cx + Dirs[d].Dx, ny = cy + Dirs[d].Dy;
-                        // Punto medio del passo: smussa gli scalini dei pixel.
+                        // Midpoint of the step: smooths the pixel staircase.
                         ring.Add(new((cx + nx) / 2.0, (cy + ny) / 2.0));
                         area += (double)cx * ny - (double)nx * cy;
                         (cx, cy) = (nx, ny);
@@ -71,16 +71,16 @@ public static class ImageTrace
         return result;
     }
 
-    // ---- Adattamento ai punti ------------------------------------------------------------------
+    // ---- Point fitting ------------------------------------------------------------------
 
-    const int Reach = 3; // quanti punti prima e dopo per misurare la curvatura
+    const int Reach = 3; // how many points before and after to measure the curvature
 
     static void Fit(List<V> ring, double tolerance, List<PathSeg> output)
     {
         int n = ring.Count;
         V At(int i) => ring[((i % n) + n) % n];
 
-        // Angoli: dove il contorno gira di colpo (angolo interno < 120°); tra candidati vicini vale il più acuto.
+        // Corners: where the outline turns abruptly (interior angle < 120°); among nearby candidates the sharpest wins.
         var interior = new double[n];
         for (var i = 0; i < n; i++)
         {
@@ -100,7 +100,7 @@ public static class ImageTrace
         var err = Math.Max(0.1, tolerance);
         if (corners.Count == 0)
         {
-            // Contorno liscio: un'unica curva chiusa, con tangente continua nel punto di giunzione.
+            // Smooth outline: a single closed curve, with continuous tangent at the joint.
             var run = Enumerable.Range(0, n + 1).Select(At).ToList();
             var t = (At(Reach) - At(-Reach)).Unit();
             output.Add(new('M', X: run[0].X, Y: run[0].Y));
@@ -146,7 +146,7 @@ public static class ImageTrace
                 u = u2;
             }
 
-        // Si divide dove l'errore è massimo, con tangente comune nel punto di taglio.
+        // Split where the error is largest, with a common tangent at the cut point.
         split = Math.Clamp(split, first + 1, last - 1);
         var center = (d[split - 1] - d[split + 1]).Unit();
         FitCubic(d, first, split, t1, center, errSq, output);
@@ -181,7 +181,7 @@ public static class ImageTrace
         double alpha1 = Math.Abs(det) > 1e-12 ? (x0 * c11 - x1 * c01) / det : 0;
         double alpha2 = Math.Abs(det) > 1e-12 ? (c00 * x1 - c01 * x0) / det : 0;
         var seg = (p3 - p0).Len;
-        // Se le maniglie sono rovesciate o nulle si ripiega sull'euristica di un terzo della corda.
+        // If the handles are reversed or null, fall back to the heuristic of a third of the chord.
         if (alpha1 < seg * 1e-6 || alpha2 < seg * 1e-6) alpha1 = alpha2 = seg / 3;
         return [p0, p0 + t1 * alpha1, p3 + t2 * alpha2, p3];
     }
@@ -217,18 +217,18 @@ public static class ImageTrace
 }
 
 /// <summary>
-/// Vettorializza un'immagine raster in bianco e nero: crea un path (tutti i contorni, con i buchi) sopra l'immagine.
-/// Il path ha la stessa trasformazione dell'immagine, quindi coincide con essa; con keepOriginal false l'immagine viene tolta.
+/// Vectorizes a black-and-white raster image: creates a path (all outlines, with holes) above the image.
+/// The path has the same transform as the image, so it coincides with it; with keepOriginal false the image is removed.
 /// </summary>
 public sealed class TraceImage : Command
 {
     public string Target { get; set; } = "";
-    /// <summary>Luminosità (0-255) sotto cui un pixel è "pieno". Con invert vale il contrario.</summary>
+    /// <summary>Brightness (0-255) below which a pixel is "filled". With invert the opposite applies.</summary>
     public int Threshold { get; set; } = 128;
     public bool Invert { get; set; }
-    /// <summary>Macchie e buchi più piccoli di così (pixel² dell'immagine) vengono ignorati.</summary>
+    /// <summary>Specks and holes smaller than this (image pixels²) are ignored.</summary>
     public double MinArea { get; set; } = 4;
-    /// <summary>Errore massimo delle curve in pixel dell'immagine: più alto = meno nodi e linee più morbide.</summary>
+    /// <summary>Maximum error of the curves in image pixels: higher = fewer nodes and softer lines.</summary>
     public double Smooth { get; set; } = 1;
     public string? Fill { get; set; }
     public string? Name { get; set; }
@@ -258,7 +258,7 @@ public sealed class TraceImage : Command
             var decode = doc.ImagePixels ?? throw new CommandException("The image decoder is not available.");
             var px = decode(img.Data, MaxSide) ?? throw new CommandException("image.trace: the image cannot be read.");
 
-            // Pieno = opaco e scuro (o chiaro, con invert).
+            // Filled = opaque and dark (or light, with invert).
             var mask = new bool[px.Width * px.Height];
             for (var i = 0; i < mask.Length; i++)
             {
@@ -271,7 +271,7 @@ public sealed class TraceImage : Command
             if (segs.Count == 0)
                 throw new CommandException("image.trace: no shape found with this threshold. Try changing 'threshold' or using \"invert\":true.");
 
-            // Dai pixel allo spazio locale dell'immagine (che ha la sua trasformazione).
+            // From pixels to the image's local space (which has its own transform).
             double sx = img.Width / px.Width, sy = img.Height / px.Height;
             segs = segs.Select(s => new PathSeg(s.Op, img.X + s.X1 * sx, img.Y + s.Y1 * sy, img.X + s.X2 * sx, img.Y + s.Y2 * sy, img.X + s.X * sx, img.Y + s.Y * sy)).ToList();
             var box = PathData.Bounds(segs)!.Value;

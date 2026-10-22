@@ -3,24 +3,24 @@ using System.Text.Json.Serialization;
 namespace Quattromani.Core;
 
 /// <summary>
-/// Operazioni booleane su regioni poligonali (curve appiattite), senza dipendenze.
-/// Coordinate su una griglia intera di 1/1024: i predicati geometrici sono esatti, quindi bordi coincidenti,
-/// tangenze e intersezioni negli stessi punti non danno errori di arrotondamento.
-/// Algoritmo: (1) tutti i segmenti vengono spezzati nelle intersezioni; (2) ogni pezzo viene classificato
-/// dentro/fuori sui due lati con un raggio contro i contorni originali (regola nonzero, come il rendering);
-/// (3) i pezzi di confine vengono concatenati in anelli con l'interno a sinistra.
+/// Boolean operations on polygonal regions (flattened curves), without dependencies.
+/// Coordinates on an integer grid of 1/1024: geometric predicates are exact, so coincident edges,
+/// tangencies and intersections at the same points produce no rounding errors.
+/// Algorithm: (1) all segments are split at the intersections; (2) each piece is classified
+/// inside/outside on both sides with a ray against the original outlines (nonzero rule, like rendering);
+/// (3) the boundary pieces are chained into rings with the interior on the left.
 /// </summary>
 internal static class PolyBoolean
 {
     public const double Scale = 1024;
-    const double Tolerance = 0.05; // errore massimo dell'appiattimento delle curve, in unità documento
-    const double MaxCoord = 1e5;   // oltre questo i prodotti in long potrebbero andare in overflow
+    const double Tolerance = 0.05; // maximum error of the curve flattening, in document units
+    const double MaxCoord = 1e5;   // beyond this the long products could overflow
 
     public readonly record struct P(long X, long Y);
 
-    // ---- Appiattimento ------------------------------------------------------------------------
+    // ---- Flattening ------------------------------------------------------------------------
 
-    /// <summary>Contorni dell'oggetto (nello spazio del suo contenitore), con le curve appiattite.</summary>
+    /// <summary>Outlines of the object (in the space of its container), with flattened curves.</summary>
     public static List<List<P>> Flatten(SceneObject o)
     {
         List<PathSeg> segs;
@@ -91,7 +91,7 @@ internal static class PolyBoolean
                     break;
                 }
                 case 'Z':
-                    // Un subpath chiuso riparte, se continua, dal suo primo punto (come nel parser).
+                    // A closed subpath restarts, if it continues, from its first point (as in the parser).
                     var first = pts.Count > 0 ? pts[0] : (cx, cy);
                     Finish();
                     cx = first.Item1; cy = first.Item2;
@@ -103,7 +103,7 @@ internal static class PolyBoolean
         return rings;
     }
 
-    // ---- Operazione ---------------------------------------------------------------------------
+    // ---- Operation ---------------------------------------------------------------------------
 
     sealed class Edge(long ax, long ay, long bx, long by, int op)
     {
@@ -115,12 +115,12 @@ internal static class PolyBoolean
     }
 
     /// <summary>
-    /// Regione risultante: <paramref name="inside"/> riceve per ogni operando se il punto è dentro (nonzero).
-    /// Restituisce anelli con l'interno a sinistra (esterni e buchi hanno orientamenti opposti).
+    /// Resulting region: <paramref name="inside"/> receives for each operand whether the point is inside (nonzero).
+    /// Returns rings with the interior on the left (outer rings and holes have opposite orientations).
     /// </summary>
     public static List<List<P>> Compute(List<List<List<P>>> operands, Func<bool[], bool> inside)
     {
-        // 1. Segmenti originali.
+        // 1. Original segments.
         var edges = new List<Edge>();
         for (var k = 0; k < operands.Count; k++)
             foreach (var ring in operands[k])
@@ -130,7 +130,7 @@ internal static class PolyBoolean
                     if (a != b) edges.Add(new Edge(a.X, a.Y, b.X, b.Y, k));
                 }
 
-        // 2. Spezza i segmenti nelle intersezioni (sweep sull'asse x).
+        // 2. Split the segments at the intersections (sweep on the x axis).
         var order = Enumerable.Range(0, edges.Count).OrderBy(i => Math.Min(edges[i].AX, edges[i].BX)).ToArray();
         for (var ii = 0; ii < order.Length; ii++)
         {
@@ -145,9 +145,9 @@ internal static class PolyBoolean
             }
         }
 
-        // 3. Pezzi unici (i tratti sovrapposti di operandi diversi diventano un solo pezzo).
-        // Per ogni pezzo si ricordano i segmenti originali da cui deriva: l'arrotondamento delle intersezioni può portare
-        // il suo punto medio appena fuori dal segmento, quindi non basta un controllo geometrico per riconoscerli.
+        // 3. Unique pieces (overlapping stretches of different operands become a single piece).
+        // For each piece we remember the original segments it derives from: rounding of the intersections can put
+        // its midpoint just outside the segment, so a geometric check is not enough to recognize them.
         var pieces = new Dictionary<(long, long, long, long), List<Edge>>();
         foreach (var e in edges)
         {
@@ -173,17 +173,17 @@ internal static class PolyBoolean
         if ((long)pieces.Count * edges.Count > 1_000_000_000)
             throw new CommandException("shape.boolean: the shapes are too complex (too many segments and crossings). Simplify the paths.");
 
-        // 4. Classifica ogni pezzo dai due lati; tiene quelli sul confine, orientati con l'interno a sinistra.
+        // 4. Classify each piece on both sides; keep those on the boundary, oriented with the interior on the left.
         var byOp = Enumerable.Range(0, operands.Count).Select(k => edges.Where(e => e.Op == k).ToArray()).ToArray();
         var left = new bool[operands.Count];
         var right = new bool[operands.Count];
         var boundary = new List<(P From, P To)>();
-        const double tilt = 0.0031415926; // il raggio è leggermente inclinato per evitare di passare dai vertici
+        const double tilt = 0.0031415926; // the ray is slightly tilted to avoid passing through vertices
 
         foreach (var ((x1, y1, x2, y2), sources) in pieces)
         {
             double ex = x2 - x1, ey = y2 - y1, len = Math.Sqrt(ex * ex + ey * ey);
-            double nx = -ey / len, ny = ex / len; // normale sinistra
+            double nx = -ey / len, ny = ex / len; // left normal
             double mx = (x1 + x2) / 2.0, my = (y1 + y2) / 2.0;
             long m2x = x1 + x2, m2y = y1 + y2;
             double cs = Math.Cos(tilt), sn = Math.Sin(tilt);
@@ -197,7 +197,7 @@ internal static class PolyBoolean
             boundary.Add(inL ? (new P(x1, y1), new P(x2, y2)) : (new P(x2, y2), new P(x1, y1)));
         }
 
-        // 5. Concatena i pezzi in anelli.
+        // 5. Chain the pieces into rings.
         var outgoing = new Dictionary<P, List<int>>();
         for (var i = 0; i < boundary.Count; i++)
         {
@@ -216,7 +216,7 @@ internal static class PolyBoolean
             {
                 ring.Add(cur);
                 var next = outgoing.TryGetValue(cur, out var l) ? l.FirstOrDefault(j => !used[j], -1) : -1;
-                if (next < 0) break; // catena non chiusa (rumore numerico): l'anello si chiude con un segmento
+                if (next < 0) break; // chain not closed (numerical noise): the ring is closed with a segment
                 used[next] = true;
                 cur = boundary[next].To;
             }
@@ -234,8 +234,8 @@ internal static class PolyBoolean
 
         if (den == 0)
         {
-            if (qx * ry - qy * rx != 0) return; // paralleli, non allineati
-            // Allineati: gli estremi di uno che cadono dentro l'altro lo spezzano.
+            if (qx * ry - qy * rx != 0) return; // parallel, not aligned
+            // Aligned: the ends of one that fall inside the other split it.
             long rr = rx * rx + ry * ry, ss = sx * sx + sy * sy;
             foreach (var (px, py) in new[] { (f.AX, f.AY), (f.BX, f.BY) })
             {
@@ -255,7 +255,7 @@ internal static class PolyBoolean
         if (den < 0) { den = -den; tNum = -tNum; uNum = -uNum; }
         if (tNum < 0 || tNum > den || uNum < 0 || uNum > den) return;
 
-        // Se l'incrocio cade su un estremo si usa quello esatto, così entrambi i segmenti condividono lo stesso vertice.
+        // If the crossing falls on an endpoint the exact one is used, so both segments share the same vertex.
         long x, y;
         if (tNum == 0) (x, y) = (e.AX, e.AY);
         else if (tNum == den) (x, y) = (e.BX, e.BY);
@@ -270,8 +270,8 @@ internal static class PolyBoolean
         if (uNum > 0 && uNum < den) f.AddSplit((double)uNum / den, x, y);
     }
 
-    // Numero di avvolgimento del punto (origine del raggio) rispetto ai contorni di un operando.
-    // Sono esclusi i segmenti da cui deriva il pezzo che stiamo classificando (e quelli che lo contengono esattamente).
+    // Winding number of the point (ray origin) with respect to the outlines of an operand.
+    // The segments the piece being classified derives from (and those that contain it exactly) are excluded.
     static int Winding(Edge[] edges, List<Edge> sources, double mx, double my, double dx, double dy, long m2x, long m2y)
     {
         var w = 0;
@@ -288,13 +288,13 @@ internal static class PolyBoolean
             if ((sa > 0) == (sb > 0)) continue;
             double ex = bx - ax, ey = by - ay, den = dx * ey - dy * ex;
             if (den == 0) continue;
-            if ((ax * ey - ay * ex) / den <= 0) continue; // dietro l'origine
+            if ((ax * ey - ay * ex) / den <= 0) continue; // behind the origin
             w += den > 0 ? 1 : -1;
         }
         return w;
     }
 
-    // Toglie vertici duplicati, allineati e "spike" (esatto, in interi).
+    // Removes duplicate, collinear and "spike" vertices (exact, in integers).
     static List<P> Simplify(List<P> ring)
     {
         var r = ring;
@@ -343,9 +343,9 @@ internal static class PolyBoolean
 }
 
 /// <summary>
-/// Operazione booleana tra forme dello stesso livello. Il risultato è un path con lo stile dell'oggetto più in basso (z-order).
-/// weld = unione; intersect = intersezione; subtract = il più basso meno tutti gli altri (gli altri spariscono);
-/// trim = come subtract ma gli oggetti che tagliano restano. Con keepOriginals gli originali restano (tranne il tagliato da trim).
+/// Boolean operation between shapes at the same level. The result is a path with the style of the lowest object (z-order).
+/// weld = union; intersect = intersection; subtract = the lowest minus all the others (the others disappear);
+/// trim = like subtract but the cutting objects stay. With keepOriginals the originals stay (except the one cut by trim).
 /// </summary>
 public sealed class BooleanOp : Command
 {
@@ -359,7 +359,7 @@ public sealed class BooleanOp : Command
     List<(int Index, SceneObject Obj)> _removed = [];
     int _insertIndex;
 
-    /// <summary>Solo in uscita: id del path risultante.</summary>
+    /// <summary>Output only: id of the resulting path.</summary>
     public string? Id => _result?.Id;
 
     [JsonIgnore] public override IEnumerable<string> CreatedIds => _result is null ? [] : [_result.Id];
@@ -382,7 +382,7 @@ public sealed class BooleanOp : Command
             {
                 "weld" => f => f.Any(x => x),
                 "intersect" => f => f.All(x => x),
-                _ => f => f[0] && !f.Skip(1).Any(x => x), // subtract e trim: il più basso meno gli altri
+                _ => f => f[0] && !f.Skip(1).Any(x => x), // subtract and trim: the lowest minus the others
             };
             var rings = PolyBoolean.Compute(operands, inside);
             if (rings.Count == 0)
@@ -399,10 +399,10 @@ public sealed class BooleanOp : Command
             };
         }
 
-        // Trim toglie solo l'oggetto tagliato; gli altri operatori tolgono tutti (salvo keepOriginals).
+        // Trim only removes the cut object; the other operators remove all (unless keepOriginals).
         _removed = Op == "trim" ? [entries[0]] : KeepOriginals ? [] : entries;
         foreach (var (_, obj) in _removed) container.Remove(obj);
-        // Il risultato prende il posto del più basso; se non si toglie nulla va sopra tutti.
+        // The result takes the place of the lowest; if nothing is removed it goes on top of all.
         _insertIndex = _removed.Count == 0 ? entries[^1].Index + 1 : entries[0].Index;
         container.Insert(_insertIndex, _result);
         _container = container;
