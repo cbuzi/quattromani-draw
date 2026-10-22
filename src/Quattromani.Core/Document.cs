@@ -143,6 +143,9 @@ public sealed partial class Document
     /// <summary>Dimensioni in pixel di un'immagine (null se i byte non sono un'immagine leggibile); fornita dall'app.</summary>
     public Func<byte[], (int Width, int Height)?>? ImageProbe { get; set; }
 
+    /// <summary>Pixel RGBA (non premoltiplicati, 4 byte l'uno) di un'immagine, ridotta se supera la dimensione indicata sul lato lungo; fornita dall'app.</summary>
+    public Func<byte[], int, (int Width, int Height, byte[] Rgba)?>? ImagePixels { get; set; }
+
     /// <summary>Incrementata dal CommandBus per ogni comando applicato.</summary>
     public long Version { get; internal set; }
     public List<Page> Pages { get; } = [new()];

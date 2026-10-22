@@ -272,6 +272,17 @@ static class SceneRenderer
         }
     }
 
+    // Pixel RGBA non premoltiplicati, ridotti (se serve) a maxSide sul lato lungo.
+    public static (int Width, int Height, byte[] Rgba)? Pixels(byte[] data, int maxSide)
+    {
+        using var src = SKBitmap.Decode(data);
+        if (src is null) return null;
+        var k = Math.Min(1.0, (double)maxSide / Math.Max(src.Width, src.Height));
+        int w = Math.Max(1, (int)Math.Round(src.Width * k)), h = Math.Max(1, (int)Math.Round(src.Height * k));
+        using var dst = new SKBitmap(new SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Unpremul));
+        return src.ScalePixels(dst, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)) ? (w, h, dst.GetPixelSpan().ToArray()) : null;
+    }
+
     public static (int Width, int Height)? Probe(byte[] data)
     {
         using var codec = SKCodec.Create(new SKMemoryStream(data));

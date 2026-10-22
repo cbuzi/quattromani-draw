@@ -110,6 +110,7 @@ public partial class MainWindow
                 Entry("Distribute Vertically", () => DistributeSelected("y", "gaps")),
                 new NativeMenuItemSeparator(),
                 Entry("Fit Text to Path", FitTextToPath),
+                Entry("Trace Image", () => _ = TraceSelectedAsync()),
             },
         };
         var pillItem = new NativeMenuItem("Show Agent Label") { ToggleType = MenuItemToggleType.CheckBox, IsChecked = Canvas.ShowAgentPill };
@@ -237,5 +238,18 @@ public partial class MainWindow
             Canvas.SetSelection(r.CreatedIds);
         }
         catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
+    }
+
+    // Vettorializza l'immagine selezionata con i valori di default; il risultato (un path) sta sopra l'originale.
+    async Task TraceSelectedAsync()
+    {
+        var id = _bus.Read(d => Canvas.SelectedIds.Select(i => d.AllObjects.FirstOrDefault(o => o.Id == i)).OfType<ImageObject>().FirstOrDefault()?.Id);
+        if (id == null) { ShowNotice("Select an image to trace."); return; }
+        try
+        {
+            var r = await Task.Run(() => _bus.Execute([new TraceImage { Target = id }]));
+            Canvas.SetSelection(r.CreatedIds);
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 }

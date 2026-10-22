@@ -15,7 +15,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     [Description("""
         Returns the current document as compact JSON: {"version":N,"page":{"width":W,"height":H,"guides":[{"axis":"x","position":100}]},"objects":[{id,name,type,bounds:[x,y,width,height],fill,stroke,strokeWidth}]}.
         All coordinates and sizes are document pixels (96 dpi, like CSS px); the page starts at (0,0) at the top-left and extends to (width,height) (A4 portrait = 793.7 x 1122.52). Objects may lie outside the page.
-        type is "rectangle", "ellipse", "path", "text", "image" or "group". Images include `pixels` ([w,h] of the embedded bitmap; the data itself is never returned). Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z);
+        type is "rectangle", "ellipse", "path", "text", "image" or "group". Images include `pixels` ([w,h] of the embedded bitmap; the data itself is never returned). Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z; very large paths report only `nodes` instead);
         groups include `children` (same structure, listed bottom to top).
         `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
         Objects are listed bottom to top (the last one is drawn on top). Bounds are in document pixels, y grows downward.
@@ -30,10 +30,13 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     }, Json.Options));
 
     sealed record ObjInfo(string Id, string? Name, string Type, double[] Bounds, double? Rotation, double[]? Size,
-        string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children,
+        string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children, int? Nodes,
         int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null);
 
     // `parent` porta dallo spazio del contenitore (gruppo) allo spazio pagina.
+    // Un path tracciato può avere migliaia di nodi: oltre questa soglia get_document non riporta `d` (solo `nodes`).
+    const int MaxPathSegments = 1500;
+
     static ObjInfo Describe(SceneObject o, Matrix3x2 parent)
     {
         var world = o.Transform * parent;
@@ -44,8 +47,9 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         return new ObjInfo(o.Id, o.Name, o.Type, [R(b.X), R(b.Y), R(b.Width), R(b.Height)],
             rotated ? R(rotation) : null, rotated ? [R(o.Width), R(o.Height)] : null,
             o.Fill, o.Stroke, o.StrokeWidth == 0 ? null : o.StrokeWidth,
-            o is PathObject p ? PathData.ToString(PathData.Transform(p.Segments, p.Fit * world)) : null,
+            o is PathObject { Segments.Count: <= MaxPathSegments } p ? PathData.ToString(PathData.Transform(p.Segments, p.Fit * world)) : null,
             o is GroupObject g ? g.Children.Select(c => Describe(c, g.Fit * world)).ToList() : null,
+            o is PathObject { Segments.Count: > MaxPathSegments } big ? big.Segments.Count : null,
             o is ImageObject im ? [im.PixelWidth, im.PixelHeight] : null,
             (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
             o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null);
@@ -59,6 +63,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
           {"cmd":"shape.create","type":"image","name":"sketch","src":"/Users/me/sketch.png","x":0,"y":0,"width":400}   (embeds a bitmap: PNG, JPEG, GIF, WebP or BMP; `src` = absolute file path or "data:image/png;base64,..."; omit width and height for the native size, give only one to keep the proportions; accepts rel; fill = background under transparent parts, stroke = frame. Handy as a reference to trace over: place it, call render, then draw vector shapes on top. Images move/resize/rotate/group/align like any object but cannot become paths or enter shape.boolean)
+          {"cmd":"image.trace","target":"sketch","threshold":128,"smooth":1,"fill":"#000000","keepOriginal":true}   (vectorizes an imported image in black and white: dark pixels become ONE path with holes, drawn right above the image with the same position; returns the path id in `created`. threshold 1-255 = brightness below which a pixel is filled (default 128); "invert":true fills the light pixels instead; minArea = specks smaller than this many image pixels are ignored (default 4); smooth 0.2-5 = curve tolerance in image pixels, higher = fewer nodes and softer lines (default 1); keepOriginal:false removes the image. Transparent pixels count as empty. Good for line art, logos and sketches; photos give huge paths. Render to check, retry with another threshold if it is too thick or too thin)
           {"cmd":"page.set","preset":"A4","orientation":"landscape"}   (page size: preset A0-A8, B4-B6, Letter, Legal, Tabloid, Executive, HD, FullHD, Square; or {"cmd":"page.set","width":210,"height":297,"unit":"mm"} with unit px|mm|cm|in|pt (default px); or only "orientation")
           {"cmd":"object.rename","target":"o3","name":"sun"}   (names like "o12" are reserved for ids; an empty name removes the name)
           {"cmd":"object.order","targets":["sun"],"action":"front"}   (stacking order: front, back, forward, backward; or "above":"sky" / "below":"sky" to sit right above/below another object; objects in the same layer/group; several targets keep their relative order)
@@ -126,7 +131,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }
