@@ -25,6 +25,26 @@ public partial class MainWindow
         catch (CommandException ex) { ShowNotice(ex.Message); return null; }
     }
 
+    // ---- Launch agent -----------------------------------------------------------------------------
+
+    void InitAgents()
+    {
+        MenuLaunchClaude.Click += (_, _) => LaunchAgent(AgentLauncher.Agents[0]);
+        MenuLaunchCodex.Click += (_, _) => LaunchAgent(AgentLauncher.Agents[1]);
+        MenuLaunchOpenCode.Click += (_, _) => LaunchAgent(AgentLauncher.Agents[2]);
+        MenuConnectManual.Click += (_, _) => App.ShowAbout();
+    }
+
+    void LaunchAgent(AgentLauncher.Agent agent)
+    {
+        try
+        {
+            AgentLauncher.Launch(agent);
+            ShowNotice($"Starting {agent.Name} in a terminal. Describe what to draw there; you will see its work appear here.", error: false);
+        }
+        catch (InvalidOperationException ex) { ShowNotice(ex.Message); }
+    }
+
     void InitLayers()
     {
         Canvas.Notice += message => ShowNotice(message);

@@ -189,7 +189,24 @@
                         <Button x:Name="NodeDeleteButton" Classes="bar" Content="Delete node" ToolTip.Tip="Delete the selected nodes (Delete)" />
                     </StackPanel>
                 </StackPanel>
-                <Button x:Name="ThemeButton" Grid.Column="2" Classes="bar" Width="38" Height="38" Padding="0" VerticalAlignment="Center" ToolTip.Tip="Switch between light and dark theme">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <Button x:Name="AgentButton" Classes="bar" Padding="12,6" VerticalAlignment="Center" ToolTip.Tip="Start an AI agent in a terminal, connected to this document">
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuItem x:Name="MenuLaunchClaude" Header="Claude Code" />
+                            <MenuItem x:Name="MenuLaunchCodex" Header="Codex" />
+                            <MenuItem x:Name="MenuLaunchOpenCode" Header="OpenCode" />
+                            <Separator />
+                            <MenuItem x:Name="MenuConnectManual" Header="Connect manually…" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Data="M4,5 H20 V17 H10 L6,21 V17 H4 Z M8,10 L10.5,12 L8,14 M12.5,14 H16" StrokeThickness="1.6" StrokeLineCap="Round" StrokeJoin="Round" Width="24" Height="24" Stretch="None"
+                              Stroke="{Binding $parent[Button].Foreground}" />
+                        <TextBlock Text="Launch agent" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="ThemeButton" Classes="bar" Width="38" Height="38" Padding="0" VerticalAlignment="Center" ToolTip.Tip="Switch between light and dark theme">
                     <Grid Width="24" Height="24">
                         <!-- The button shows the theme it switches to: sun when dark, moon when light. -->
                         <Path x:Name="MoonIcon" Data="M13,3 A9,9 0 1 0 21,13 A7,7 0 0 1 13,3 Z" StrokeThickness="1.7" StrokeJoin="Round" Stretch="None"
@@ -198,6 +215,7 @@
                               StrokeThickness="1.7" StrokeLineCap="Round" StrokeJoin="Round" Stretch="None" Stroke="{Binding $parent[Button].Foreground}" />
                     </Grid>
                 </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

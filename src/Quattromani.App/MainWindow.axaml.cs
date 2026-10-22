@@ -55,6 +55,7 @@ public partial class MainWindow : Window
         Selection = new CanvasSelection(Canvas);
         InitFiles();
         InitLayers();
+        InitAgents();
         InitStrokeStyle();
         Canvas.Bus = _bus;
 

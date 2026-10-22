@@ -191,7 +191,17 @@ public partial class MainWindow
         var pillItem = new NativeMenuItem("Show Agent Label") { ToggleType = MenuItemToggleType.CheckBox, IsChecked = Canvas.ShowAgentPill };
         pillItem.Click += (_, _) => Canvas.ShowAgentPill = pillItem.IsChecked;
         var view = new NativeMenuItem("View") { Menu = new NativeMenu { pillItem } };
-        var help = new NativeMenuItem("Help") { Menu = new NativeMenu { Entry("Connect an AI agent…", App.ShowAbout) } };
+        var help = new NativeMenuItem("Help")
+        {
+            Menu = new NativeMenu
+            {
+                Entry("Launch Claude Code", () => LaunchAgent(AgentLauncher.Agents[0])),
+                Entry("Launch Codex", () => LaunchAgent(AgentLauncher.Agents[1])),
+                Entry("Launch OpenCode", () => LaunchAgent(AgentLauncher.Agents[2])),
+                new NativeMenuItemSeparator(),
+                Entry("Connect an AI agent manually…", App.ShowAbout),
+            },
+        };
         NativeMenu.SetMenu(this, new NativeMenu { file, edit, obj, view, help });
     }
 
