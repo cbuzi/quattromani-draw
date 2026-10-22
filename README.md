@@ -198,3 +198,5 @@ Need to use Quattromani Draw under different terms — for example inside a prod
 ## Inspiration
 
 Quattromani is its own thing, but it learned from good teachers: [CorelDRAW](https://www.coreldraw.com/) for what a vector editor should feel like, [Penpot's MCP](https://penpot.app/) for how an editor can talk to agents, [Graphite](https://graphite.rs/) for a message-based editor architecture, and [Paper.js](http://paperjs.org/) and [kurbo](https://github.com/linebender/kurbo) for the geometry of Bézier curves.
+
+*CorelDRAW is a trademark of Corel Corporation. Quattromani Draw is an independent project and is not affiliated with, endorsed by or sponsored by Corel. All other trademarks are the property of their respective owners.*
