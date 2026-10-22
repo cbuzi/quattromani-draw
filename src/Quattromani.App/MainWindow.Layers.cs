@@ -33,6 +33,43 @@ public partial class MainWindow
         MenuLaunchCodex.Click += (_, _) => LaunchAgent(AgentLauncher.Agents[1]);
         MenuLaunchOpenCode.Click += (_, _) => LaunchAgent(AgentLauncher.Agents[2]);
         MenuConnectManual.Click += (_, _) => App.ShowAbout();
+        BuildTerminalMenu();
+    }
+
+    NativeMenuItem? _terminalNative;
+
+    // "Open in": which terminal app the agent starts in (radio items, in the window's menu and in the system menu bar).
+    void BuildTerminalMenu()
+    {
+        var terminals = AgentLauncher.Terminals();
+        var current = AgentLauncher.CurrentTerminal();
+        var items = terminals.Select(t => new MenuItem { Header = t.Name, ToggleType = MenuItemToggleType.Radio, GroupName = "terminal", IsChecked = t.Id == current }).ToList();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var id = terminals[i].Id;
+            items[i].Click += (_, _) => ChooseTerminal(id);
+        }
+        MenuTerminal.ItemsSource = items;
+        MenuTerminal.IsVisible = terminals.Count > 2; // with a single choice there is nothing to choose
+
+        if (_terminalNative?.Menu is { } menu)
+        {
+            menu.Items.Clear();
+            foreach (var t in terminals)
+            {
+                var item = new NativeMenuItem(t.Name) { ToggleType = MenuItemToggleType.Radio, IsChecked = t.Id == current };
+                var id = t.Id;
+                item.Click += (_, _) => ChooseTerminal(id);
+                menu.Items.Add(item);
+            }
+            _terminalNative.IsVisible = terminals.Count > 2;
+        }
+    }
+
+    void ChooseTerminal(string id)
+    {
+        AgentLauncher.ChooseTerminal(id);
+        BuildTerminalMenu();
     }
 
     void LaunchAgent(AgentLauncher.Agent agent)

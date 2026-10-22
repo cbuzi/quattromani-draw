@@ -197,6 +197,7 @@
                             <MenuItem x:Name="MenuLaunchCodex" Header="Codex" />
                             <MenuItem x:Name="MenuLaunchOpenCode" Header="OpenCode" />
                             <Separator />
+                            <MenuItem x:Name="MenuTerminal" Header="Open in" />
                             <MenuItem x:Name="MenuConnectManual" Header="Connect manually…" />
                         </MenuFlyout>
                     </Button.Flyout>

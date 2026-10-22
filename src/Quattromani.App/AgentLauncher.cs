@@ -126,33 +126,74 @@ static class AgentLauncher
         return $"@echo off\r\ncd /d \"{WorkspaceDir}\"\r\nwhere {a.Command} >nul 2>&1\r\nif errorlevel 1 (\r\n  echo {a.Name} was not found. Install it first: {a.InstallUrl}\r\n  pause\r\n  exit /b 1\r\n)\r\n{run}\r\n";
     }
 
-    // ---- Opening the terminal --------------------------------------------------------------------
+    // ---- Choosing and opening the terminal ----------------------------------------------------------
 
-    static void Open(string script)
+    public sealed record Terminal(string Id, string Name);
+
+    // Linux terminal emulators we know how to drive: (exe, arguments before the script).
+    static readonly (string Exe, string[] Args)[] LinuxTerminals =
+    [
+        ("x-terminal-emulator", ["-e", "bash"]), ("gnome-terminal", ["--", "bash"]), ("konsole", ["-e", "bash"]),
+        ("xfce4-terminal", ["-x", "bash"]), ("kitty", ["bash"]), ("alacritty", ["-e", "bash"]), ("xterm", ["-e", "bash"]),
+    ];
+
+    static bool AppExists(string name) =>
+        Directory.Exists($"/Applications/{name}.app") || Directory.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Applications", $"{name}.app"))
+        || Directory.Exists($"/System/Applications/Utilities/{name}.app");
+
+    /// <summary>The terminals "Launch agent" can use on this computer; the first is the system default.</summary>
+    public static List<Terminal> Terminals()
     {
+        var list = new List<Terminal>();
         if (OperatingSystem.IsMacOS())
         {
-            // A .command file opens in the user's terminal app (Terminal by default) without asking for any permission.
-            Process.Start(new ProcessStartInfo("open", [script]) { UseShellExecute = false });
+            list.Add(new("default", "System default"));
+            if (AppExists("Terminal")) list.Add(new("Terminal", "Terminal"));
+            if (AppExists("iTerm")) list.Add(new("iTerm", "iTerm2"));
         }
         else if (OperatingSystem.IsWindows())
         {
-            Process.Start(new ProcessStartInfo("cmd.exe", ["/c", "start", "Quattromani agent", script]) { UseShellExecute = false, CreateNoWindow = true });
+            list.Add(new("default", "System default"));
+            if (OnPath("wt.exe")) list.Add(new("wt", "Windows Terminal"));
+            list.Add(new("cmd", "Command Prompt"));
         }
         else
         {
-            // Linux has no single way: the first terminal emulator found wins.
-            foreach (var (exe, args) in new (string, string[])[]
-            {
-                ("x-terminal-emulator", ["-e", "bash", script]), ("gnome-terminal", ["--", "bash", script]), ("konsole", ["-e", "bash", script]),
-                ("xfce4-terminal", ["-x", "bash", script]), ("kitty", ["bash", script]), ("alacritty", ["-e", "bash", script]), ("xterm", ["-e", "bash", script]),
-            })
-            {
-                if (!OnPath(exe)) continue;
-                Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false });
-                return;
-            }
-            throw new InvalidOperationException("No terminal found (tried x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, xterm). Run the command from the About window in your own terminal.");
+            list.Add(new("default", "First one found"));
+            list.AddRange(LinuxTerminals.Where(t => OnPath(t.Exe)).Select(t => new Terminal(t.Exe, t.Exe)));
+        }
+        return list;
+    }
+
+    /// <summary>The chosen terminal's id, or "default" if none was chosen or it is no longer installed.</summary>
+    public static string CurrentTerminal()
+    {
+        var chosen = AppSettings.Terminal;
+        return chosen != null && Terminals().Any(t => t.Id == chosen) ? chosen : "default";
+    }
+
+    public static void ChooseTerminal(string id) => AppSettings.Terminal = id == "default" ? null : id;
+
+    static void Open(string script)
+    {
+        var terminal = CurrentTerminal();
+        if (OperatingSystem.IsMacOS())
+        {
+            // A .command file opens in the chosen terminal app; "open" needs no permission, unlike scripting the app.
+            var args = terminal == "default" ? new[] { script } : ["-a", terminal, script];
+            Process.Start(new ProcessStartInfo("open", args) { UseShellExecute = false });
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            if (terminal == "wt") Process.Start(new ProcessStartInfo("wt.exe", ["new-tab", "--title", "Quattromani agent", "cmd", "/c", script]) { UseShellExecute = false });
+            else Process.Start(new ProcessStartInfo("cmd.exe", ["/c", "start", "Quattromani agent", script]) { UseShellExecute = false, CreateNoWindow = true });
+        }
+        else
+        {
+            var (exe, args) = LinuxTerminals.FirstOrDefault(t => t.Exe == terminal) is { Exe: not null } chosen ? chosen : LinuxTerminals.FirstOrDefault(t => OnPath(t.Exe));
+            if (exe == null)
+                throw new InvalidOperationException("No terminal found (tried x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, xterm). Run the command from the About window in your own terminal.");
+            Process.Start(new ProcessStartInfo(exe, [.. args, script]) { UseShellExecute = false });
         }
     }
 

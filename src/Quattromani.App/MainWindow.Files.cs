@@ -199,6 +199,7 @@ public partial class MainWindow
                 Entry("Launch Codex", () => LaunchAgent(AgentLauncher.Agents[1])),
                 Entry("Launch OpenCode", () => LaunchAgent(AgentLauncher.Agents[2])),
                 new NativeMenuItemSeparator(),
+                (_terminalNative = new NativeMenuItem("Open Agent In") { Menu = new NativeMenu() }),
                 Entry("Connect an AI agent manually…", App.ShowAbout),
             },
         };
