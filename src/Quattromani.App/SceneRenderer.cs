@@ -27,7 +27,7 @@ sealed record Item(string Id, Kind Kind, double X, double Y, double W, double H,
         TextObject t => new(o.Id, Kind.Text, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             t.Source, null, null, Text: new TextInfo(t.Lines, t.Style)),
         GroupObject g => new(o.Id, Kind.Group, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
-            g.Source, null, g.Children.Select(From).ToList()),
+            g.Source, null, g.Children.Where(c => !c.Hidden).Select(From).ToList()),
         ImageObject im => new(o.Id, Kind.Image, o.X, o.Y, o.Width, o.Height, o.Transform, o.Fill, o.Stroke, o.StrokeWidth,
             default, null, null, Image: im.Data),
         _ => new(o.Id, o is EllipseObject ? Kind.Ellipse : Kind.Rectangle, o.X, o.Y, o.Width, o.Height, o.Transform,
@@ -305,7 +305,7 @@ sealed class SkiaDocumentRenderer(CommandBus bus) : IDocumentRenderer
 {
     public RenderedImage Render(Box? area, int maxSize, string? background, bool labels, bool showPage)
     {
-        var (items, names, pageSize) = bus.Read(d => (d.Objects.Select(Item.From).ToList(), d.Objects.ToDictionary(o => o.Id, o => o.Name), (d.Pages[0].Width, d.Pages[0].Height)));
+        var (items, names, pageSize) = bus.Read(d => (d.RenderObjects.Select(Item.From).ToList(), d.Objects.ToDictionary(o => o.Id, o => o.Name), (d.Pages[0].Width, d.Pages[0].Height)));
         var page = new Box(0, 0, pageSize.Width, pageSize.Height);
 
         // Senza area: la pagina e tutto il contenuto (anche se esce dalla pagina), con un po' di margine.

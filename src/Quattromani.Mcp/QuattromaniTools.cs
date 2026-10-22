@@ -18,7 +18,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         type is "rectangle", "ellipse", "path", "text", "image" or "group". Images include `pixels` ([w,h] of the embedded bitmap; the data itself is never returned). Texts include `text`, `fontFamily`, `fontSize` (and bold/italic/align when set); their fill is the text color. Paths include `d` (SVG path data in page coordinates, absolute M/L/C/Z; very large paths report only `nodes` instead);
         groups include `children` (same structure, listed bottom to top).
         `bounds` is the axis-aligned box on the page (also for children of groups). Rotated objects also report `rotation` (degrees, clockwise) and `size` ([width,height] of the object itself, before rotation).
-        Objects are listed bottom to top (the last one is drawn on top). Bounds are in document pixels, y grows downward.
+        With more than one layer (or a hidden/locked one) the result also has `layers` ([{name,visible?,locked?,active?}] from bottom to top) and each top-level object has `layer`; objects with their own flag report `hidden`/`locked`.
+        Objects are listed bottom to top across layers (the last one is drawn on top). Bounds are in document pixels, y grows downward.
         Call this before editing to learn ids and names, and remember `version` to call get_changes later.
         If get_changes ever reports a change of kind "reset" (document.reset), the whole document was replaced (file opened or new): call get_document again.
         """)]
@@ -26,12 +27,15 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
     {
         version = d.Version,
         page = new { width = Math.Round(d.Pages[0].Width, 2), height = Math.Round(d.Pages[0].Height, 2), guides = d.Pages[0].Guides.Count == 0 ? null : d.Pages[0].Guides.Select(g => new { axis = g.Axis, position = Math.Round(g.Position, 2) }).ToList() },
-        objects = d.Objects.Select(o => Describe(o, Matrix3x2.Identity)).ToList(),
+        layers = d.Pages[0].Layers.Count == 1 && d.Pages[0].Layers[0] is { Visible: true, Locked: false } ? null
+            : d.Pages[0].Layers.Select(l => new { name = l.Name, visible = l.Visible ? null : (bool?)false, locked = l.Locked ? true : (bool?)null, active = l == d.Pages[0].ActiveLayer ? true : (bool?)null }).ToList(),
+        objects = d.Pages[0].Layers.SelectMany(l => l.Objects.Select(o => Describe(o, Matrix3x2.Identity) with { Layer = d.Pages[0].Layers.Count > 1 ? l.Name : null })).ToList(),
     }, Json.Options));
 
     sealed record ObjInfo(string Id, string? Name, string Type, double[] Bounds, double? Rotation, double[]? Size,
         string? Fill, string? Stroke, double? StrokeWidth, string? D, List<ObjInfo>? Children, int? Nodes,
-        int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null);
+        int[]? Pixels = null, string? Text = null, string? FontFamily = null, double? FontSize = null, bool? Bold = null, bool? Italic = null, string? Align = null, object? OnPath = null,
+        string? Layer = null, bool? Hidden = null, bool? Locked = null);
 
     // `parent` porta dallo spazio del contenitore (gruppo) allo spazio pagina.
     // Un path tracciato può avere migliaia di nodi: oltre questa soglia get_document non riporta `d` (solo `nodes`).
@@ -52,7 +56,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             o is PathObject { Segments.Count: > MaxPathSegments } big ? big.Segments.Count : null,
             o is ImageObject im ? [im.PixelWidth, im.PixelHeight] : null,
             (o as TextObject)?.Text, (o as TextObject)?.FontFamily, (o as TextObject)?.FontSize,
-            o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null);
+            o is TextObject { Bold: true } ? true : null, o is TextObject { Italic: true } ? true : null, (o as TextObject)?.Align, (o as TextObject)?.OnPath is { } op ? new { path = op.PathId, offset = op.Offset == 0 ? null : (double?)R(op.Offset), align = op.Align == "start" ? null : op.Align, distance = op.Distance == 0 ? null : (double?)R(op.Distance), reverse = op.Reverse ? true : (bool?)null } : null,
+            Hidden: o.Hidden ? true : null, Locked: o.Locked ? true : null);
     }
 
     [McpServerTool(Name = "execute")]
@@ -60,11 +65,16 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         Applies a batch of commands to the document as ONE undoable step, all-or-nothing: if any command fails, nothing changes.
         `commands` is a JSON array. Returns {"version":N,"created":[ids]}.
         Commands:
-          {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}
+          {"cmd":"shape.create","type":"rectangle"|"ellipse","name":"sun","x":10,"y":10,"width":100,"height":60,"fill":"#FFC800","stroke":"#000000","strokeWidth":2}   (every shape.create and svg.import accepts "layer":"name" to choose the layer; without it the object goes to the active layer, and creating into a hidden or locked layer fails)
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
           {"cmd":"shape.create","type":"image","name":"sketch","src":"/Users/me/sketch.png","x":0,"y":0,"width":400}   (embeds a bitmap: PNG, JPEG, GIF, WebP or BMP; `src` = absolute file path or "data:image/png;base64,..."; omit width and height for the native size, give only one to keep the proportions; accepts rel; fill = background under transparent parts, stroke = frame. Handy as a reference to trace over: place it, call render, then draw vector shapes on top. Images move/resize/rotate/group/align like any object but cannot become paths or enter shape.boolean)
           {"cmd":"image.trace","target":"sketch","threshold":128,"smooth":1,"fill":"#000000","keepOriginal":true}   (vectorizes an imported image in black and white: dark pixels become ONE path with holes, drawn right above the image with the same position; returns the path id in `created`. threshold 1-255 = brightness below which a pixel is filled (default 128); "invert":true fills the light pixels instead; minArea = specks smaller than this many image pixels are ignored (default 4); smooth 0.2-5 = curve tolerance in image pixels, higher = fewer nodes and softer lines (default 1); keepOriginal:false removes the image. Transparent pixels count as empty. Good for line art, logos and sketches; photos give huge paths. Render to check, retry with another threshold if it is too thick or too thin)
           {"cmd":"svg.import","src":"/Users/me/logo.svg","name":"logo","x":20,"y":20,"width":200}   (imports an SVG file, or inline markup with "svg":"<svg ...>", as ONE group: shapes, paths, groups, text, embedded images, gradients, <use> and class-based CSS are kept as editable objects; clip-paths, masks, filters, dashes and evenodd fills are not supported and reported in `notes` in the result. x,y,width,height give the position and size of the artwork's bounding box (give only width or only height to keep the proportions); omit them to keep the SVG's own coordinates and size; accepts rel. Returns the group id in `created`. Great for icons and logos: import, then render to check)
+          {"cmd":"layer.add","name":"sketch","above":"Layer 1","activate":true}   (new layer, on top unless `above` names a layer; by default it becomes the ACTIVE layer, where new objects go when shape.create has no "layer")
+          {"cmd":"layer.set","layer":"sketch","name":"reference","visible":false,"locked":true,"active":true}   (any subset of fields; a hidden layer is not drawn, rendered or exported; a locked layer and everything in it refuses edits until unlocked)
+          {"cmd":"layer.order","layer":"sketch","action":"front"}   (front, back, up, down: higher layers cover lower ones)   {"cmd":"layer.delete","layer":"sketch"}   (deletes the layer WITH its objects; the last layer cannot be deleted)
+          {"cmd":"object.toLayer","targets":["o3"],"layer":"sketch"}   (moves objects to the top of another layer, also out of a group, keeping them where they are)
+          {"cmd":"object.state","targets":["o3"],"hidden":true,"locked":true}   (hide/show and lock/unlock single objects; a locked object, or one in a locked group/layer, makes any command that edits it fail with an explanatory error)
           {"cmd":"page.set","preset":"A4","orientation":"landscape"}   (page size: preset A0-A8, B4-B6, Letter, Legal, Tabloid, Executive, HD, FullHD, Square; or {"cmd":"page.set","width":210,"height":297,"unit":"mm"} with unit px|mm|cm|in|pt (default px); or only "orientation")
           {"cmd":"object.rename","target":"o3","name":"sun"}   (names like "o12" are reserved for ids; an empty name removes the name)
           {"cmd":"object.order","targets":["sun"],"action":"front"}   (stacking order: front, back, forward, backward; or "above":"sky" / "below":"sky" to sit right above/below another object; objects in the same layer/group; several targets keep their relative order)
@@ -132,7 +142,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, svg.import, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, svg.import, layer.add, layer.set, layer.delete, layer.order, object.toLayer, object.state, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }

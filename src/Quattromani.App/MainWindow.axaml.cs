@@ -53,6 +53,7 @@ public partial class MainWindow : Window
         };
         Selection = new CanvasSelection(Canvas);
         InitFiles();
+        InitLayers();
         Canvas.Bus = _bus;
 
         // Il bus può notificare da qualsiasi thread.
@@ -438,9 +439,10 @@ public partial class MainWindow : Window
         {
             _bus.Execute([new SetStyle { Targets = Canvas.SelectedIds.ToList(), Fill = fill, Stroke = stroke, StrokeWidth = width }]);
         }
-        catch (CommandException)
+        catch (CommandException ex)
         {
-            Refresh(); // colore non valido: ripristina i campi dall'oggetto
+            ShowNotice(ex.Message);
+            Refresh(); // colore non valido o oggetto bloccato: ripristina i campi dall'oggetto
         }
     }
 
@@ -540,7 +542,7 @@ public partial class MainWindow : Window
         }
         else if (e.Key is Key.Delete or Key.Back && Canvas.SelectedIds.Count > 0)
         {
-            _bus.Execute([new DeleteObjects { Targets = Canvas.SelectedIds.ToList() }]);
+            Exec(new DeleteObjects { Targets = Canvas.SelectedIds.ToList() });
             e.Handled = true;
         }
     }
@@ -1164,7 +1166,7 @@ public partial class MainWindow : Window
             var r = _bus.Execute([new GroupObjects { Targets = ids }]);
             Canvas.Select(r.CreatedIds[0]);
         }
-        catch (CommandException) { }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
     string? _clipboard; // oggetti copiati (JSON di DocumentFile.ExportObjects); sopravvive alla cancellazione degli originali
@@ -1184,7 +1186,7 @@ public partial class MainWindow : Window
         if (ids.Count == 0) return;
         _clipboard = _bus.Read(d => DocumentFile.ExportObjects(d.Objects.Where(o => ids.Contains(o.Id))));
         _pasteCount = cut ? 0 : 1; // dopo Copia l'originale c'è ancora; dopo Taglia la prima incolla va nello stesso punto
-        if (cut) _bus.Execute([new DeleteObjects { Targets = ids.ToList() }]);
+        if (cut) Exec(new DeleteObjects { Targets = ids.ToList() });
     }
 
     void Paste()
@@ -1202,8 +1204,8 @@ public partial class MainWindow : Window
             .Select(id => d.Objects.FirstOrDefault(o => o.Id == id)).OfType<GroupObject>()
             .Select(g => (g.Id, Children: g.Children.Select(c => c.Id).ToList())).ToList());
         if (groups.Count == 0) return;
-        _bus.Execute([new UngroupObjects { Targets = groups.Select(g => g.Id).ToList() }]);
-        Canvas.SetSelection(groups.SelectMany(g => g.Children));
+        if (Exec(new UngroupObjects { Targets = groups.Select(g => g.Id).ToList() }) != null)
+            Canvas.SetSelection(groups.SelectMany(g => g.Children));
     }
 
     /// <summary>Scopre cosa è cambiato dall'ultima volta e segnala il lavoro dell'agente.</summary>
@@ -1242,7 +1244,13 @@ public partial class MainWindow : Window
     /// <summary>Riallinea elenco oggetti e canvas al documento (thread UI).</summary>
     void Refresh()
     {
-        var items = _bus.Read(d => d.Objects.Reverse().Select(o => (o.Id, Label: $"{o.Name ?? (o is TextObject tx ? "“" + (tx.Text.Length > 24 ? tx.Text[..24].Replace('\n', ' ') + "…" : tx.Text.Replace('\n', ' ')) + "”" : o.Type)}   ·   {o.Id}{(Document.SelfAndDescendants(o).Any(x => _aiTouched.Contains(x.Id)) ? "   ·   AI" : "")}")).ToList());
+        var items = _bus.Read(d =>
+        {
+            var several = d.Pages[0].Layers.Count > 1;
+            return d.Pages[0].Layers.AsEnumerable().Reverse().SelectMany(l => l.Objects.AsEnumerable().Reverse().Select(o => (o.Id, Label:
+                $"{o.Name ?? (o is TextObject tx ? "“" + (tx.Text.Length > 24 ? tx.Text[..24].Replace('\n', ' ') + "…" : tx.Text.Replace('\n', ' ')) + "”" : o.Type)}   ·   {o.Id}" +
+                $"{(Document.SelfAndDescendants(o).Any(x => _aiTouched.Contains(x.Id)) ? "   ·   AI" : "")}{(o.Hidden ? "   ·   hidden" : "")}{(o.Locked ? "   ·   locked" : "")}{(several ? "   ·   " + l.Name : "")}"))).ToList();
+        });
         _ids = items.Select(i => i.Id).ToList();
 
         Canvas.PruneSelection(_ids);
@@ -1250,6 +1258,7 @@ public partial class MainWindow : Window
         _syncing = true;
         ObjectList.ItemsSource = items.Select(i => i.Label).ToList();
         ObjectList.SelectedIndex = Canvas.SelectedId is { } s ? _ids.IndexOf(s) : -1;
+        RefreshLayers();
 
         // Il pannello mostra lo stile dell'oggetto selezionato (e diventa lo stile delle nuove forme).
         if (Canvas.SelectedId is { } cur &&

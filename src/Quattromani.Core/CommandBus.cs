@@ -82,6 +82,15 @@ public sealed class CommandBus(Document document)
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Sceglie il layer dove finiscono gli oggetti nuovi. Non è una modifica del contenuto: niente versione, niente undo, il documento non risulta "modificato".
+    /// </summary>
+    public void SetActiveLayer(string name)
+    {
+        lock (_gate) document.Pages[0].ActiveLayer = document.FindLayer(name);
+        Changed?.Invoke();
+    }
+
     public bool Undo(string author = "human")
     {
         lock (_gate)

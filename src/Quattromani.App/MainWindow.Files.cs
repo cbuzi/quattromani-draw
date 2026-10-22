@@ -113,6 +113,11 @@ public partial class MainWindow
                 new NativeMenuItemSeparator(),
                 Entry("Fit Text to Path", FitTextToPath),
                 Entry("Trace Image", () => _ = TraceSelectedAsync()),
+                new NativeMenuItemSeparator(),
+                Entry("Hide", ToggleHidden),
+                Entry("Show All", ShowAll),
+                Entry("Lock", ToggleLocked),
+                Entry("Unlock All", UnlockAll),
             },
         };
         var pillItem = new NativeMenuItem("Show Agent Label") { ToggleType = MenuItemToggleType.CheckBox, IsChecked = Canvas.ShowAgentPill };

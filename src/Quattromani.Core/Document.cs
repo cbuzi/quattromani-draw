@@ -40,6 +40,11 @@ public abstract class SceneObject
 
     public Matrix3x2 Transform { get; set; } = Matrix3x2.Identity;
 
+    /// <summary>Nascosto: non si disegna, non si esporta e non si può selezionare col mouse (i comandi lo vedono ancora).</summary>
+    public bool Hidden { get; set; }
+    /// <summary>Bloccato: i comandi che lo modificano falliscono e il mouse lo ignora. Vale anche per il contenuto di un gruppo bloccato e per gli oggetti di un layer bloccato.</summary>
+    public bool Locked { get; set; }
+
     // Stile. Colori come "#RRGGBB" o "#RRGGBBAA"; null = nessuno.
     public string? Fill { get; set; }
     public string? Stroke { get; set; }
@@ -116,6 +121,8 @@ public sealed class GroupObject : SceneObject
 public sealed class Layer(string name)
 {
     public string Name { get; set; } = name;
+    public bool Visible { get; set; } = true;
+    public bool Locked { get; set; }
     public List<SceneObject> Objects { get; } = [];
 }
 
@@ -126,6 +133,9 @@ public sealed class Page
     public double Width { get; set; } = Units.ToPx(210, "mm");
     public double Height { get; set; } = Units.ToPx(297, "mm");
     public List<Layer> Layers { get; } = [new("Layer 1")];
+    Layer? _active;
+    /// <summary>Il layer dove finiscono gli oggetti nuovi (se non se ne indica un altro); di default il primo.</summary>
+    public Layer ActiveLayer { get => _active != null && Layers.Contains(_active) ? _active : Layers[0]; internal set => _active = value; }
     /// <summary>Linee guida (non si stampano né si esportano).</summary>
     public List<Guide> Guides { get; } = [];
 }
@@ -152,6 +162,65 @@ public sealed partial class Document
 
     public IEnumerable<SceneObject> Objects =>
         Pages.SelectMany(p => p.Layers).SelectMany(l => l.Objects);
+
+    /// <summary>Gli oggetti da disegnare (layer visibili, oggetti non nascosti), dal fondo in cima.</summary>
+    public IEnumerable<SceneObject> RenderObjects =>
+        Pages.SelectMany(p => p.Layers).Where(l => l.Visible).SelectMany(l => l.Objects).Where(o => !o.Hidden);
+
+    /// <summary>Gli oggetti che il mouse può prendere: quelli disegnati, tranne i bloccati e quelli dei layer bloccati.</summary>
+    public IEnumerable<SceneObject> PickableObjects =>
+        Pages.SelectMany(p => p.Layers).Where(l => l.Visible && !l.Locked).SelectMany(l => l.Objects).Where(o => !o.Hidden && !o.Locked);
+
+    /// <summary>Il layer che contiene l'oggetto (anche dentro dei gruppi).</summary>
+    public Layer? LayerOf(SceneObject target)
+    {
+        foreach (var layer in Pages.SelectMany(p => p.Layers))
+            if (layer.Objects.Any(o => SelfAndDescendants(o).Contains(target))) return layer;
+        return null;
+    }
+
+    /// <summary>L'oggetto è bloccato lui stesso, o lo è un gruppo che lo contiene, o il suo layer.</summary>
+    public bool IsLocked(SceneObject target)
+    {
+        static bool InGroup(IEnumerable<SceneObject> list, SceneObject t, bool locked)
+        {
+            foreach (var o in list)
+            {
+                if (o == t) return locked || o.Locked;
+                if (o is GroupObject g && g.Children.Any(c => SelfAndDescendants(c).Contains(t))) return InGroup(g.Children, t, locked || o.Locked);
+            }
+            return false;
+        }
+
+        var layer = LayerOf(target);
+        return layer != null && InGroup(layer.Objects, target, layer.Locked);
+    }
+
+    /// <summary>Come <see cref="Find"/>, per gli oggetti che un comando sta per modificare: se è bloccato spiega come sbloccarlo.</summary>
+    public SceneObject FindEditable(string idOrName)
+    {
+        var obj = Find(idOrName);
+        if (IsLocked(obj))
+            throw new CommandException($"L'oggetto '{obj.Name ?? obj.Id}' e' bloccato (lui, un gruppo che lo contiene o il suo layer). Sbloccalo con object.state {{\"targets\":[\"{obj.Id}\"],\"locked\":false}} o layer.set, oppure chiedi all'utente.");
+        return obj;
+    }
+
+    /// <summary>Trova un layer per nome (maiuscole ininfluenti).</summary>
+    public Layer FindLayer(string name)
+    {
+        var layers = Pages[0].Layers;
+        return layers.FirstOrDefault(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ?? throw new CommandException($"Layer '{name}' non trovato. Layer presenti (dal fondo): {string.Join(", ", layers.Select(l => $"\"{l.Name}\""))}.");
+    }
+
+    /// <summary>Il layer dove un comando crea oggetti nuovi: quello indicato o l'attivo; deve essere visibile e non bloccato.</summary>
+    public Layer TargetLayer(string? name)
+    {
+        var layer = name is null ? Pages[0].ActiveLayer : FindLayer(name);
+        if (layer.Locked || !layer.Visible)
+            throw new CommandException($"Il layer '{layer.Name}' e' {(layer.Locked ? "bloccato" : "nascosto")}: non ci si puo' aggiungere nulla. Indica un altro layer (\"layer\":\"nome\"), crea un layer con layer.add o {(layer.Locked ? "sblocca" : "mostra")} questo con layer.set.");
+        return layer;
+    }
 
     /// <summary>Tutti gli oggetti, figli dei gruppi compresi.</summary>
     public IEnumerable<SceneObject> AllObjects => Objects.SelectMany(SelfAndDescendants);

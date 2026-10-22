@@ -18,7 +18,8 @@ public static class SvgFile
 {
     public const string Extension = ".svg";
 
-    static readonly XNamespace Svg = "http://www.w3.org/2000/svg", Xlink = "http://www.w3.org/1999/xlink", Inkscape = "http://www.inkscape.org/namespaces/inkscape";
+    static readonly XNamespace Svg = "http://www.w3.org/2000/svg", Xlink = "http://www.w3.org/1999/xlink", Inkscape = "http://www.inkscape.org/namespaces/inkscape",
+        Sodipodi = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd";
 
     static string N(double v, int decimals = 3)
     {
@@ -36,6 +37,7 @@ public static class SvgFile
         var root = new XElement(Svg + "svg",
             new XAttribute(XNamespace.Xmlns + "xlink", Xlink),
             new XAttribute(XNamespace.Xmlns + "inkscape", Inkscape),
+            new XAttribute(XNamespace.Xmlns + "sodipodi", Sodipodi),
             new XAttribute("width", N(page.Width) + "px"), new XAttribute("height", N(page.Height) + "px"),
             new XAttribute("viewBox", $"0 0 {N(page.Width)} {N(page.Height)}"));
         var layers = new List<XElement>();
@@ -44,6 +46,8 @@ public static class SvgFile
         {
             var g = new XElement(Svg + "g", new XAttribute("id", $"layer{++i}"),
                 new XAttribute(Inkscape + "groupmode", "layer"), new XAttribute(Inkscape + "label", layer.Name));
+            if (!layer.Visible) g.SetAttributeValue("display", "none");
+            if (layer.Locked) g.SetAttributeValue(Sodipodi + "insensitive", "true");
             foreach (var o in layer.Objects) g.Add(writer.Object(o));
             layers.Add(g);
         }
@@ -105,6 +109,8 @@ public static class SvgFile
             }
             e.SetAttributeValue("id", o.Id);
             if (o.Name != null) e.SetAttributeValue("data-name", o.Name);
+            if (o.Hidden) e.SetAttributeValue("display", "none");
+            if (o.Locked) e.SetAttributeValue(Sodipodi + "insensitive", "true");
             return e;
         }
 
@@ -799,10 +805,13 @@ public sealed class ImportSvg : Command
     public double? Width { get; set; }
     public double? Height { get; set; }
     public Placement? Rel { get; set; }
+    /// <summary>Nome del layer dove creare il gruppo; senza, il layer attivo.</summary>
+    public string? Layer { get; set; }
 
     const int MaxBytes = 20 * 1024 * 1024;
 
     GroupObject? _group;
+    Layer? _layer;
     List<string> _notes = [];
 
     /// <summary>Solo in uscita: id del gruppo creato.</summary>
@@ -859,8 +868,9 @@ public sealed class ImportSvg : Command
             _notes = notes;
             if (Svg != null) Svg = $"(svg, {Svg.Length / 1024} KB)"; // il redo riusa l'oggetto: il testo non serve piu'
         }
-        doc.Pages[0].Layers[0].Objects.Add(_group);
+        _layer ??= doc.TargetLayer(Layer);
+        _layer.Objects.Add(_group);
     }
 
-    public override void Undo(Document doc) => doc.Pages[0].Layers[0].Objects.Remove(_group!);
+    public override void Undo(Document doc) => _layer!.Objects.Remove(_group!);
 }

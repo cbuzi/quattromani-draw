@@ -42,7 +42,7 @@ public sealed class OrderObjects : Command
         if (Action is not (null or "front" or "back" or "forward" or "backward"))
             throw new CommandException($"object.order: action '{Action}' non valida. Valori: \"front\", \"back\", \"forward\", \"backward\".");
 
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         _ids = objs.Select(o => o.Id).ToList();
         SceneObject? reference = Above != null ? doc.Find(Above) : Below != null ? doc.Find(Below) : null;
         if (reference != null && objs.Contains(reference))
@@ -118,7 +118,7 @@ public sealed class AlignObjects : Command
         if (X is not (null or "left" or "center" or "right")) throw new CommandException($"object.align: x '{X}' non valido. Valori: \"left\", \"center\", \"right\".");
         if (Y is not (null or "top" or "middle" or "bottom")) throw new CommandException($"object.align: y '{Y}' non valido. Valori: \"top\", \"middle\", \"bottom\".");
 
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         var boxes = objs.Select(doc.PageBounds).ToList();
 
         Box reference;
@@ -189,7 +189,7 @@ public sealed class DistributeObjects : Command
         if (mode is not ("gaps" or "centers")) throw new CommandException($"object.distribute: mode '{Mode}' non valido. Valori: \"gaps\", \"centers\".");
         if (Gap != null && mode != "gaps") throw new CommandException("object.distribute: 'gap' si usa solo con mode \"gaps\".");
 
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.Count < (Gap != null ? 2 : 3))
             throw new CommandException(Gap != null
                 ? "object.distribute: servono almeno 2 oggetti."

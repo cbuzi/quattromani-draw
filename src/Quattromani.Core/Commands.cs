@@ -46,6 +46,12 @@ public static class Json
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 [JsonDerivedType(typeof(TraceImage), "image.trace")]
 [JsonDerivedType(typeof(ImportSvg), "svg.import")]
+[JsonDerivedType(typeof(AddLayer), "layer.add")]
+[JsonDerivedType(typeof(SetLayer), "layer.set")]
+[JsonDerivedType(typeof(DeleteLayer), "layer.delete")]
+[JsonDerivedType(typeof(OrderLayer), "layer.order")]
+[JsonDerivedType(typeof(MoveToLayer), "object.toLayer")]
+[JsonDerivedType(typeof(SetObjectState), "object.state")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>
@@ -85,10 +91,13 @@ public sealed class CreateShape : Command
     public double? LineHeight { get; set; }
     /// <summary>Solo per type "image": percorso assoluto di un file o data URI base64. Dopo l'applicazione, un data URI viene accorciato.</summary>
     public string? Src { get; set; }
+    /// <summary>Nome del layer dove creare l'oggetto; senza, il layer attivo.</summary>
+    public string? Layer { get; set; }
 
     const int MaxImageBytes = 30 * 1024 * 1024;
 
     SceneObject? _obj;
+    Layer? _layer;
 
     /// <summary>Solo in uscita: id assegnato dopo l'applicazione (visibile in get_changes).</summary>
     public string? Id => _obj?.Id;
@@ -159,10 +168,11 @@ public sealed class CreateShape : Command
             obj.StrokeWidth = StrokeWidth ?? (obj.Stroke is null ? 0 : 1);
             _obj = obj;
         }
-        doc.Pages[0].Layers[0].Objects.Add(_obj);
+        _layer ??= doc.TargetLayer(Layer);
+        _layer.Objects.Add(_obj);
     }
 
-    public override void Undo(Document doc) => doc.Pages[0].Layers[0].Objects.Remove(_obj!);
+    public override void Undo(Document doc) => _layer!.Objects.Remove(_obj!);
 
     ImageObject CreateImage(Document doc)
     {
@@ -219,7 +229,7 @@ public sealed class MoveObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.move: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, o.Transform)).ToList();
+        _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, o.Transform)).ToList();
         _oldOnPath = [];
         foreach (var (obj, old) in _old)
         {
@@ -268,7 +278,7 @@ public sealed class SetStyle : Command
         var fill = Fill is null ? null : Document.ParseColor(Fill, "fill");
         var stroke = Stroke is null ? null : Document.ParseColor(Stroke, "stroke");
         // Su un gruppo lo stile si applica a tutte le forme che contiene.
-        _old = Targets.Select(t => doc.Find(t)).SelectMany(Leaves).Distinct()
+        _old = Targets.Select(t => doc.FindEditable(t)).SelectMany(Leaves).Distinct()
             .Select(o => (o, o.Fill, o.Stroke, o.StrokeWidth)).ToList();
         foreach (var (obj, _, _, _) in _old)
         {
@@ -298,7 +308,7 @@ public sealed class DeleteObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.delete: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        _removed = Targets.Select(t => doc.Find(t)).Distinct()
+        _removed = Targets.Select(t => doc.FindEditable(t)).Distinct()
             .Select(o => { var c = doc.ContainerOf(o)!; return (c, c.IndexOf(o), o); })
             .OrderBy(e => e.Item2)
             .ToList();
@@ -336,7 +346,7 @@ public sealed class ResizeObject : Command
         if (Width <= 0 || Height <= 0) throw new CommandException("object.resize: 'width' e 'height' devono essere > 0.");
         var (ax, ay) = Core.Anchor.Parse(Anchor);
 
-        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, new Box(o.X, o.Y, o.Width, o.Height))).ToList();
+        _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, new Box(o.X, o.Y, o.Width, o.Height))).ToList();
         _oldFonts = [];
         foreach (var (obj, old) in _old)
         {
@@ -376,7 +386,7 @@ public sealed class RotateObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.rotate: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        _old = Targets.Select(t => doc.Find(t)).Select(o => (o, o.Transform)).ToList();
+        _old = Targets.Select(t => doc.FindEditable(t)).Select(o => (o, o.Transform)).ToList();
         foreach (var (obj, old) in _old)
         {
             var center = Vector2.Transform(new((float)(obj.X + obj.Width / 2), (float)(obj.Y + obj.Height / 2)), old);
@@ -407,7 +417,7 @@ public sealed class GroupObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.group: 'targets' e' vuoto. Passa gli id o i nomi da raggruppare, es. [\"o1\",\"o2\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         var container = doc.ContainerOf(objs[0])!;
         if (objs.Any(o => doc.ContainerOf(o) != container))
             throw new CommandException("object.group: gli oggetti devono stare allo stesso livello (stesso layer o stesso gruppo).");
@@ -448,7 +458,7 @@ public sealed class UngroupObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.ungroup: 'targets' e' vuoto. Passa l'id o il nome di un gruppo.");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not GroupObject) is { } notGroup)
             throw new CommandException($"object.ungroup: '{notGroup.Name ?? notGroup.Id}' e' un {notGroup.Type}, non un gruppo.");
 
@@ -498,7 +508,7 @@ public sealed class SetPath : Command
 
     public override void Apply(Document doc)
     {
-        var o = doc.Find(Target);
+        var o = doc.FindEditable(Target);
         if (o is not PathObject p)
             throw new CommandException($"path.set: '{Target}' e' un {o.Type}, non un path (shape.toPath converte rettangoli ed ellissi in path).");
         if (!doc.Pages.SelectMany(pg => pg.Layers).Any(l => l.Objects.Contains(p)))
@@ -542,7 +552,7 @@ public sealed class ConvertToPath : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("shape.toPath: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is GroupObject) is { } g)
             throw new CommandException($"shape.toPath: '{g.Name ?? g.Id}' e' un gruppo: separalo prima con object.ungroup.");
         if (objs.FirstOrDefault(o => o is ImageObject) is { } img)

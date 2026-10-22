@@ -19,7 +19,7 @@ public sealed class DuplicateObjects : Command
         if (fresh)
         {
             if (Targets.Count == 0) throw new CommandException("object.duplicate: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-            var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+            var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
             // Se un gruppo e un suo figlio sono entrambi indicati, basta duplicare il gruppo.
             objs = objs.Where(o => !objs.Any(p => p != o && Document.SelfAndDescendants(p).Contains(o))).ToList();
             _placed = objs.Select(o => (doc.ContainerOf(o)!, o, DocumentFile.ImportObjects(DocumentFile.ExportObjects([o]), doc)[0])).ToList();
@@ -46,6 +46,7 @@ public sealed class PasteObjects : Command
     public double Dy { get; set; }
 
     List<SceneObject> _pasted = [];
+    Layer? _layer;
 
     [JsonIgnore] public override IEnumerable<string> CreatedIds => _pasted.Select(o => o.Id);
 
@@ -58,14 +59,14 @@ public sealed class PasteObjects : Command
             _pasted = DocumentFile.ImportObjects(Data, doc);
         }
 
-        var layer = doc.Pages[0].Layers[0].Objects;
-        layer.AddRange(_pasted);
+        _layer ??= doc.TargetLayer(null);
+        _layer.Objects.AddRange(_pasted);
         if (fresh)
             foreach (var o in _pasted) o.Transform = Shift.Apply(doc, o, Dx, Dy);
     }
 
     public override void Undo(Document doc)
     {
-        foreach (var o in _pasted) doc.Pages[0].Layers[0].Objects.Remove(o);
+        foreach (var o in _pasted) _layer!.Objects.Remove(o);
     }
 }

@@ -85,7 +85,7 @@ static class PdfExporter
 {
     public static void Export(CommandBus bus, string path, string? sourceFile)
     {
-        var (items, page) = bus.Read(d => (d.Objects.Select(Item.From).ToList(), (d.Pages[0].Width, d.Pages[0].Height)));
+        var (items, page) = bus.Read(d => (d.RenderObjects.Select(Item.From).ToList(), (d.Pages[0].Width, d.Pages[0].Height)));
         const float PtPerPx = 72f / 96f; // il documento è in px a 96 dpi, il PDF in punti (1/72 di pollice)
 
         using var stream = File.Create(path);

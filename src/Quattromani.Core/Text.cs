@@ -109,7 +109,7 @@ public sealed class SetText : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("text.set: 'targets' e' vuoto. Passa id o nomi di testi, es. [\"o1\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not TextObject) is { } other)
             throw new CommandException($"text.set: '{other.Name ?? other.Id}' e' un {other.Type}, non un testo.");
         if (Text is { Length: 0 }) throw new CommandException("text.set: 'text' non puo' essere vuoto (per eliminare il testo usa object.delete).");

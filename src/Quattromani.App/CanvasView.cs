@@ -220,6 +220,16 @@ public sealed class CanvasView : Control
         }
     }
 
+    /// <summary>Un comando dell'utente è stato rifiutato (per esempio perché l'oggetto è bloccato): il testo spiega perché.</summary>
+    public event Action<string>? Notice;
+
+    // I gesti dell'utente passano da qui: un comando rifiutato diventa un avviso, non un'eccezione nel gestore del mouse.
+    BatchResult? Try(params Command[] commands)
+    {
+        try { return Bus?.Execute(commands); }
+        catch (CommandException ex) { Notice?.Invoke(ex.Message); return null; }
+    }
+
     public event Action? SelectionChanged;
     public event Action? ViewChanged;
     public event Action? ToolChanged;
@@ -264,7 +274,7 @@ public sealed class CanvasView : Control
     /// </summary>
     public (double TotalW, double TotalH, double OffX, double OffY, double ViewW, double ViewH) ScrollInfo()
     {
-        var boxes = Bus?.Read(d => d.Objects.Select(o => o.Bounds).ToList()) ?? [];
+        var boxes = Bus?.Read(d => d.RenderObjects.Select(o => o.Bounds).ToList()) ?? [];
         var page = PageBox(); // l'area scorrevole comprende sempre la pagina
         double cx0 = page.X, cy0 = page.Y, cx1 = page.X + page.Width, cy1 = page.Y + page.Height;
         if (boxes.Count > 0)
@@ -320,7 +330,7 @@ public sealed class CanvasView : Control
             {
                 _snapXs.AddRange([0, page.Width / 2, page.Width]);
                 _snapYs.AddRange([0, page.Height / 2, page.Height]);
-                foreach (var o in d.Objects)
+                foreach (var o in d.RenderObjects)
                 {
                     if (exclude?.Contains(o.Id) == true) continue;
                     var b = d.PageBounds(o);
@@ -429,7 +439,7 @@ public sealed class CanvasView : Control
     Point ToDoc(Point screen) => new((screen.X - _pan.X) / _zoom, (screen.Y - _pan.Y) / _zoom);
 
     string? HitTest(Point doc) =>
-        Bus?.Read(d => d.Objects.Reverse().FirstOrDefault(o => Contains(o, new((float)doc.X, (float)doc.Y), 5 / _zoom))?.Id);
+        Bus?.Read(d => d.PickableObjects.Reverse().FirstOrDefault(o => Contains(o, new((float)doc.X, (float)doc.Y), 5 / _zoom))?.Id);
 
     // Il punto viene portato nello spazio locale dell'oggetto, così funziona anche con oggetti ruotati e dentro i gruppi.
     static bool Contains(SceneObject o, Vector2 p, double tolerance)
@@ -642,13 +652,12 @@ public sealed class CanvasView : Control
             sb.Append(" Z");
         }
 
-        var r = Bus.Execute([new CreateShape
+        if (Try(new CreateShape
         {
             Type = "path", D = sb.ToString(),
             Fill = closed ? Fill ?? "none" : "none", // un path aperto non si riempie
             Stroke = Stroke ?? "#1F2937", StrokeWidth = StrokeWidth > 0 ? StrokeWidth : 2,
-        }]);
-        Select(r.CreatedIds[0]);
+        }) is { } r) Select(r.CreatedIds[0]);
         if (select) Tool = Tool.Select;
     }
 
@@ -1009,7 +1018,7 @@ public sealed class CanvasView : Control
         if (SelectedId is not { } id || Bus == null) return;
         try
         {
-            Bus.Execute([new SetPath { Target = id, D = PathData.ToString(PathNodes.ToSegments(subs), 4), Kinds = PathNodes.KindsOf(subs) }]);
+            Try(new SetPath { Target = id, D = PathData.ToString(PathNodes.ToSegments(subs), 4), Kinds = PathNodes.KindsOf(subs) });
         }
         catch (CommandException) { }
     }
@@ -1227,13 +1236,12 @@ public sealed class CanvasView : Control
             var b = CreateBox();
             if (b.Width * _zoom >= 3 && b.Height * _zoom >= 3 && Bus != null)
             {
-                var r = Bus.Execute([new CreateShape
+                if (Try(new CreateShape
                 {
                     Type = Tool == Tool.Ellipse ? "ellipse" : "rectangle",
                     X = b.X, Y = b.Y, Width = b.Width, Height = b.Height,
                     Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth,
-                }]);
-                Select(r.CreatedIds[0]);
+                }) is { } r) Select(r.CreatedIds[0]);
                 Tool = Tool.Select; // dopo aver disegnato si torna alla selezione
             }
         }
@@ -1266,7 +1274,7 @@ public sealed class CanvasView : Control
             if ((m.Width * _zoom >= 3 || m.Height * _zoom >= 3) && Bus != null)
             {
                 // Vengono selezionati gli oggetti interamente dentro il rettangolo, come negli editor vettoriali classici.
-                var hits = Bus.Read(d => d.Objects.Where(o =>
+                var hits = Bus.Read(d => d.PickableObjects.Where(o =>
                 {
                     var b = o.Bounds;
                     return b.X >= m.X && b.Y >= m.Y && b.X + b.Width <= m.X + m.Width && b.Y + b.Height <= m.Y + m.Height;
@@ -1279,20 +1287,20 @@ public sealed class CanvasView : Control
             var (dx, dy) = (_moveOffset.X, _moveOffset.Y);
             var ids = _selection.ToList();
             _drag = Drag.None; // l'anteprima non serve più: il documento sta per cambiare
-            Bus?.Execute([new MoveObjects { Targets = ids, Dx = dx, Dy = dy }]); // un drag = un solo undo
+            Try(new MoveObjects { Targets = ids, Dx = dx, Dy = dy }); // un drag = un solo undo
         }
         else if (_drag == Drag.Resize && _dragItem is { } it)
         {
             _drag = Drag.None;
-            Bus?.Execute([new ResizeObject
+            Try(new ResizeObject
             {
                 Targets = [it.Id], Width = _newW, Height = _newH, Anchor = Anchor.NameOf(1 - _handleX, 1 - _handleY),
-            }]);
+            });
         }
         else if (_drag == Drag.Rotate && _dragItem is { } rit && Math.Abs(_rotDelta) > 0.01)
         {
             _drag = Drag.None;
-            Bus?.Execute([new RotateObjects { Targets = [rit.Id], Degrees = _rotDelta }]);
+            Try(new RotateObjects { Targets = [rit.Id], Degrees = _rotDelta });
         }
         _moveOffset = default;
         _snapLineX = _snapLineY = null;
@@ -1341,7 +1349,7 @@ public sealed class CanvasView : Control
         if (Bus == null) return;
         // Senza uno sfondo (anche trasparente) il controllo non riceve gli eventi del mouse.
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
-        var items = Bus.Read(d => d.Objects.Select(Item.From).ToList());
+        var items = Bus.Read(d => d.RenderObjects.Select(Item.From).ToList());
         if (_hiddenId != null) items.RemoveAll(i => i.Id == _hiddenId);
         for (var i = 0; i < items.Count; i++)
             if (_selection.Contains(items[i].Id)) items[i] = Preview(items[i]);

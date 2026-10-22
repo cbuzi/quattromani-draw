@@ -92,7 +92,7 @@ public sealed class PlaceObjects : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("object.place: 'targets' e' vuoto. Passa id o nomi, es. [\"o1\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
 
         var boxes = objs.Select(doc.PageBounds).ToList();
         var x0 = boxes.Min(b => b.X); var y0 = boxes.Min(b => b.Y);

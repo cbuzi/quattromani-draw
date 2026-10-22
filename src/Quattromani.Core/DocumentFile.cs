@@ -28,11 +28,15 @@ public static partial class DocumentFile
         public double Height { get; set; }
         public List<Guide>? Guides { get; set; }
         public List<LayerDto> Layers { get; set; } = [];
+        /// <summary>Indice del layer attivo; omesso se è il primo.</summary>
+        public int? ActiveLayer { get; set; }
     }
 
     sealed class LayerDto
     {
         public string Name { get; set; } = "";
+        public bool? Hidden { get; set; }
+        public bool? Locked { get; set; }
         public List<ObjDto> Objects { get; set; } = [];
     }
 
@@ -57,6 +61,8 @@ public static partial class DocumentFile
         public string? Fill { get; set; }
         public string? Stroke { get; set; }
         public double? StrokeWidth { get; set; }
+        public bool? Hidden { get; set; }
+        public bool? Locked { get; set; }
 
         // path
         public string? D { get; set; }
@@ -96,7 +102,8 @@ public static partial class DocumentFile
         Pages = doc.Pages.Select(p => new PageDto
         {
             Name = p.Name, Width = p.Width, Height = p.Height, Guides = p.Guides.Count == 0 ? null : p.Guides,
-            Layers = p.Layers.Select(l => new LayerDto { Name = l.Name, Objects = l.Objects.Select(ToDto).ToList() }).ToList(),
+            Layers = p.Layers.Select(l => new LayerDto { Name = l.Name, Hidden = l.Visible ? null : true, Locked = l.Locked ? true : null, Objects = l.Objects.Select(ToDto).ToList() }).ToList(),
+            ActiveLayer = p.Layers.IndexOf(p.ActiveLayer) is > 0 and var active ? active : null,
         }).ToList(),
     }, Options);
 
@@ -106,6 +113,7 @@ public static partial class DocumentFile
         {
             Type = o.Type, Id = o.Id, Name = o.Name, X = o.X, Y = o.Y, Width = o.Width, Height = o.Height,
             Fill = o.Fill, Stroke = o.Stroke, StrokeWidth = o.StrokeWidth == 0 ? null : o.StrokeWidth,
+            Hidden = o.Hidden ? true : null, Locked = o.Locked ? true : null,
             Transform = o.Transform == Matrix3x2.Identity ? null : [o.Transform.M11, o.Transform.M12, o.Transform.M21, o.Transform.M22, o.Transform.M31, o.Transform.M32],
         };
         switch (o)
@@ -196,11 +204,14 @@ public static partial class DocumentFile
             page.Layers.Clear();
             foreach (var ld in pd.Layers)
             {
-                var layer = new Layer(ld.Name);
+                var layer = new Layer(ld.Name) { Visible = ld.Hidden != true, Locked = ld.Locked == true };
+                if (page.Layers.Any(l => l.Name.Equals(layer.Name, StringComparison.OrdinalIgnoreCase)))
+                    throw new CommandException($"Il file ha due layer con lo stesso nome ('{layer.Name}').");
                 foreach (var od in ld.Objects) layer.Objects.Add(FromDto(od, ids));
                 page.Layers.Add(layer);
             }
             if (page.Layers.Count == 0) page.Layers.Add(new Layer("Layer 1"));
+            page.ActiveLayer = page.Layers[Math.Clamp(pd.ActiveLayer ?? 0, 0, page.Layers.Count - 1)];
             doc.Pages.Add(page);
         }
 
@@ -278,6 +289,7 @@ public static partial class DocumentFile
         obj.Fill = d.Fill is null ? null : Document.ParseColor(d.Fill, $"{label}.fill");
         obj.Stroke = d.Stroke is null ? null : Document.ParseColor(d.Stroke, $"{label}.stroke");
         obj.StrokeWidth = d.StrokeWidth ?? 0;
+        (obj.Hidden, obj.Locked) = (d.Hidden == true, d.Locked == true);
         if (d.Transform is { } t)
         {
             if (t.Length != 6 || !t.All(float.IsFinite)) throw new CommandException($"Oggetto {label}: 'transform' deve avere 6 numeri.");

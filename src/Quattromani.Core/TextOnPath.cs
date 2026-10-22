@@ -225,7 +225,7 @@ public sealed class SetTextOnPath : Command
     public override void Apply(Document doc)
     {
         if (Targets.Count == 0) throw new CommandException("text.onPath: 'targets' e' vuoto. Passa id o nomi di testi, es. [\"o1\"].");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.FirstOrDefault(o => o is not TextObject) is { } other)
             throw new CommandException($"text.onPath: '{other.Name ?? other.Id}' e' un {other.Type}, non un testo.");
         if (Align is not (null or "start" or "center" or "end"))

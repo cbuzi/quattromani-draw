@@ -368,7 +368,7 @@ public sealed class BooleanOp : Command
     {
         if (Op is not ("weld" or "intersect" or "subtract" or "trim"))
             throw new CommandException($"shape.boolean: op '{Op}' non valida. Valori: \"weld\", \"intersect\", \"subtract\", \"trim\".");
-        var objs = Targets.Select(t => doc.Find(t)).Distinct().ToList();
+        var objs = Targets.Select(t => doc.FindEditable(t)).Distinct().ToList();
         if (objs.Count < 2) throw new CommandException("shape.boolean: servono almeno 2 oggetti in 'targets'.");
         var container = doc.ContainerOf(objs[0])!;
         if (objs.Any(o => doc.ContainerOf(o) != container))

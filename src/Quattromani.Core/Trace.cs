@@ -248,7 +248,7 @@ public sealed class TraceImage : Command
     {
         if (_obj == null)
         {
-            if (doc.Find(Target) is not ImageObject img)
+            if ((KeepOriginal ? doc.Find(Target) : doc.FindEditable(Target)) is not ImageObject img)
                 throw new CommandException($"image.trace: '{Target}' non e' un'immagine. Passa l'id o il nome di un'immagine importata.");
             if (Threshold is < 1 or > 255) throw new CommandException("image.trace: 'threshold' deve essere tra 1 e 255.");
             if (MinArea < 0 || !double.IsFinite(MinArea)) throw new CommandException("image.trace: 'minArea' deve essere >= 0.");
