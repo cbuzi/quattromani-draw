@@ -358,10 +358,12 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         Result: {"version":N,"changes":[{"version":V,"author":"human"|"llm:<name>","kind":"do"|"undo"|"redo","command":{...}}]}.
         Pass the `version` you last saw (from get_document or execute); use 0 for the full history.
         A "human" object.move/object.style/object.delete tells you what the user changed; "shape.create" includes the new object's id.
+        Only the most recent changes are kept: if `sinceVersion` is older than that, the result has "truncated":true and lacks the oldest changes: call get_document to resync.
         """)]
     public string GetChanges([Description("Last version you know.")] long sinceVersion)
     {
         var (version, changes) = bus.GetChanges(sinceVersion);
-        return JsonSerializer.Serialize(new { version, changes }, Json.Options);
+        var floor = bus.LogFloor; // dopo: se nel frattempo il registro si è accorciato, meglio segnalarlo che no
+        return JsonSerializer.Serialize(new { version, truncated = sinceVersion < floor ? true : (bool?)null, changes }, Json.Options);
     }
 }

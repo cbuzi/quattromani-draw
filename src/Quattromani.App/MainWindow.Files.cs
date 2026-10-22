@@ -16,6 +16,8 @@ public partial class MainWindow
     void InitFiles()
     {
         _files.StateChanged += UpdateTitle;
+        _files.StateChanged += RefreshRecent;
+        Opened += (_, _) => _ = OfferRecoveryAsync();
         var mod = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control; // Cmd su Mac, Ctrl altrove
         MenuNew.InputGesture = new KeyGesture(Key.N, mod);
         MenuOpen.InputGesture = new KeyGesture(Key.O, mod);
@@ -47,6 +49,67 @@ public partial class MainWindow
         };
         UpdateTitle();
         if (OperatingSystem.IsMacOS()) BuildNativeMenu();
+        RefreshRecent();
+    }
+
+    NativeMenuItem? _recentNative;
+
+    // Il menu "Open recent" (nella finestra o nella barra di sistema) segue l'elenco dei documenti recenti.
+    void RefreshRecent()
+    {
+        var recent = RecentFiles.Load();
+        MenuItem Item(string path)
+        {
+            var item = new MenuItem { Header = Path.GetFileName(path) };
+            ToolTip.SetTip(item, path);
+            item.Click += async (_, _) => await OpenPathAsync(path);
+            return item;
+        }
+        MenuRecent.ItemsSource = recent.Count == 0 ? new List<MenuItem> { new() { Header = "(none)", IsEnabled = false } } : recent.Select(Item).ToList();
+        if (_recentNative?.Menu is { } menu)
+        {
+            menu.Items.Clear();
+            foreach (var path in recent)
+            {
+                var item = new NativeMenuItem(Path.GetFileName(path));
+                item.Click += async (_, _) => await OpenPathAsync(path);
+                menu.Items.Add(item);
+            }
+            _recentNative.IsEnabled = recent.Count > 0;
+        }
+    }
+
+    // Se l'app non si è chiusa bene l'ultima volta, offre la copia di sicurezza del lavoro non salvato.
+    async Task OfferRecoveryAsync()
+    {
+        if (_files.IsDirty || Recovery.FindStale() is not { } stale) return;
+        var what = stale.OriginalPath is { } p ? $"“{Path.GetFileName(p)}”" : "an untitled document";
+        var choice = await ConfirmWindow.ShowAsync(this, "Recover unsaved work?",
+            $"Quattromani Draw did not close properly last time. A backup of {what} from {stale.SavedAt:g} was found.", "Recover", "Discard", "Later");
+        try
+        {
+            if (choice == ConfirmWindow.Choice.Save)
+            {
+                _files.Recover(stale.File, stale.OriginalPath);
+                App.Recovery.Write(); // la copia nuova prima di togliere la vecchia
+                Recovery.Discard(stale.File);
+            }
+            else if (choice == ConfirmWindow.Choice.Discard) Recovery.Discard(stale.File);
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    async Task OpenPathAsync(string path)
+    {
+        CommitTextEdit();
+        if (!await ConfirmDiscardAsync()) return;
+        try { _files.Open(path); }
+        catch (CommandException ex)
+        {
+            ShowNotice(ex.Message);
+            if (!File.Exists(path)) RecentFiles.Remove(path);
+            RefreshRecent();
+        }
     }
 
     // Su macOS i menu stanno nella barra di sistema, con il nome dell'applicazione: File e Edit (Undo/Redo senza scorciatoia
@@ -69,6 +132,7 @@ public partial class MainWindow
             {
                 Entry("New", () => _ = NewDocumentAsync(), Key.N),
                 Entry("Open…", () => _ = OpenAsync(), Key.O),
+                (_recentNative = new NativeMenuItem("Open Recent") { Menu = new NativeMenu() }),
                 new NativeMenuItemSeparator(),
                 Entry("Save", () => _ = SaveAsync(false), Key.S),
                 Entry("Save As…", () => _ = SaveAsync(true), Key.S, KeyModifiers.Shift),
@@ -138,6 +202,7 @@ public partial class MainWindow
     async Task CloseAfterConfirmAsync()
     {
         if (!await ConfirmDiscardAsync()) return;
+        App.Recovery.Delete(); // chiusura voluta (salvato o scartato): niente da recuperare
         _closeConfirmed = true;
         Close();
     }

@@ -12,7 +12,7 @@ sealed class ConfirmWindow : Window
 
     Choice _choice = Choice.Cancel; // chiudere con la X equivale ad Annulla
 
-    ConfirmWindow(string title, string detail)
+    ConfirmWindow(string title, string detail, string saveText, string discardText, string cancelText)
     {
         Title = "Quattromani Draw";
         Width = 460;
@@ -21,9 +21,9 @@ sealed class ConfirmWindow : Window
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
-        var save = new Button { Content = "Save", IsDefault = true, MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
-        var discard = new Button { Content = "Don't save", MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var save = new Button { Content = saveText, IsDefault = true, MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var discard = new Button { Content = discardText, MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
+        var cancel = new Button { Content = cancelText, IsCancel = true, MinWidth = 90, HorizontalContentAlignment = HorizontalAlignment.Center };
         save.Click += (_, _) => { _choice = Choice.Save; Close(); };
         discard.Click += (_, _) => { _choice = Choice.Discard; Close(); };
         cancel.Click += (_, _) => Close();
@@ -44,9 +44,9 @@ sealed class ConfirmWindow : Window
         };
     }
 
-    public static async Task<Choice> ShowAsync(Window owner, string title, string detail)
+    public static async Task<Choice> ShowAsync(Window owner, string title, string detail, string saveText = "Save", string discardText = "Don't save", string cancelText = "Cancel")
     {
-        var w = new ConfirmWindow(title, detail);
+        var w = new ConfirmWindow(title, detail, saveText, discardText, cancelText);
         await w.ShowDialog(owner);
         return w._choice;
     }

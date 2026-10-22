@@ -18,6 +18,7 @@
                             <MenuFlyout Placement="BottomEdgeAlignedLeft">
                                 <MenuItem x:Name="MenuNew" Header="New" />
                                 <MenuItem x:Name="MenuOpen" Header="Open…" />
+                                <MenuItem x:Name="MenuRecent" Header="Open recent" />
                                 <Separator />
                                 <MenuItem x:Name="MenuSave" Header="Save" />
                                 <MenuItem x:Name="MenuSaveAs" Header="Save as…" />

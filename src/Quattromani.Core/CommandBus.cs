@@ -12,8 +12,14 @@ public sealed class CommandBus(Document document)
 {
     readonly object _gate = new();
     readonly List<Change> _log = [];
-    readonly Stack<List<Command>> _undo = new();
+    readonly List<List<Command>> _undo = []; // l'ultimo è il prossimo da annullare
     readonly Stack<List<Command>> _redo = new();
+    long _logFloor;
+
+    /// <summary>Passi di undo conservati: oltre, i più vecchi vengono dimenticati (i comandi tengono in memoria anche immagini e oggetti eliminati).</summary>
+    public const int MaxUndoSteps = 200;
+    /// <summary>Voci del registro delle modifiche conservate per get_changes.</summary>
+    public const int MaxLogEntries = 5000;
 
     public Document Document => document;
 
@@ -57,7 +63,7 @@ public sealed class CommandBus(Document document)
 
             if (applied.Count == 0) return new(document.Version, []);
             Record(applied, author, "do");
-            _undo.Push(applied);
+            PushUndo(applied);
             _redo.Clear();
             result = new(document.Version, applied.SelectMany(c => c.CreatedIds).ToList());
         }
@@ -95,7 +101,9 @@ public sealed class CommandBus(Document document)
     {
         lock (_gate)
         {
-            if (!_undo.TryPop(out var batch)) return false;
+            if (_undo.Count == 0) return false;
+            var batch = _undo[^1];
+            _undo.RemoveAt(_undo.Count - 1);
             for (var i = batch.Count - 1; i >= 0; i--) batch[i].Undo(document);
             document.RefreshPathTexts();
             Record(Enumerable.Reverse(batch), author, "undo");
@@ -112,11 +120,17 @@ public sealed class CommandBus(Document document)
             if (!_redo.TryPop(out var batch)) return false;
             foreach (var cmd in batch) { cmd.Apply(document); document.RefreshPathTexts(); }
             Record(batch, author, "redo");
-            _undo.Push(batch);
+            PushUndo(batch);
         }
         Changed?.Invoke();
         return true;
     }
+
+    /// <summary>
+    /// Le modifiche con versione fino a questa (compresa) sono state dimenticate per limitare la memoria: chi chiede le modifiche
+    /// da una versione più vecchia non le riceverebbe tutte e deve rileggere il documento.
+    /// </summary>
+    public long LogFloor { get { lock (_gate) return _logFloor; } }
 
     /// <summary>Modifiche con versione &gt; sinceVersion, in ordine.</summary>
     public (long Version, List<Change> Changes) GetChanges(long sinceVersion)
@@ -128,5 +142,17 @@ public sealed class CommandBus(Document document)
     {
         foreach (var cmd in commands)
             _log.Add(new(++document.Version, author, kind, cmd));
+        if (_log.Count > MaxLogEntries)
+        {
+            var drop = _log.Count - MaxLogEntries * 4 / 5; // si taglia un po' di più, così non si ricompatta a ogni comando
+            _logFloor = _log[drop - 1].Version;
+            _log.RemoveRange(0, drop);
+        }
+    }
+
+    void PushUndo(List<Command> batch)
+    {
+        _undo.Add(batch);
+        if (_undo.Count > MaxUndoSteps) _undo.RemoveAt(0);
     }
 }

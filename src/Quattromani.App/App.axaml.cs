@@ -27,6 +27,7 @@ public class App : Application
     /// <summary>Unico bus dell'app: UI (e in seguito MCP) modificano il documento solo da qui.</summary>
     public static CommandBus Bus { get; } = new(new Document { TextEngine = new SkiaTextEngine(), ImageProbe = SceneRenderer.Probe, ImagePixels = SceneRenderer.Pixels });
     internal static FileSession Files { get; } = new(Bus);
+    internal static Recovery Recovery { get; } = new(Bus, Files);
 
     public override void Initialize()
     {
@@ -71,6 +72,16 @@ public class App : Application
             MacApp.SetDockIcon();
             var window = new MainWindow();
             desktop.MainWindow = window;
+            Recovery.Start();
+            // Un errore imprevisto in un gestore dell'interfaccia non deve chiudere l'app e far perdere il lavoro: lo si registra, si
+            // mette al sicuro una copia e si continua.
+            Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
+            {
+                CrashLog.Write("UI thread", e.Exception);
+                _ = Task.Run(Recovery.Write);
+                window.ShowNotice($"Unexpected error: {e.Exception.Message} (details in ~/.quattromani/crash.log). A backup of your work was made; consider saving it.");
+                e.Handled = true;
+            };
             var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection);
             desktop.Exit += (_, _) => { McpHost.RemoveDiscoveryFile(); _ = mcp.StopAsync(); }; // senza attendere: il server non ha nulla da salvare, e aspettare le connessioni aperte faceva "laggare" la chiusura
         }

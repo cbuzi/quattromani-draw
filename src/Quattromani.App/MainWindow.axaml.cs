@@ -1123,7 +1123,7 @@ public partial class MainWindow : Window
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
-    void ShowNotice(string message, bool error = true)
+    internal void ShowNotice(string message, bool error = true)
     {
         NoticeText.Foreground = error ? new SolidColorBrush(Color.Parse("#EF4444")) : new SolidColorBrush(Color.Parse("#22C55E"));
         NoticeText.Text = message.Replace("shape.boolean: ", "").Replace("shape.toPath: ", "");

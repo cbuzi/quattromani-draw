@@ -44,6 +44,7 @@ sealed class FileSession(CommandBus bus) : IFileService
         WriteAtomic(path, tmp => File.WriteAllText(tmp, json));
         CurrentPath = path;
         _savedVersion = version;
+        RecentFiles.Add(path);
         Notify();
         return path;
     }
@@ -60,6 +61,23 @@ sealed class FileSession(CommandBus bus) : IFileService
         bus.Replace(doc, "open", path);
         CurrentPath = path;
         _savedVersion = bus.Version;
+        RecentFiles.Add(path);
+        Notify();
+    }
+
+    /// <summary>Riapre una copia di sicurezza: il documento risulta modificato (non salvato) e, se aveva un file, lo ritrova.</summary>
+    public void Recover(string recoveryFile, string? originalPath)
+    {
+        string text;
+        try { text = File.ReadAllText(recoveryFile); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new CommandException($"Cannot read the recovery copy: {ex.Message}");
+        }
+        var doc = DocumentFile.Load(text);
+        bus.Replace(doc, "recover", originalPath);
+        CurrentPath = originalPath;
+        _savedVersion = -1;
         Notify();
     }
 
