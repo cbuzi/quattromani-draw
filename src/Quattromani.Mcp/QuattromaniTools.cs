@@ -63,6 +63,33 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             Radius: o is RectangleObject { CornerRadius: > 0 } rr ? R(rr.EffectiveRadius) : null);
     }
 
+    // Some models send `commands` badly: as a string that holds the array, as a single command object, or wrapped in {"commands":[...]}.
+    // Those are accepted; anything else gets an error that says what was received and shows a working call.
+    static JsonElement AsCommandArray(JsonElement commands, string? who)
+    {
+        const string Example = "[{\"cmd\":\"shape.create\",\"type\":\"rectangle\",\"x\":10,\"y\":10,\"width\":100,\"height\":60,\"fill\":\"#FFC800\"}]";
+        var value = commands;
+        // A string containing JSON (maybe inside a markdown code fence).
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString()!.Trim();
+            if (text.StartsWith("```")) text = text.Trim('`').Trim().Replace("json\n", "", StringComparison.OrdinalIgnoreCase).Trim();
+            try { value = JsonDocument.Parse(text).RootElement.Clone(); }
+            catch (JsonException) { /* reported below */ }
+        }
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("commands", out var inner) && inner.ValueKind is JsonValueKind.Array or JsonValueKind.String)
+            return AsCommandArray(inner, who);
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("cmd", out _))
+            return JsonSerializer.SerializeToElement(new[] { value }); // a single command
+        if (value.ValueKind == JsonValueKind.Array) return value;
+
+        var received = commands.ValueKind == JsonValueKind.String ? $"a string that is not valid JSON ({Shorten(commands.GetString()!)})" : $"{commands.ValueKind.ToString().ToLowerInvariant()} ({Shorten(commands.ToString())})";
+        Console.Error.WriteLine($"[mcp] execute{(who is null ? "" : " from " + who)}: 'commands' was {received}");
+        throw new McpException($"'commands' must be a JSON array of command objects, but I received {received}. Pass the array itself (not a quoted string). Working example: {Example}");
+    }
+
+    static string Shorten(string s) => s.Length <= 80 ? s.Replace('\n', ' ') : s[..80].Replace('\n', ' ') + "…";
+
     [McpServerTool(Name = "execute")]
     [Description("""
         Applies a batch of commands to the document as ONE undoable step, all-or-nothing: if any command fails, nothing changes.
@@ -137,12 +164,11 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
                   {"cmd":"shape.create","type":"ellipse","name":"sun","x":300,"y":20,"width":60,"height":60,"fill":"#FFC800"}]
         """)]
     public string Execute(
-        [Description("JSON array of command objects (see tool description).")] JsonElement commands,
+        [Description("JSON array of command objects (see tool description). Pass a real array, not a quoted string.")] JsonElement commands,
         McpServer server,
         [Description("Optional. Your agent name; if omitted it is taken from the MCP client (e.g. \"claude-code\"). Recorded as author \"llm:<name>\".")] string? agent = null)
     {
-        if (commands.ValueKind != JsonValueKind.Array)
-            throw new McpException("'commands' must be a JSON array of command objects, e.g. [{\"cmd\":\"object.move\",\"targets\":[\"o1\"],\"dx\":10,\"dy\":0}].");
+        commands = AsCommandArray(commands, agent ?? server.ClientInfo?.Name);
 
         var parsed = new List<Command>();
         var i = 0;

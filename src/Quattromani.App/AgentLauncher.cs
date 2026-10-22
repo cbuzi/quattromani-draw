@@ -77,6 +77,9 @@ static class AgentLauncher
         - Locked objects and layers are off limits unless the human asks.
         - If several agents or sessions work at once, pass a distinct `agent` name in your `execute` calls.
 
+        Example `execute` call. `commands` is an array of objects (an array, not a string):
+        `{"commands": [{"cmd": "shape.create", "type": "rectangle", "name": "sky", "x": 0, "y": 0, "width": 400, "height": 200, "fill": "#87CEEB"}]}`
+
         The tool descriptions contain the full command reference with examples.
         """;
 

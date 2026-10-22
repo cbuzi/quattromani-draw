@@ -18,6 +18,8 @@ public static class McpHost
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://localhost:{Port}");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        // A failing tool call is reported to the agent as an error result: the SDK's stack trace for each one only floods the console.
+        builder.Logging.AddFilter("ModelContextProtocol.Server.McpServer", LogLevel.Critical);
         builder.Services.AddSingleton(bus);
         builder.Services.AddSingleton(renderer);
         builder.Services.AddSingleton(files);
