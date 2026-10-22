@@ -72,7 +72,6 @@ public sealed class CanvasView : Control
     readonly HashSet<(int Sub, int Idx)> _nodeSel = [];
     List<SubPath>? _nodeOrig, _nodeWork;
     (int Sub, int Idx, NodePart Part) _nodeHit;
-    double _nodeHandleX, _nodeHandleY;
     Point _penHover;
 
     // Resize / rotation in progress (preview: the document changes only on release).

@@ -373,9 +373,9 @@
                     </StackPanel>
                     <TextBlock x:Name="GradHint" Text="Now pick a color from the palette" FontSize="11" Opacity="0.6" IsVisible="False" />
                     <TextBlock Classes="caption" Text="FILL" Margin="0,6,0,0" />
-                    <TextBox x:Name="FillHex" Watermark="#RRGGBB" />
+                    <TextBox x:Name="FillHex" PlaceholderText="#RRGGBB" />
                     <TextBlock Classes="caption" Text="STROKE" Margin="0,6,0,0" />
-                    <TextBox x:Name="StrokeHex" Watermark="#RRGGBB" />
+                    <TextBox x:Name="StrokeHex" PlaceholderText="#RRGGBB" />
                     <TextBlock Classes="caption" Text="STROKE WIDTH" Margin="0,6,0,0" />
                     <NumericUpDown x:Name="WidthBox" Minimum="0" Maximum="200" Increment="1" FormatString="0.##" Value="2" />
                     <TextBlock Classes="caption" Text="STROKE STYLE" Margin="0,6,0,0" />
@@ -408,7 +408,7 @@
                 <Grid Margin="6,0">
                     <ListBox x:Name="ObjectList" Background="Transparent" />
                     <TextBox x:Name="RenameBox" IsVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top" Padding="8,0"
-                             VerticalContentAlignment="Center" MinHeight="0" Watermark="Name" />
+                             VerticalContentAlignment="Center" MinHeight="0" PlaceholderText="Name" />
                 </Grid>
             </DockPanel>
         </Border>
