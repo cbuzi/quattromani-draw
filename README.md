@@ -41,6 +41,12 @@ Nothing is thrown over a wall. Every object is a vector shape with a stable id a
 ## What it looks like
 
 <p align="center">
+  <img src="docs/images/quattromani-demo.gif" alt="A human and Claude Code drawing a sunset together in Quattromani Draw" width="860">
+  <br>
+  <sub>A real Claude Code session, sped up (waiting time is cut ×6–×9). The human blocks out the sky, the agent builds the landscape, the human moves the sun and bends a peak, and the agent adapts to those edits. Everything it did undoes in one step.</sub>
+</p>
+
+<p align="center">
   <img src="docs/images/agent-at-work.png" alt="Quattromani Draw while an agent is drawing" width="860">
   <br>
   <sub>The agent's work is always visible: new and changed objects glow in the agent's color, and a label names who touched what. With several agents, each gets its own color.</sub>
