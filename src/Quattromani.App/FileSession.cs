@@ -73,6 +73,21 @@ sealed class FileSession(CommandBus bus) : IFileService
 
     public void ExportPdf(string path) => WriteAtomic(path, tmp => PdfExporter.Export(bus, tmp, CurrentPath));
 
+    public const int MaxPngSide = 8192;
+
+    public (int Width, int Height) ExportPng(string path, double scale, string? background)
+    {
+        var (w, h) = bus.Read(d => (d.Pages[0].Width, d.Pages[0].Height));
+        if (!(scale > 0 && double.IsFinite(scale))) throw new CommandException("scale deve essere un numero maggiore di 0.");
+        var side = Math.Max(w, h) * scale;
+        if (side > MaxPngSide)
+            throw new CommandException($"L'immagine risulterebbe di {Math.Round(w * scale)} x {Math.Round(h * scale)} pixel: il lato massimo e' {MaxPngSide}. Usa una scala piu' bassa (al massimo {Math.Round(MaxPngSide / Math.Max(w, h), 2)} per questa pagina).");
+        // La pagina e nient'altro: quello che esce dai bordi non entra nell'immagine.
+        var img = new SkiaDocumentRenderer(bus).Render(new Box(0, 0, w, h), (int)Math.Max(1, Math.Round(side)), background ?? "transparent", labels: false, showPage: false);
+        WriteAtomic(path, tmp => File.WriteAllBytes(tmp, img.Png));
+        return (img.PixelWidth, img.PixelHeight);
+    }
+
     public void ExportSvg(string path)
     {
         var svg = bus.Read(SvgFile.Export);

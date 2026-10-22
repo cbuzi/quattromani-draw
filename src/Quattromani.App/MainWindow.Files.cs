@@ -30,6 +30,7 @@ public partial class MainWindow
         MenuImport.Click += async (_, _) => await ImportImageAsync();
         MenuExportPdf.Click += async (_, _) => await ExportPdfAsync();
         MenuExportSvg.Click += async (_, _) => await ExportSvgAsync();
+        MenuExportPng.Click += async (_, _) => await ExportPngAsync();
         DragDrop.SetAllowDrop(Canvas, true);
         Canvas.AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None);
         Canvas.AddHandler(DragDrop.DropEvent, (_, e) =>
@@ -75,6 +76,7 @@ public partial class MainWindow
                 Entry("Import…", () => _ = ImportImageAsync(), Key.I),
                 Entry("Export PDF…", () => _ = ExportPdfAsync(), Key.E),
                 Entry("Export SVG…", () => _ = ExportSvgAsync()),
+                Entry("Export PNG…", () => _ = ExportPngAsync()),
             },
         };
         var edit = new NativeMenuItem("Edit")
@@ -228,6 +230,20 @@ public partial class MainWindow
         {
             await Task.Run(() => _files.ExportSvg(path));
             ShowNotice($"Exported {Path.GetFileName(path)}", error: false);
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
+    // Pagina intera a 192 dpi (il doppio della misura a schermo), sfondo trasparente.
+    public async Task ExportPngAsync()
+    {
+        CommitTextEdit();
+        var path = await PickSaveAsync("Export PNG", SuggestedName(".png"), ".png", "PNG image");
+        if (path == null) return;
+        try
+        {
+            var (w, h) = await Task.Run(() => _files.ExportPng(path, 2, null));
+            ShowNotice($"Exported {Path.GetFileName(path)} ({w} × {h} px)", error: false);
         }
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }

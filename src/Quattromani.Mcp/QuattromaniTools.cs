@@ -256,6 +256,28 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         return JsonSerializer.Serialize(new { path }, Json.Options);
     }
 
+    [McpServerTool(Name = "export_png")]
+    [Description("""
+        Exports the page (and only the page: content outside it is cut) as a PNG file, for sharing or use in other programs. To LOOK at your drawing use `render` instead.
+        `scale` = pixels per document unit (1 = 96 dpi, the page's own size; 2 = twice as sharp; A4 at 3.125 is about 300 dpi); the longest side may not exceed 8192 px.
+        `background` = "#RRGGBB", "#RRGGBBAA" or "transparent" (default transparent).
+        `path` must be absolute and end in .png; an existing file is replaced only if `overwrite` is true. Returns {"path":"...","width":W,"height":H} in pixels.
+        """)]
+    public string ExportPng(
+        [Description("Absolute path ending in .png.")] string path,
+        [Description("Pixels per document unit, default 1.")] double scale = 1,
+        [Description("\"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\" (default).")] string? background = null,
+        [Description("Replace the file if it already exists.")] bool overwrite = false)
+    {
+        CheckPath(path, ".png", mustExist: false);
+        if (File.Exists(path) && !overwrite)
+            throw new McpException($"{path} already exists. Choose another name, or pass overwrite=true only if the user asked to replace it.");
+        if (background is not (null or "transparent") && !System.Text.RegularExpressions.Regex.IsMatch(background, "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"))
+            throw new McpException("'background' must be \"#RRGGBB\", \"#RRGGBBAA\" or \"transparent\".");
+        var (width, height) = Guard(() => files.ExportPng(path, scale, background));
+        return JsonSerializer.Serialize(new { path, width, height }, Json.Options);
+    }
+
     [McpServerTool(Name = "list_fonts", ReadOnly = true)]
     [Description("""
         Lists the font families installed on the computer running Quattromani Draw, to use as `fontFamily` in text commands.

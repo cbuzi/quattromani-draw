@@ -13,4 +13,7 @@ public interface IFileService
     void New();
     void ExportPdf(string path);
     void ExportSvg(string path);
+    /// <summary>PNG della pagina: <paramref name="scale"/> pixel per unità documento (1 = 96 dpi); sfondo "#RRGGBB", "#RRGGBBAA" o "transparent" (null = trasparente).</summary>
+    /// <returns>Dimensioni dell'immagine in pixel.</returns>
+    (int Width, int Height) ExportPng(string path, double scale, string? background);
 }

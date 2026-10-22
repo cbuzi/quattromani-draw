@@ -25,6 +25,7 @@
                                 <MenuItem x:Name="MenuImport" Header="Import…" />
                                 <MenuItem x:Name="MenuExportPdf" Header="Export PDF…" />
                                 <MenuItem x:Name="MenuExportSvg" Header="Export SVG…" />
+                                <MenuItem x:Name="MenuExportPng" Header="Export PNG…" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
