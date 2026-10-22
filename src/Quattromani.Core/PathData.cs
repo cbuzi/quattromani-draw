@@ -299,7 +299,7 @@ public static class PathData
 
         public char ReadLetter() => d[_i++];
 
-        public CommandException Error(string msg) => new($"path 'd': {msg} (posizione {_i}).");
+        public CommandException Error(string msg) => new($"path 'd': {msg} (at position {_i}).");
 
         public double Number()
         {
