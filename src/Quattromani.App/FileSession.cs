@@ -72,6 +72,12 @@ sealed class FileSession(CommandBus bus) : IFileService
     }
 
     public void ExportPdf(string path) => WriteAtomic(path, tmp => PdfExporter.Export(bus, tmp, CurrentPath));
+
+    public void ExportSvg(string path)
+    {
+        var svg = bus.Read(SvgFile.Export);
+        WriteAtomic(path, tmp => File.WriteAllText(tmp, svg));
+    }
 }
 
 /// <summary>PDF vettoriale: testi (font incorporati), curve, gradienti e motivi restano vettoriali; la pagina ha la sua misura reale.</summary>

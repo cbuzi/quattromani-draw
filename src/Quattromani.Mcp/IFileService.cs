@@ -12,4 +12,5 @@ public interface IFileService
     /// <summary>Nuovo documento vuoto.</summary>
     void New();
     void ExportPdf(string path);
+    void ExportSvg(string path);
 }

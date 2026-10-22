@@ -45,6 +45,7 @@ public static class Json
 [JsonDerivedType(typeof(DocumentReset), "document.reset")]
 [JsonDerivedType(typeof(ConvertToPath), "shape.toPath")]
 [JsonDerivedType(typeof(TraceImage), "image.trace")]
+[JsonDerivedType(typeof(ImportSvg), "svg.import")]
 public abstract class Command
 {
     /// <summary>"human" oppure "llm:&lt;nome&gt;". Impostato dal CommandBus.</summary>

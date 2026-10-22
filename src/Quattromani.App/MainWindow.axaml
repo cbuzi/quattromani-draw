@@ -22,8 +22,9 @@
                                 <MenuItem x:Name="MenuSave" Header="Save" />
                                 <MenuItem x:Name="MenuSaveAs" Header="Save as…" />
                                 <Separator />
-                                <MenuItem x:Name="MenuImport" Header="Import image…" />
+                                <MenuItem x:Name="MenuImport" Header="Import…" />
                                 <MenuItem x:Name="MenuExportPdf" Header="Export PDF…" />
+                                <MenuItem x:Name="MenuExportSvg" Header="Export SVG…" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>

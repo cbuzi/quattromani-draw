@@ -29,6 +29,7 @@ public partial class MainWindow
         MenuSaveAs.Click += async (_, _) => await SaveAsync(true);
         MenuImport.Click += async (_, _) => await ImportImageAsync();
         MenuExportPdf.Click += async (_, _) => await ExportPdfAsync();
+        MenuExportSvg.Click += async (_, _) => await ExportSvgAsync();
         DragDrop.SetAllowDrop(Canvas, true);
         Canvas.AddHandler(DragDrop.DragOverEvent, (_, e) => e.DragEffects = e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None);
         Canvas.AddHandler(DragDrop.DropEvent, (_, e) =>
@@ -71,8 +72,9 @@ public partial class MainWindow
                 Entry("Save", () => _ = SaveAsync(false), Key.S),
                 Entry("Save As…", () => _ = SaveAsync(true), Key.S, KeyModifiers.Shift),
                 new NativeMenuItemSeparator(),
-                Entry("Import Image…", () => _ = ImportImageAsync(), Key.I),
+                Entry("Import…", () => _ = ImportImageAsync(), Key.I),
                 Entry("Export PDF…", () => _ = ExportPdfAsync(), Key.E),
+                Entry("Export SVG…", () => _ = ExportSvgAsync()),
             },
         };
         var edit = new NativeMenuItem("Edit")
@@ -212,13 +214,26 @@ public partial class MainWindow
         catch (CommandException ex) { ShowNotice(ex.Message); }
     }
 
+    public async Task ExportSvgAsync()
+    {
+        CommitTextEdit();
+        var path = await PickSaveAsync("Export SVG", SuggestedName(SvgFile.Extension), SvgFile.Extension, "SVG image");
+        if (path == null) return;
+        try
+        {
+            await Task.Run(() => _files.ExportSvg(path));
+            ShowNotice($"Exported {Path.GetFileName(path)}", error: false);
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); }
+    }
+
     public async Task ImportImageAsync()
     {
         CommitTextEdit();
         var picked = await GetTopLevel(this)!.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Import image", AllowMultiple = true,
-            FileTypeFilter = [new FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp"] }],
+            Title = "Import", AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType("Images and SVG") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.bmp", "*.svg"] }],
         });
         var c = Canvas.ViewCenter;
         var paths = picked.Select(f => f.TryGetLocalPath()).OfType<string>().ToList();
@@ -228,6 +243,7 @@ public partial class MainWindow
     // Dimensione nativa, ridotta se non entra in 80% della pagina; centrata su `center` (punto del documento).
     void ImportImage(string path, Point center)
     {
+        if (path.EndsWith(SvgFile.Extension, StringComparison.OrdinalIgnoreCase)) { ImportSvgFile(path, center); return; }
         try
         {
             var (size, page) = _bus.Read(d => (d.ImageProbe!(File.ReadAllBytes(path)), (d.Pages[0].Width, d.Pages[0].Height)));
@@ -236,6 +252,23 @@ public partial class MainWindow
             double w = s.Width * k, h = s.Height * k;
             var r = _bus.Execute([new CreateShape { Type = "image", Src = path, X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h, Name = Path.GetFileNameWithoutExtension(path) }]);
             Canvas.SetSelection(r.CreatedIds);
+        }
+        catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
+    }
+
+    // Come per le immagini: ridotto se non entra in 80% della pagina, centrato su `center`.
+    void ImportSvgFile(string path, Point center)
+    {
+        try
+        {
+            var text = File.ReadAllText(path);
+            var (box, page) = _bus.Read(d => (SvgFile.Measure(d, text), (d.Pages[0].Width, d.Pages[0].Height)));
+            var k = Math.Min(1, Math.Min(0.8 * page.Width / Math.Max(box.Width, 1e-9), 0.8 * page.Height / Math.Max(box.Height, 1e-9)));
+            double w = box.Width * k, h = box.Height * k;
+            var cmd = new ImportSvg { Svg = text, Name = Path.GetFileNameWithoutExtension(path), X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h };
+            var r = _bus.Execute([cmd]);
+            Canvas.SetSelection(r.CreatedIds);
+            if (cmd.Notes is { } notes) ShowNotice($"Imported, but: {string.Join("; ", notes)}", error: false);
         }
         catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
     }

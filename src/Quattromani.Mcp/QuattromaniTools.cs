@@ -64,6 +64,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
           {"cmd":"shape.create","type":"path","name":"roof","d":"M 0 60 L 50 0 L 100 60 Z","fill":"#B91C1C"}   (a path takes its position from `d`: omit x/y/width/height; with neither fill nor stroke it gets a black stroke)
           {"cmd":"shape.create","type":"image","name":"sketch","src":"/Users/me/sketch.png","x":0,"y":0,"width":400}   (embeds a bitmap: PNG, JPEG, GIF, WebP or BMP; `src` = absolute file path or "data:image/png;base64,..."; omit width and height for the native size, give only one to keep the proportions; accepts rel; fill = background under transparent parts, stroke = frame. Handy as a reference to trace over: place it, call render, then draw vector shapes on top. Images move/resize/rotate/group/align like any object but cannot become paths or enter shape.boolean)
           {"cmd":"image.trace","target":"sketch","threshold":128,"smooth":1,"fill":"#000000","keepOriginal":true}   (vectorizes an imported image in black and white: dark pixels become ONE path with holes, drawn right above the image with the same position; returns the path id in `created`. threshold 1-255 = brightness below which a pixel is filled (default 128); "invert":true fills the light pixels instead; minArea = specks smaller than this many image pixels are ignored (default 4); smooth 0.2-5 = curve tolerance in image pixels, higher = fewer nodes and softer lines (default 1); keepOriginal:false removes the image. Transparent pixels count as empty. Good for line art, logos and sketches; photos give huge paths. Render to check, retry with another threshold if it is too thick or too thin)
+          {"cmd":"svg.import","src":"/Users/me/logo.svg","name":"logo","x":20,"y":20,"width":200}   (imports an SVG file, or inline markup with "svg":"<svg ...>", as ONE group: shapes, paths, groups, text, embedded images, gradients, <use> and class-based CSS are kept as editable objects; clip-paths, masks, filters, dashes and evenodd fills are not supported and reported in `notes` in the result. x,y,width,height give the position and size of the artwork's bounding box (give only width or only height to keep the proportions); omit them to keep the SVG's own coordinates and size; accepts rel. Returns the group id in `created`. Great for icons and logos: import, then render to check)
           {"cmd":"page.set","preset":"A4","orientation":"landscape"}   (page size: preset A0-A8, B4-B6, Letter, Legal, Tabloid, Executive, HD, FullHD, Square; or {"cmd":"page.set","width":210,"height":297,"unit":"mm"} with unit px|mm|cm|in|pt (default px); or only "orientation")
           {"cmd":"object.rename","target":"o3","name":"sun"}   (names like "o12" are reserved for ids; an empty name removes the name)
           {"cmd":"object.order","targets":["sun"],"action":"front"}   (stacking order: front, back, forward, backward; or "above":"sky" / "below":"sky" to sit right above/below another object; objects in the same layer/group; several targets keep their relative order)
@@ -131,7 +132,7 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
             try { parsed.Add(el.Deserialize<Command>(Json.Options) ?? throw new JsonException("null command")); }
             catch (JsonException ex)
             {
-                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
+                throw new McpException($"commands[{i}] is invalid: {ex.Message} Valid commands: shape.create, object.move, object.style, object.resize, object.rotate, object.group, object.ungroup, object.duplicate, shape.boolean, path.set, shape.toPath, image.trace, svg.import, object.place, text.set, text.onPath, page.set, object.rename, object.order, object.align, object.distribute, object.delete, guide.add, guide.move, guide.delete; each needs a \"cmd\" field.");
             }
             i++;
         }
@@ -139,7 +140,8 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         try
         {
             var r = bus.Execute(parsed, "llm:" + (string.IsNullOrWhiteSpace(agent) ? server.ClientInfo?.Name ?? "agent" : agent.Trim()));
-            return JsonSerializer.Serialize(new { version = r.Version, created = r.CreatedIds }, Json.Options);
+            var notes = parsed.OfType<ImportSvg>().SelectMany(c => c.Notes ?? []).Distinct().ToList();
+            return JsonSerializer.Serialize(new { version = r.Version, created = r.CreatedIds, notes = notes.Count == 0 ? null : notes }, Json.Options);
         }
         catch (CommandException ex)
         {
@@ -224,6 +226,23 @@ public sealed class QuattromaniTools(CommandBus bus, IDocumentRenderer renderer,
         if (File.Exists(path) && !overwrite)
             throw new McpException($"{path} already exists. Choose another name, or pass overwrite=true only if the user asked to replace it.");
         Guard(() => { files.ExportPdf(path); return 0; });
+        return JsonSerializer.Serialize(new { path }, Json.Options);
+    }
+
+    [McpServerTool(Name = "export_svg")]
+    [Description("""
+        Exports the page as an SVG file that other programs (browsers, Inkscape, Figma, Illustrator) open: rectangles, ellipses and paths stay shapes, text stays text,
+        gradients and patterns are written as SVG gradients and patterns, images are embedded. The viewBox is the page in document pixels.
+        `path` must be absolute and end in .svg; an existing file is replaced only if `overwrite` is true. Returns {"path":"..."}.
+        """)]
+    public string ExportSvg(
+        [Description("Absolute path ending in .svg.")] string path,
+        [Description("Replace the file if it already exists.")] bool overwrite = false)
+    {
+        CheckPath(path, SvgFile.Extension, mustExist: false);
+        if (File.Exists(path) && !overwrite)
+            throw new McpException($"{path} already exists. Choose another name, or pass overwrite=true only if the user asked to replace it.");
+        Guard(() => { files.ExportSvg(path); return 0; });
         return JsonSerializer.Serialize(new { path }, Json.Options);
     }
 
