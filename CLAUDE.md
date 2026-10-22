@@ -1,106 +1,103 @@
 # Quattromani Draw
 
-Nome prodotto: **Quattromani Draw**. Namespace, progetti ed eseguibile: **`Quattromani`** (senza "Draw").
-Il nome viene dall'espressione italiana "a quattro mani": umano e LLM disegnano insieme.
+Product name: **Quattromani Draw**. Namespace, projects and executable: **`Quattromani`** (without "Draw").
+The name comes from the Italian expression "a quattro mani" (four hands, as in a piano duet): human and LLM draw together.
 
-Editor di grafica vettoriale open source, multipiattaforma (Windows, macOS, Linux), ispirato agli editor vettoriali professionali classici.
-Caratteristica distintiva: **disegno "a quattro mani" tra umano e LLM**. Un agente esterno (Claude Code, Codex, OpenCode, Claude Desktop...) si collega all'app in esecuzione via MCP e disegna insieme all'utente sullo stesso documento.
+Open-source, cross-platform (Windows, macOS, Linux) vector graphics editor, inspired by the classic professional vector editors.
+Distinctive feature: **"four-handed" drawing between human and LLM**. An external agent (Claude Code, Codex, OpenCode, Claude Desktop...) connects to the running app via MCP and draws with the user on the same document.
 
 ## Stack
 
 - .NET 10, C#
 - Avalonia 12 (UI) + SkiaSharp (rendering)
-- SDK C# ufficiale di MCP (`ModelContextProtocol`, `ModelContextProtocol.AspNetCore`) ospitato in Kestrel dentro l'app
+- Official MCP C# SDK (`ModelContextProtocol`, `ModelContextProtocol.AspNetCore`) hosted in Kestrel inside the app
 
-## Struttura
+## Structure
 
 ```
-Quattromani.Core   → document model, geometria, comandi, undo/redo, versioning. NESSUNA dipendenza da UI o MCP.
-Quattromani.App    → Avalonia: shell, canvas Skia, strumenti, pannelli.
-Quattromani.Mcp    → server MCP HTTP su localhost, ospitato nel processo dell'app.
-tests/Quattromani.Core.Tests → test xUnit del Core.
+Quattromani.Core   → document model, geometry, commands, undo/redo, versioning, SVG. NO dependency on UI or MCP.
+Quattromani.App    → Avalonia: shell, Skia canvas, tools, panels.
+Quattromani.Mcp    → MCP server over HTTP on localhost, hosted inside the app process.
+tests/Quattromani.Core.Tests → xUnit tests of the Core.
 ```
 
-Import/export SVG vive in Core finché è piccolo.
+SVG import/export lives in Core as long as it stays small.
 
-## Principi architetturali (non negoziabili)
+## Architectural principles (non-negotiable)
 
-1. **Tutto passa dal command bus.** La UI non modifica mai il documento direttamente: umano e LLM sono due client dello stesso bus.
-2. **Ogni comando** è serializzabile in JSON, annullabile e porta un `author` (`human` | `llm:<nome>`).
-3. **Batch = transazione**: un batch di comandi produce un solo step di undo.
-4. **Versioning**: ogni comando applicato incrementa la versione del documento. Deve essere possibile ottenere le modifiche a partire da una versione N.
-5. **ID stabili** per ogni oggetto, più un `name` semantico opzionale ("logo", "titolo"), utilizzabile negli indirizzamenti.
-6. **Thread-safety**: i comandi da MCP arrivano da thread non-UI e vanno serializzati verso il dispatcher UI (o un lock sul documento).
-7. Il **modello interno è un soprainsieme di SVG**. Le feature avanzate (Quattro-Clip, inviluppi, blend, contour) andranno modellate come oggetti veri; all'export SVG si appiattiscono.
+1. **Everything goes through the command bus.** The UI never modifies the document directly: human and LLM are two clients of the same bus.
+2. **Every command** is JSON-serializable, undoable, and carries an `author` (`human` | `llm:<name>`).
+3. **Batch = transaction**: a batch of commands produces a single undo step.
+4. **Versioning**: every applied command increments the document version. It must be possible to get the changes since version N.
+5. **Stable IDs** for every object, plus an optional semantic `name` ("logo", "title") usable for addressing.
+6. **Thread safety**: MCP commands arrive from non-UI threads and must be serialized towards the UI dispatcher (or a lock on the document).
+7. The **internal model is a superset of SVG**. Advanced features (Quattro-Clip, envelopes, blends, contours) will be modeled as real objects; they are flattened on SVG export.
 
-## Document model (MVP)
+## Document model
 
-- `Document` → pagine → layer → oggetti
-- Oggetti: `Rectangle`, `Ellipse`, `Path` (bezier), `Group`; testo in seguito
-- Stile: fill (colore solido, poi gradienti), stroke (colore, spessore)
-- Trasformazione: matrice affine per oggetto
+- `Document` → pages → layers → objects
+- Objects: `Rectangle`, `Ellipse`, `Path` (bezier), `Group`, `Text`, `Image`
+- Style: fill (solid color, gradients, patterns), stroke (color, width, dash, cap, join), opacity
+- Transform: affine matrix per object
 
-## API MCP (LLM-oriented)
+## MCP API (LLM-oriented)
 
-Endpoint: `http://localhost:5577/mcp`
-Registrazione in Claude Code: `claude mcp add --transport http quattromani http://localhost:5577/mcp`
+Endpoint: `http://localhost:5577/mcp` (`QUATTROMANI_PORT` changes the port)
+Registration in Claude Code: `claude mcp add --transport http quattromani http://localhost:5577/mcp`
 
-Tool, pochi ma ricchi:
+Tools, few but rich:
 
-| Tool | Scopo |
+| Tool | Purpose |
 |---|---|
-| `get_document` | scene graph compatto in JSON (id, name, tipo, bounds, stile) |
-| `get_selection` | oggetti attualmente selezionati dall'umano |
-| `execute` | batch di comandi → un solo undo; restituisce id creati e nuova versione |
-| `render` | PNG di documento o area, per verificare visivamente il risultato |
-| `get_changes` | modifiche dalla versione N (in particolare quelle fatte dall'umano) |
+| `get_document` | compact JSON scene graph (id, name, type, bounds, style, layers) |
+| `get_selection` / `select` | objects currently selected by the human / set the selection |
+| `execute` | batch of commands → a single undo; returns created ids and the new version |
+| `render` | PNG of the document or an area, to check the result visually |
+| `get_changes` | changes since version N (in particular those made by the human) |
+| `save_document` / `open_document` / `new_document` | documents on disk |
+| `export_svg` / `export_pdf` / `export_png` | export |
+| `list_fonts` | fonts available for text |
 
-Linee guida per i tool:
-- Descrizioni ricche, con esempi JSON nella descrizione stessa.
-- Oltre alle coordinate assolute, supportare **posizionamento relativo**: `rightOf`, `inside`, `alignTo`, `anchor`, `margin`.
-- Errori esplicativi che dicano all'LLM come correggere la chiamata.
-- Output compatti: niente dati inutili nel JSON.
+Guidelines for the tools:
+- Rich descriptions, with JSON examples in the description itself.
+- Besides absolute coordinates, support **relative positioning**: `rightOf`, `inside`, `alignTo`, `anchor`, `margin`.
+- Explanatory errors that tell the LLM how to fix the call.
+- Compact output: no useless data in the JSON.
 
-Esempio di comando:
+Example command:
 ```json
-{ "cmd": "shape.create", "type": "ellipse", "name": "sole",
-  "rel": { "inside": "cielo", "anchor": "top-right", "margin": 20 },
+{ "cmd": "shape.create", "type": "ellipse", "name": "sun",
+  "rel": { "inside": "sky", "anchor": "top-right", "margin": 20 },
   "fill": "#FFC800" }
 ```
 
 ## UI
 
-- Deve essere **moderna e friendly**: stile Figma / Affinity e simili. **Mai** stile Inkscape/GTK.
-- Toolbox verticale a sinistra, barra proprietà contestuale in alto, pannelli a destra (oggetti/layer, proprietà).
-- Tema chiaro/scuro.
-- Il lavoro dell'LLM deve essere visibile: evidenziazione degli oggetti creati o modificati dall'agente e indicatore di attività.
+- Must be **modern and friendly**: Figma / Affinity style and the like. **Never** Inkscape/GTK style.
+- Vertical toolbox on the left, contextual properties bar at the top, panels on the right (objects/layers, properties).
+- Light/dark theme.
+- The LLM's work must be visible: highlighting of the objects the agent created or modified, and an activity indicator.
 
-## Scope beta
+## Beta scope
 
-Solo illustrazione: forme, path, selezione/trasformazione, fill/stroke, layer, undo/redo, salvataggio nel formato proprio (JSON) e import/export SVG.
-Fuori scope per ora: CMYK, stampa, multipagina avanzato, import AI/CDR.
+Illustration only: shapes, paths, selection/transformation, fill/stroke, layers, undo/redo, saving in the native format (JSON) and SVG import/export.
+Out of scope for now: CMYK, print, advanced multi-page, AI/CDR import.
 
-## Primo milestone
+## Reference projects (inspiration only, not dependencies)
 
-1. Document model + command bus + undo/redo + versioning
-2. Canvas Avalonia con rendering Skia, pan/zoom, selezione e spostamento con il mouse
-3. Server MCP con `get_document`, `execute` e `get_changes`
+- **Core2D** (C#/Avalonia, MIT): model/editor/renderer structure, tools, pan/zoom, layers.
+- **Penpot MCP** (MPL-2.0): how an editor exposes the document to agents via MCP.
+- **Graphite** (Rust, Apache-2.0): message-based editor and document model.
+- **Paper.js** (MIT): boolean operations on bezier curves, hit-testing, path geometry.
+- **kurbo** (Rust, MIT/Apache): bezier geometry (bounds, lengths, intersections).
+- **PixiEditor** (C#/Avalonia, LGPL-3.0): only to understand how a complex editor works on Avalonia, without copying code.
 
-Criterio di successo: Claude Code crea un rettangolo via MCP, l'umano lo sposta con il mouse, e Claude Code vede lo spostamento con `get_changes`.
+## Conventions
 
-## Progetti di riferimento (solo ispirazione, non dipendenze)
-
-- **Core2D** (C#/Avalonia, MIT): struttura model/editor/renderer, strumenti, pan/zoom, layer.
-- **Penpot MCP** (MPL-2.0): come un editor espone il documento agli agenti via MCP.
-- **Graphite** (Rust, Apache-2.0): editor a messaggi e document model.
-- **Paper.js** (MIT): operazioni booleane su curve bezier, hit-testing, geometria dei path.
-- **kurbo** (Rust, MIT/Apache): geometria bezier (bounds, lunghezze, intersezioni).
-- **PixiEditor** (C#/Avalonia, LGPL-3.0): solo per capire come funziona un editor complesso su Avalonia, senza copiare codice.
-
-## Convenzioni
-
-- Privilegiare sempre la soluzione più semplice e breve. Niente astrazioni premature.
-- **Non creare** file .md né nuovi progetti, a meno che non venga chiesto esplicitamente.
-- I test automatici del Core stanno in `tests/Quattromani.Core.Tests` (xUnit): quando cambia il comportamento del Core si aggiungono o aggiornano i test lì, e `dotnet test` deve passare.
-- Nessuna dipendenza nuova senza un motivo concreto.
-- **Non copiare codice GPL** (es. Inkscape, lib2geom). Si può leggere per capire gli algoritmi, poi si riscrive da zero. Codice MIT/Apache (es. Graphite) è utilizzabile come riferimento.
+- **Everything is in English**: code, comments, error messages, documentation and **commit messages**.
+- Always prefer the simplest and shortest solution. No premature abstractions.
+- **Do not create** .md files or new projects unless explicitly asked.
+- The Core's automated tests live in `tests/Quattromani.Core.Tests` (xUnit): when the Core's behavior changes, add or update tests there, and `dotnet test` must pass.
+- No new dependency without a concrete reason.
+- **Do not copy GPL code** (e.g. Inkscape, lib2geom). You can read it to understand the algorithms, then rewrite from scratch. MIT/Apache code (e.g. Graphite) can be used as a reference.
+- Do not use other companies' trademarks as names of our features (the shape clipper is "Quattro-Clip").
