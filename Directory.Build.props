@@ -4,6 +4,7 @@
         <!-- The release workflow overrides this with the tag (-p:Version=...). -->
         <Version>0.1.0</Version>
         <Authors>Cristiano Buzi</Authors>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
         <Copyright>Copyright (C) 2026 Cristiano Buzi</Copyright>
         <RepositoryUrl>https://github.com/cbuzi/quattromani-draw</RepositoryUrl>
     </PropertyGroup>

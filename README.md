@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue">
+  <img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
   <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4">
   <img alt="MCP" src="https://img.shields.io/badge/agents-MCP-8A2BE2">
   <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-orange">
@@ -30,7 +30,7 @@
 
 Most "AI + design" tools work like a vending machine: you type a prompt, an image comes out, and if it's not right you start over. The agent works *for* you, in a place you can't touch.
 
-Quattromani Draw is different. It is a real vector editor — pen, nodes, gradients, layers, booleans, text on a path — in the spirit of CorelDRAW, built so that **an AI agent is a first-class collaborator on the same document you are editing**:
+Quattromani Draw is different. It is a real vector editor — pen, nodes, gradients, layers, booleans, text on a path — in the spirit of the classic professional vector editors, built so that **an AI agent is a first-class collaborator on the same document you are editing**:
 
 - You draw a rectangle. The agent sees it, and puts a sun in its top-right corner.
 - The agent draws a mountain range. You grab a node and bend one peak by hand.
@@ -197,9 +197,7 @@ Ideas, bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTR
 
 ## License
 
-Copyright © 2026 Cristiano Buzi. Released under the [GNU General Public License v3.0](LICENSE): you are free to use, study, modify and share it, and modified versions you distribute must stay open source under the same license.
-
-Need to use Quattromani Draw under different terms — for example inside a product that cannot be GPL? A separate commercial license is possible: open an issue on GitHub to get in touch.
+Copyright © 2026 Cristiano Buzi. Released under the [Apache License 2.0](LICENSE): you are free to use, modify and distribute it, including in commercial products. The license does not grant the right to use the Quattromani name or logo.
 
 ## Inspiration
 
