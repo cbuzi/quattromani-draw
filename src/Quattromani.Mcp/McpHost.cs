@@ -2,6 +2,7 @@ using System.Text.Json;
 using Quattromani.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -27,6 +28,17 @@ public static class McpHost
         builder.Services.AddMcpServer().WithHttpTransport(o => o.Stateless = false).WithTools<QuattromaniTools>();
 
         var app = builder.Build();
+        // A web page open in the user's browser can reach localhost too (cross-origin requests, DNS rebinding): only loopback hosts and origins get through.
+        app.Use(async (context, next) =>
+        {
+            var origin = context.Request.Headers.Origin.ToString();
+            if (!IsLoopback(context.Request.Host.Host) || (origin.Length > 0 && !(Uri.TryCreate(origin, UriKind.Absolute, out var o) && IsLoopback(o.Host))))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            await next();
+        });
         app.MapMcp("/mcp");
 
         // If the port is busy the app must start anyway.
@@ -37,6 +49,8 @@ public static class McpHost
         start.ContinueWith(_ => WriteDiscoveryFile(), TaskContinuationOptions.OnlyOnRanToCompletion);
         return app;
     }
+
+    static bool IsLoopback(string host) => host is "localhost" or "127.0.0.1" or "[::1]" or "::1";
 
     /// <summary>Discovery file for agents: says where the server is even if the port is not the default one.</summary>
     public static string DiscoveryFile { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".quattromani", "server.json");
