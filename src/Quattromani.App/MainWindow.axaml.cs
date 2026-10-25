@@ -65,6 +65,8 @@ public partial class MainWindow : Window
         App.Agents.Changed += () => Dispatcher.UIThread.Post(UpdateConnectedAgents);
         new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.Background, (_, _) => UpdateConnectedAgents()).Start(); // agents expire silently
         UpdateConnectedAgents();
+        ConnectedAgents.PointerPressed += (_, _) => ShowConnectedAgents();
+        ConnectedAgents.Cursor = new Cursor(StandardCursorType.Hand);
         _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; _activeAgents.Clear(); };
         Canvas.SelectionChanged += Refresh;
         Canvas.ViewChanged += () => { ZoomText.Text = $"{Canvas.Zoom:P0}"; UpdateScrollBars(); };
@@ -664,10 +666,27 @@ public partial class MainWindow : Window
         var agents = App.Agents.Active();
         ConnectedDot.Fill = new SolidColorBrush(Color.Parse(agents.Count > 0 ? "#22C55E" : "#9CA3AF"));
         ConnectedText.Text = agents.Count switch { 0 => "No agent connected", 1 => agents[0].Name, _ => $"{agents.Count} agents connected" };
-        var now = DateTime.UtcNow;
-        ToolTip.SetTip(ConnectedAgents, agents.Count == 0
-            ? $"Agents connect through MCP at http://localhost:{Quattromani.Mcp.McpHost.Port}/mcp (see About)"
-            : string.Join("\n", agents.Select(a => $"{a.Name} · active {(now - a.LastSeen).TotalSeconds switch { < 60 => "just now", var s => $"{(int)(s / 60)} min ago" }}")));
+        ToolTip.SetTip(ConnectedAgents, "Click for details");
+    }
+
+    // Detail of the connected agents; built when opened.
+    void ShowConnectedAgents()
+    {
+        static string Ago(DateTime t) => (DateTime.UtcNow - t).TotalSeconds switch { < 10 => "just now", < 60 => "less than a minute ago", var s => $"{(int)(s / 60)} min ago" };
+        var panel = new StackPanel { Spacing = 10, Width = 260 };
+        panel.Children.Add(new TextBlock { Classes = { "caption" }, Text = "AGENTS" });
+        var agents = App.Agents.Active();
+        if (agents.Count == 0)
+            panel.Children.Add(new TextBlock { Text = $"No agent connected. Agents connect through MCP at http://localhost:{Quattromani.Mcp.McpHost.Port}/mcp (see About).", TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7 });
+        foreach (var a in agents)
+        {
+            var card = new StackPanel { Spacing = 2 };
+            card.Children.Add(new TextBlock { Text = a.Sessions > 1 ? $"{a.Name}  ·  {a.Sessions} sessions" : a.Name, FontWeight = FontWeight.SemiBold });
+            card.Children.Add(new TextBlock { Text = $"Last request: {Ago(a.LastSeen)}", FontSize = 12, Opacity = 0.7 });
+            card.Children.Add(new TextBlock { Text = a.LastDraw is { } d ? $"Last drawing: {Ago(d)}  ·  {a.Commands} command{(a.Commands == 1 ? "" : "s")}" : "Has not drawn yet", FontSize = 12, Opacity = 0.7 });
+            panel.Children.Add(card);
+        }
+        new Flyout { Placement = PlacementMode.TopEdgeAlignedLeft, Content = panel }.ShowAt(ConnectedAgents);
     }
 
     // Status bar: measures of the gesture in progress or of the selection.
@@ -1312,6 +1331,7 @@ public partial class MainWindow : Window
                 continue;
             }
             _aiTouched.UnionWith(ids);
+            App.Agents.Drew(change.Author[4..]);
             Canvas.Highlight(ids, change.Author[4..]);
             if (!_activeAgents.Contains(change.Author[4..])) _activeAgents.Add(change.Author[4..]);
             AgentText.Text = $"{string.Join(", ", _activeAgents)} {(_activeAgents.Count > 1 ? "are" : "is")} drawing";

@@ -45,4 +45,22 @@ public class AgentRegistryTests
         Assert.Equal(2, changes);
         Assert.Empty(r.Active());
     }
+
+    [Fact]
+    public void Active_reports_sessions_and_the_last_drawing_of_each_agent()
+    {
+        var t = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var r = new AgentRegistry(() => t);
+        r.Touch("s1", "claude-code");
+        r.Touch("s2", "claude-code");
+        r.Touch("s3", "codex");
+        r.Drew("claude-code");
+        t += TimeSpan.FromSeconds(30);
+        r.Drew("claude-code");
+        var a = r.Active().Single(x => x.Name == "claude-code");
+        Assert.Equal(2, a.Sessions);
+        Assert.Equal(2, a.Commands);
+        Assert.Equal(t, a.LastDraw);
+        Assert.Null(r.Active().Single(x => x.Name == "codex").LastDraw);
+    }
 }
