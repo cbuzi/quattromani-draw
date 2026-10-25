@@ -89,7 +89,7 @@ Here is the kind of command an agent sends:
 Every [release](https://github.com/cbuzi/quattromani-draw/releases) has a self-contained package for **macOS** (Apple Silicon and Intel), **Windows** and **Linux** — no .NET install needed. Unzip and run.
 
 > **First launch.** The packages are not code-signed yet, so your system will ask for confirmation once:
-> - **macOS:** right-click `Quattromani Draw.app` → *Open* (or run `xattr -dr com.apple.quarantine "Quattromani Draw.app"`).
+> - **macOS:** run `xattr -dr com.apple.quarantine "Quattromani Draw.app"` once, or try to open the app, then go to *System Settings → Privacy & Security* and click *Open Anyway*.
 > - **Windows:** SmartScreen → *More info* → *Run anyway*.
 > - **Linux:** `tar xzf Quattromani-Draw-*.tar.gz && ./Quattromani.App` (it needs the usual desktop libraries: X11 or Wayland, fontconfig).
 
@@ -103,7 +103,7 @@ cd quattromani-draw
 dotnet run --project src/Quattromani.App
 ```
 
-Quattromani starts an MCP server on `http://localhost:5577/mcp` while it is open (set `QUATTROMANI_PORT` to change it).
+Quattromani starts an MCP server on `http://localhost:5577/mcp` while it is open (set `QUATTROMANI_PORT` to change it). It only listens on localhost and has no authentication: see [SECURITY.md](SECURITY.md).
 
 ### Bring an agent in
 
