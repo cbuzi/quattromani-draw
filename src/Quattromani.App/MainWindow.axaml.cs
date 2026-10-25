@@ -62,6 +62,9 @@ public partial class MainWindow : Window
         // The bus may notify from any thread.
         _seenVersion = _bus.Version;
         _bus.Changed += () => Dispatcher.UIThread.Post(OnBusChanged);
+        App.Agents.Changed += () => Dispatcher.UIThread.Post(UpdateConnectedAgents);
+        new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.Background, (_, _) => UpdateConnectedAgents()).Start(); // agents expire silently
+        UpdateConnectedAgents();
         _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; _activeAgents.Clear(); };
         Canvas.SelectionChanged += Refresh;
         Canvas.ViewChanged += () => { ZoomText.Text = $"{Canvas.Zoom:P0}"; UpdateScrollBars(); };
@@ -653,6 +656,18 @@ public partial class MainWindow : Window
         _syncingPage = false;
 
         if (changed && !first) Canvas.FitPage(); // new page: it is shown whole
+    }
+
+    // Status bar: agents connected through MCP.
+    void UpdateConnectedAgents()
+    {
+        var agents = App.Agents.Active();
+        ConnectedDot.Fill = new SolidColorBrush(Color.Parse(agents.Count > 0 ? "#22C55E" : "#9CA3AF"));
+        ConnectedText.Text = agents.Count switch { 0 => "No agent connected", 1 => agents[0].Name, _ => $"{agents.Count} agents connected" };
+        var now = DateTime.UtcNow;
+        ToolTip.SetTip(ConnectedAgents, agents.Count == 0
+            ? $"Agents connect through MCP at http://localhost:{Quattromani.Mcp.McpHost.Port}/mcp (see About)"
+            : string.Join("\n", agents.Select(a => $"{a.Name} · active {(now - a.LastSeen).TotalSeconds switch { < 60 => "just now", var s => $"{(int)(s / 60)} min ago" }}")));
     }
 
     // Status bar: measures of the gesture in progress or of the selection.

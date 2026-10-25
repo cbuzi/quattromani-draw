@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Quattromani.Core;
+using ModelContextProtocol.Protocol;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -14,7 +15,7 @@ public static class McpHost
     /// <summary>Server port; QUATTROMANI_PORT changes it (useful to have several instances or to experiment without touching the one in use).</summary>
     public static int Port { get; } = int.TryParse(Environment.GetEnvironmentVariable("QUATTROMANI_PORT"), out var p) ? p : 5577;
 
-    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer, IFileService files, ISelectionService selection)
+    public static WebApplication Start(CommandBus bus, IDocumentRenderer renderer, IFileService files, ISelectionService selection, AgentRegistry agents)
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls($"http://localhost:{Port}");
@@ -25,7 +26,12 @@ public static class McpHost
         builder.Services.AddSingleton(renderer);
         builder.Services.AddSingleton(files);
         builder.Services.AddSingleton(selection);
-        builder.Services.AddMcpServer().WithHttpTransport(o => o.Stateless = false).WithTools<QuattromaniTools>();
+        builder.Services.AddMcpServer().WithHttpTransport(o => o.Stateless = false).WithTools<QuattromaniTools>()
+            .WithMessageFilters(f => f.AddIncomingFilter(next => (context, ct) =>
+            {
+                if (context.JsonRpcMessage is JsonRpcRequest && context.Server.SessionId is { } id) agents.Touch(id, context.Server.ClientInfo?.Name);
+                return next(context, ct);
+            }));
 
         var app = builder.Build();
         // A web page open in the user's browser can reach localhost too (cross-origin requests, DNS rebinding): only loopback hosts and origins get through.
@@ -37,6 +43,8 @@ public static class McpHost
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
+            // The client closes its session with a DELETE: the agent is gone.
+            if (context.Request.Method == "DELETE" && context.Request.Headers["Mcp-Session-Id"].ToString() is { Length: > 0 } sid) agents.Remove(sid);
             await next();
         });
         app.MapMcp("/mcp");

@@ -234,6 +234,10 @@
                             <TextBlock x:Name="AgentText" FontSize="12" FontWeight="SemiBold" Foreground="#A855F7" />
                         </StackPanel>
                     </Border>
+                    <StackPanel x:Name="ConnectedAgents" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Background="Transparent">
+                        <Ellipse x:Name="ConnectedDot" Width="8" Height="8" Fill="#9CA3AF" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ConnectedText" FontSize="12" Opacity="0.65" VerticalAlignment="Center" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <TextBlock x:Name="CursorText" Margin="14,0,8,0" FontSize="12" Opacity="0.65" VerticalAlignment="Center" MinWidth="150" />

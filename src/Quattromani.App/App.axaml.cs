@@ -26,6 +26,7 @@ public class App : Application
 
     /// <summary>The app's single bus: the UI (and later MCP) modify the document only from here.</summary>
     public static CommandBus Bus { get; } = new(new Document { TextEngine = new SkiaTextEngine(), ImageProbe = SceneRenderer.Probe, ImagePixels = SceneRenderer.Pixels });
+    internal static AgentRegistry Agents { get; } = new();
     internal static FileSession Files { get; } = new(Bus);
     internal static Recovery Recovery { get; } = new(Bus, Files);
 
@@ -82,7 +83,7 @@ public class App : Application
                 window.ShowNotice($"Unexpected error: {e.Exception.Message} (details in ~/.quattromani/crash.log). A backup of your work was made; consider saving it.");
                 e.Handled = true;
             };
-            var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection);
+            var mcp = McpHost.Start(Bus, new SkiaDocumentRenderer(Bus), Files, window.Selection, Agents);
             desktop.Exit += (_, _) => { McpHost.RemoveDiscoveryFile(); _ = mcp.StopAsync(); }; // without waiting: the server has nothing to save, and waiting for open connections made the closing "lag"
         }
 
