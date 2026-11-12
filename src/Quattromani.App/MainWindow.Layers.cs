@@ -99,7 +99,7 @@ public partial class MainWindow
         menu.Opening += (_, e) =>
         {
             if (Canvas.SelectedIds.Count == 0) { e.Cancel = true; return; }
-            FillObjectMenu(menu);
+            menu.ItemsSource = ObjectStateItems();
         };
         ObjectList.ContextMenu = menu;
     }
@@ -178,7 +178,14 @@ public partial class MainWindow
 
     // ---- Hide, lock, move to layer ----------------------------------------------------
 
-    void FillObjectMenu(ContextMenu menu)
+    static MenuItem Entry(string header, Action action, bool enabled = true, KeyGesture? gesture = null)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled, InputGesture = gesture };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    List<Control> ObjectStateItems()
     {
         var ids = Canvas.SelectedIds.ToList();
         var (hidden, locked, layers) = _bus.Read(d =>
@@ -186,15 +193,9 @@ public partial class MainWindow
             var objs = ids.Select(id => d.AllObjects.FirstOrDefault(o => o.Id == id)).OfType<SceneObject>().ToList();
             return (objs.All(o => o.Hidden), objs.All(o => o.Locked), d.Pages[0].Layers.Select(l => l.Name).Reverse().ToList());
         });
-        MenuItem Entry(string header, Action action)
-        {
-            var item = new MenuItem { Header = header };
-            item.Click += (_, _) => action();
-            return item;
-        }
         var move = new MenuItem { Header = "Move to layer" };
         move.ItemsSource = layers.Select(name => Entry(name, () => Exec(new MoveToLayer { Targets = ids, Layer = name }))).ToList();
-        menu.ItemsSource = new List<Control> { Entry(hidden ? "Show" : "Hide", ToggleHidden), Entry(locked ? "Unlock" : "Lock", ToggleLocked), new Separator(), move };
+        return new List<Control> { Entry(hidden ? "Show" : "Hide", ToggleHidden), Entry(locked ? "Unlock" : "Lock", ToggleLocked), new Separator(), move };
     }
 
     // If all the selected objects already have the state, remove it; otherwise give it to all.

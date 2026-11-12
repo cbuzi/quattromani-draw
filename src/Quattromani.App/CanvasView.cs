@@ -266,6 +266,8 @@ public sealed class CanvasView : Control
 
     public event Action? SelectionChanged;
     public event Action? ViewChanged;
+    /// <summary>A right click without dragging (a drag pans): the window opens the context menu. The selection has already been adjusted to what is under the cursor.</summary>
+    public event Action? ContextMenuRequested;
     public event Action? ToolChanged;
 
     public CanvasView()
@@ -331,6 +333,8 @@ public sealed class CanvasView : Control
         ViewChanged?.Invoke();
         InvalidateVisual();
     }
+
+    public void SelectAll() => SetSelection(Bus?.Read(d => d.PickableObjects.Select(o => o.Id).ToList()) ?? []);
 
     public void Select(string? id) => SetSelection(id is null ? [] : [id]);
 
@@ -548,7 +552,10 @@ public sealed class CanvasView : Control
             return;
         }
         if (pt.Properties.IsMiddleButtonPressed || pt.Properties.IsRightButtonPressed)
+        {
             _drag = Drag.Pan;
+            _rightDown = pt.Properties.IsRightButtonPressed && !PenActive ? pt.Position : null;
+        }
         else if (pt.Properties.IsLeftButtonPressed && Tool == Tool.Pen)
         {
             PenPress(pt.Position, e.ClickCount);
@@ -1250,8 +1257,21 @@ public sealed class CanvasView : Control
         InvalidateVisual();
     }
 
+    Point? _rightDown; // where a right click started; cleared when it turns into a pan
+
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
+        if (e.InitialPressMouseButton == MouseButton.Right && _drag == Drag.Pan && _rightDown is { } down && Math.Abs(e.GetPosition(this).X - down.X) < 4 && Math.Abs(e.GetPosition(this).Y - down.Y) < 4)
+        {
+            _drag = Drag.None;
+            e.Pointer.Capture(null);
+            _rightDown = null;
+            // Right click on an unselected object selects it; on a selected one keeps the selection; on empty space it keeps it too.
+            if (HitTest(ToDoc(down)) is { } hit && !_selection.Contains(hit)) Select(hit);
+            ContextMenuRequested?.Invoke();
+            return;
+        }
+        _rightDown = null;
         if (_drag is Drag.GuideNew or Drag.GuideMove)
         {
             var (axis, pos, from, isNew, del) = (_guideAxis, Math.Round(_guidePos, 3), _guideFrom, _drag == Drag.GuideNew, _guideOut);

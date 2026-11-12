@@ -69,6 +69,7 @@ public partial class MainWindow : Window
         ConnectedAgents.Cursor = new Cursor(StandardCursorType.Hand);
         _chipTimer.Tick += (_, _) => { _chipTimer.Stop(); AgentChip.IsVisible = false; _activeAgents.Clear(); };
         Canvas.SelectionChanged += Refresh;
+        Canvas.ContextMenuRequested += ShowCanvasMenu;
         Canvas.ViewChanged += () => { ZoomText.Text = $"{Canvas.Zoom:P0}"; UpdateScrollBars(); };
         Canvas.SizeChanged += (_, _) => UpdateScrollBars();
         HScroll.ValueChanged += (_, e) => { if (!_syncingScroll) Canvas.ScrollTo(e.NewValue, null); };
@@ -514,6 +515,7 @@ public partial class MainWindow : Window
             e.Handled = true;
         }
         else if (cmd && e.Key == Key.D) { Duplicate(); e.Handled = true; }
+        else if (cmd && e.Key == Key.A && Canvas.Tool != Tool.Text) { Canvas.SelectAll(); e.Handled = true; }
         else if (cmd && e.Key is Key.C or Key.X) { CopySelection(e.Key == Key.X); e.Handled = true; }
         else if (cmd && e.Key == Key.V) { _ = PasteAsync(); e.Handled = true; }
         else if (cmd && e.Key == Key.G)
