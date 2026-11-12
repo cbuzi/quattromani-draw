@@ -268,6 +268,8 @@ public sealed class CanvasView : Control
     public event Action? ViewChanged;
     /// <summary>A right click without dragging (a drag pans): the window opens the context menu. The selection has already been adjusted to what is under the cursor.</summary>
     public event Action? ContextMenuRequested;
+    /// <summary>Document point of the last right click that asked for the context menu.</summary>
+    public Point ContextPoint { get; private set; }
     public event Action? ToolChanged;
 
     public CanvasView()
@@ -1268,6 +1270,7 @@ public sealed class CanvasView : Control
             _rightDown = null;
             // Right click on an unselected object selects it; on a selected one keeps the selection; on empty space it keeps it too.
             if (HitTest(ToDoc(down)) is { } hit && !_selection.Contains(hit)) Select(hit);
+            ContextPoint = ToDoc(down);
             ContextMenuRequested?.Invoke();
             return;
         }

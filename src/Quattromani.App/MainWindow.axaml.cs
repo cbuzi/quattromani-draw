@@ -1274,7 +1274,7 @@ public partial class MainWindow : Window
     }
 
     // An SVG on the system clipboard (copied from another program) is imported; otherwise the internal copy is pasted.
-    async Task PasteAsync()
+    async Task PasteAsync(Point? at = null)
     {
         string? text = null;
         try
@@ -1287,7 +1287,7 @@ public partial class MainWindow : Window
                     using var ms = new MemoryStream();
                     bmp.Save(ms, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
                     var png = ms.ToArray();
-                    PlaceImage(png, "data:image/png;base64," + Convert.ToBase64String(png), "pasted", Canvas.ViewCenter);
+                    PlaceImage(png, "data:image/png;base64," + Convert.ToBase64String(png), "pasted", at ?? Canvas.ViewCenter);
                     return;
                 }
                 text = await cb.TryGetTextAsync();
@@ -1297,10 +1297,10 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is InvalidOperationException or IOException) { } // clipboard not available
         if (text != null && text != _lastSvgCopy && LooksLikeSvg(text))
         {
-            ImportSvgText(text, "pasted", Canvas.ViewCenter);
+            ImportSvgText(text, "pasted", at ?? Canvas.ViewCenter);
             return;
         }
-        Paste();
+        Paste(at);
     }
 
     static bool LooksLikeSvg(string text)
@@ -1309,11 +1309,11 @@ public partial class MainWindow : Window
         return t.StartsWith("<svg", StringComparison.OrdinalIgnoreCase) || t.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && text.Contains("<svg", StringComparison.OrdinalIgnoreCase);
     }
 
-    void Paste()
+    void Paste(Point? at = null)
     {
         if (_clipboard == null) return;
-        var offset = 20 * _pasteCount++;
-        try { Canvas.SetSelection(_bus.Execute([new PasteObjects { Data = _clipboard, Dx = offset, Dy = offset }]).CreatedIds); }
+        var offset = at == null ? 20 * _pasteCount++ : 0;
+        try { Canvas.SetSelection(_bus.Execute([new PasteObjects { Data = _clipboard, Dx = offset, Dy = offset, AtX = at?.X, AtY = at?.Y }]).CreatedIds); }
         catch (CommandException) { }
     }
 

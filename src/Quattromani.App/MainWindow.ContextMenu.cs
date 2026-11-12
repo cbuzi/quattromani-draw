@@ -26,7 +26,9 @@ public partial class MainWindow
             items.Add(Entry("Cut", () => CopySelection(true), gesture: Key_(Avalonia.Input.Key.X)));
             items.Add(Entry("Copy", () => CopySelection(false), gesture: Key_(Avalonia.Input.Key.C)));
         }
+        var here = Canvas.ContextPoint;
         items.Add(Entry("Paste", () => _ = PasteAsync(), gesture: Key_(Avalonia.Input.Key.V)));
+        items.Add(Entry("Paste here", () => _ = PasteAsync(here)));
         if (n > 0)
         {
             items.Add(Entry("Duplicate", Duplicate, gesture: Key_(Avalonia.Input.Key.D)));

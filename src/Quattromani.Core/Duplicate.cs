@@ -44,6 +44,9 @@ public sealed class PasteObjects : Command
     public string Data { get; set; } = "";
     public double Dx { get; set; }
     public double Dy { get; set; }
+    /// <summary>When both are set, the pasted objects are centered on this point (page coordinates) instead of using Dx/Dy.</summary>
+    public double? AtX { get; set; }
+    public double? AtY { get; set; }
 
     List<SceneObject> _pasted = [];
     Layer? _layer;
@@ -62,7 +65,16 @@ public sealed class PasteObjects : Command
         _layer ??= doc.TargetLayer(null);
         _layer.Objects.AddRange(_pasted);
         if (fresh)
+        {
+            if (AtX is { } ax && AtY is { } ay && _pasted.Count > 0)
+            {
+                var boxes = _pasted.Select(doc.PageBounds).ToList();
+                var (x0, y0) = (boxes.Min(b => b.X), boxes.Min(b => b.Y));
+                Dx = ax - (x0 + (boxes.Max(b => b.X + b.Width) - x0) / 2);
+                Dy = ay - (y0 + (boxes.Max(b => b.Y + b.Height) - y0) / 2);
+            }
             foreach (var o in _pasted) o.Transform = Shift.Apply(doc, o, Dx, Dy);
+        }
     }
 
     public override void Undo(Document doc)

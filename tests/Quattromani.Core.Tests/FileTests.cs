@@ -70,6 +70,18 @@ public class FileTests
     }
 
     [Fact]
+    public void Paste_at_a_point_centers_the_objects_there()
+    {
+        var bus = T.NewBus();
+        bus.Execute([new CreateShape { Type = "rectangle", Name = "a", X = 0, Y = 0, Width = 10, Height = 20 }]);
+        var data = DocumentFile.ExportObjects(bus.Document.Objects);
+        var id = bus.Execute([new PasteObjects { Data = data, AtX = 100, AtY = 200 }]).CreatedIds[0];
+        var b = bus.Document.PageBounds(bus.Document.Find(id));
+        Assert.Equal(95, b.X);
+        Assert.Equal(190, b.Y);
+    }
+
+    [Fact]
     public void Duplicate_keeps_style_and_sits_just_above_the_original()
     {
         var bus = T.NewBus();
