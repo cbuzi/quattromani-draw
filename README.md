@@ -168,7 +168,7 @@ The server exposes a small set of rich tools — a few calls, lots of power, wit
 
 ## Status
 
-Quattromani Draw is in **beta**. It is developed and used daily on **macOS**. It is built on Avalonia and Skia, so Windows and Linux are expected to work: CI builds and tests the Core on all three, but the app itself has not been exercised there yet — reports and fixes are very welcome.
+Quattromani Draw is in **beta**. It is developed and used daily on **macOS**, and has been tried on **Windows**. It is built on Avalonia and Skia, so Linux is expected to work: CI builds and tests the Core on all three, but the app itself has not been exercised on Linux yet — reports and fixes are very welcome.
 
 Out of scope for now: CMYK and print workflows, advanced multi-page documents, AI / CDR import. On the roadmap: **Quattro-Clip**, a shape clipper that fits objects inside any shape, plus blends, contours and envelopes (all modeled as real objects, flattened on SVG export), an in-app chat panel for the agent, code-signed and notarized packages, and double-click opening of `.quattromani` files.
 
