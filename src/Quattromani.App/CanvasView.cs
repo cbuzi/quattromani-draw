@@ -210,6 +210,16 @@ public sealed class CanvasView : Control
         return shape;
     }
 
+    /// <summary>A page-sized rectangle with the current style, behind everything else (double-click on the Rectangle tool).</summary>
+    public void AddPageBackground()
+    {
+        if (Bus == null) return;
+        var pg = PageBox();
+        var bg = new CreateShape { Type = "rectangle", X = pg.X, Y = pg.Y, Width = pg.Width, Height = pg.Height, Fill = Fill ?? "none", Stroke = Stroke ?? "none", StrokeWidth = StrokeWidth, Back = true };
+        if (Try(WithNewStyle(bg)) is { } r) Select(r.CreatedIds[0]);
+        Tool = Tool.Select;
+    }
+
     /// <summary>Options of the Polygon and Star tools.</summary>
     public int PolygonSides { get; set; } = 5;
     public int StarPoints { get; set; } = 5;

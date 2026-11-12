@@ -15,6 +15,15 @@ public class CommandBusTests
     }
 
     [Fact]
+    public void Back_puts_the_new_object_behind_the_others()
+    {
+        var bus = T.NewBus();
+        bus.Execute([new CreateShape { Type = "rectangle", Name = "a", Width = 10, Height = 10 }]);
+        bus.Execute([new CreateShape { Type = "rectangle", Name = "bg", Width = 50, Height = 50, Back = true }]);
+        Assert.Equal("bg", bus.Document.Objects.First().Name);
+    }
+
+    [Fact]
     public void A_batch_is_a_single_undo_step()
     {
         var bus = T.NewBus();

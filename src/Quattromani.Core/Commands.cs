@@ -99,6 +99,8 @@ public sealed class CreateShape : Command
     public string? D { get; set; }
     /// <summary>Relative positioning to other objects, instead of x and y.</summary>
     public Placement? Rel { get; set; }
+    /// <summary>Put the new object behind the others of its layer instead of on top.</summary>
+    public bool? Back { get; set; }
     /// <summary>Only for type "text": the content ('\n' = line break) and the style. For text, width is the width for automatic wrapping.</summary>
     public string? Text { get; set; }
     public string? FontFamily { get; set; }
@@ -209,7 +211,7 @@ public sealed class CreateShape : Command
             _obj = obj;
         }
         _layer ??= doc.TargetLayer(Layer);
-        _layer.Objects.Add(_obj);
+        if (Back == true) _layer.Objects.Insert(0, _obj); else _layer.Objects.Add(_obj);
     }
 
     public override void Undo(Document doc) => _layer!.Objects.Remove(_obj!);

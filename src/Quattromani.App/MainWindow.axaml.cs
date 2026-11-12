@@ -182,6 +182,7 @@ public partial class MainWindow : Window
         // Tools
         SelectTool.Click += (_, _) => { Canvas.Tool = Tool.Select; SyncToolButtons(); };
         RectTool.Click += (_, _) => { Canvas.Tool = Tool.Rectangle; SyncToolButtons(); };
+        RectTool.DoubleTapped += (_, _) => { Canvas.AddPageBackground(); SyncToolButtons(); };
         EllipseTool.Click += (_, _) => { Canvas.Tool = Tool.Ellipse; SyncToolButtons(); };
         PenTool.Click += (_, _) => { Canvas.Tool = Tool.Pen; SyncToolButtons(); };
         PencilTool.Click += (_, _) => { Canvas.Tool = Tool.Pencil; SyncToolButtons(); };
@@ -1274,7 +1275,23 @@ public partial class MainWindow : Window
     async Task PasteAsync()
     {
         string? text = null;
-        try { if (GetTopLevel(this)?.Clipboard is { } cb) text = await cb.TryGetTextAsync(); }
+        try
+        {
+            if (GetTopLevel(this)?.Clipboard is { } cb)
+            {
+                using var bmp = await cb.TryGetBitmapAsync(); // an image copied from another program
+                if (bmp != null)
+                {
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+                    var png = ms.ToArray();
+                    PlaceImage(png, "data:image/png;base64," + Convert.ToBase64String(png), "pasted", Canvas.ViewCenter);
+                    return;
+                }
+                text = await cb.TryGetTextAsync();
+            }
+        }
+        catch (CommandException ex) { ShowNotice(ex.Message); return; }
         catch (Exception ex) when (ex is InvalidOperationException or IOException) { } // clipboard not available
         if (text != null && text != _lastSvgCopy && LooksLikeSvg(text))
         {

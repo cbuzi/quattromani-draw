@@ -343,16 +343,18 @@ public partial class MainWindow
     void ImportImage(string path, Point center)
     {
         if (path.EndsWith(SvgFile.Extension, StringComparison.OrdinalIgnoreCase)) { ImportSvgFile(path, center); return; }
-        try
-        {
-            var (size, page) = _bus.Read(d => (d.ImageProbe!(File.ReadAllBytes(path)), (d.Pages[0].Width, d.Pages[0].Height)));
-            if (size is not { } s) throw new CommandException("Not a readable image (PNG, JPEG, GIF, WebP or BMP).");
-            var k = Math.Min(1, Math.Min(0.8 * page.Width / s.Width, 0.8 * page.Height / s.Height));
-            double w = s.Width * k, h = s.Height * k;
-            var r = _bus.Execute([new CreateShape { Type = "image", Src = path, X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h, Name = Path.GetFileNameWithoutExtension(path) }]);
-            Canvas.SetSelection(r.CreatedIds);
-        }
+        try { PlaceImage(File.ReadAllBytes(path), path, Path.GetFileNameWithoutExtension(path), center); }
         catch (Exception ex) when (ex is CommandException or IOException or UnauthorizedAccessException) { ShowNotice(ex.Message); }
+    }
+
+    void PlaceImage(byte[] bytes, string src, string name, Point center)
+    {
+        var (size, page) = _bus.Read(d => (d.ImageProbe!(bytes), (d.Pages[0].Width, d.Pages[0].Height)));
+        if (size is not { } s) throw new CommandException("Not a readable image (PNG, JPEG, GIF, WebP or BMP).");
+        var k = Math.Min(1, Math.Min(0.8 * page.Width / s.Width, 0.8 * page.Height / s.Height));
+        double w = s.Width * k, h = s.Height * k;
+        var r = _bus.Execute([new CreateShape { Type = "image", Src = src, X = center.X - w / 2, Y = center.Y - h / 2, Width = w, Height = h, Name = name }]);
+        Canvas.SetSelection(r.CreatedIds);
     }
 
     // As for images: reduced if it does not fit in 80% of the page, centered on `center`.
